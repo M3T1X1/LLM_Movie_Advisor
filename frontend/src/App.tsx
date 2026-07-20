@@ -1,12 +1,11 @@
-import { Bookmark, BrainCircuit, ChevronRight, Sparkles, WandSparkles } from 'lucide-react';
-import { useState } from 'react';
+import { Bookmark, ChevronRight, History as HistoryIcon, SlidersHorizontal } from 'lucide-react';
+import { useState, type ReactNode } from 'react';
 import { ChatInterface } from './components/ChatInterface';
 import { EmptyState } from './components/EmptyState';
 import { HistoryView } from './components/HistoryView';
 import { MovieDetailModal } from './components/MovieDetailModal';
 import { Navbar } from './components/Navbar';
 import { RecommendationCard } from './components/RecommendationCard';
-import { UserProfileSidebar } from './components/UserProfileSidebar';
 import { useSession } from './context/SessionContext';
 import { demoMovies, initialAgentSteps } from './data/mockData';
 import { requestRecommendations, updateMovieState } from './services/api';
@@ -32,7 +31,6 @@ export default function App() {
   const [activeView, setActiveView] = useState<AppView>('recommendations');
   const [recommendations, setRecommendations] = useState<Movie[]>(demoMovies);
   const [selectedMovie, setSelectedMovie] = useState<Movie | null>(null);
-  const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [agentSteps, setAgentSteps] = useState<AgentStep[]>(initialAgentSteps);
 
@@ -92,129 +90,77 @@ export default function App() {
   };
 
   const savedMovies = recommendations.filter((movie) => savedMovieIds.includes(movie.id));
-  const visibleMovies = activeView === 'saved' ? savedMovies : recommendations;
+
+  const renderCard = (movie: Movie, index: number) => (
+    <RecommendationCard
+      key={movie.id}
+      movie={movie}
+      index={index}
+      isSaved={savedMovieIds.includes(movie.id)}
+      isWatched={watchedMovieIds.includes(movie.id)}
+      onOpen={setSelectedMovie}
+      onToggleSaved={handleToggleSaved}
+      onToggleWatched={handleToggleWatched}
+    />
+  );
 
   return (
-    <div className="min-h-screen overflow-x-hidden bg-ink-950 text-slate-100 selection:bg-violet-500/30">
-      <div className="pointer-events-none fixed inset-0 overflow-hidden">
-        <div className="absolute -left-40 -top-64 h-[540px] w-[540px] rounded-full bg-violet-600/[0.07] blur-[120px]" />
-        <div className="absolute -right-60 top-1/3 h-[520px] w-[520px] rounded-full bg-blue-600/[0.06] blur-[130px]" />
-      </div>
-
+    <div className="min-h-screen bg-ink-950 text-slate-100 selection:bg-violet-500/30">
       <Navbar
         user={user}
         activeView={activeView}
         onViewChange={setActiveView}
-        onOpenProfile={() => setIsProfileOpen(true)}
       />
 
-      <div className="relative mx-auto flex max-w-[1600px] gap-6 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-        <UserProfileSidebar
-          user={user}
-          history={history}
-          savedCount={savedMovieIds.length}
-          watchedCount={watchedMovieIds.length}
-          isOpen={isProfileOpen}
-          onClose={() => setIsProfileOpen(false)}
-        />
-
-        <main className="min-w-0 flex-1">
+      <div className="mx-auto max-w-[1480px] px-4 py-7 sm:px-6 lg:px-8">
+        <main className="min-w-0">
           {activeView === 'history' ? (
             <div className="mx-auto max-w-4xl">
-              <div className="mb-8">
-                <p className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-blue-400">
-                  <BrainCircuit className="h-4 w-4" />
-                  Pamięć Twoich rozmów
-                </p>
-                <h1 className="text-3xl font-bold tracking-tight text-white sm:text-4xl">Historia odkrywania</h1>
-                <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500">
-                  Każda rozmowa wzbogaca profil gustu i pomaga agentom trafniej rozumieć kolejne
-                  prośby.
-                </p>
-              </div>
+              <PageHeading
+                eyebrow="Twoja aktywność"
+                title="Historia rekomendacji"
+                description="Poprzednie rozmowy i konteksty, do których możesz wrócić."
+                icon={<HistoryIcon className="h-4 w-4" />}
+              />
               <HistoryView history={history} onRepeat={(query) => void handlePrompt(query)} />
             </div>
           ) : activeView === 'saved' ? (
-            <div>
-              <div className="mb-8 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-                <div>
-                  <p className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-violet-400">
-                    <Bookmark className="h-4 w-4" />
-                    Twoja kolekcja
-                  </p>
-                  <h1 className="text-3xl font-bold tracking-tight text-white sm:text-4xl">Zapisane na później</h1>
-                  <p className="mt-3 text-sm text-slate-500">Tytuły, które zwróciły Twoją uwagę.</p>
-                </div>
+            <div className="mx-auto max-w-4xl">
+              <div className="mb-7 flex items-end justify-between gap-4">
+                <PageHeading
+                  eyebrow="Twoja kolekcja"
+                  title="Zapisane na później"
+                  description="Tytuły, do których chcesz wrócić."
+                  icon={<Bookmark className="h-4 w-4" />}
+                />
                 <button
                   type="button"
                   onClick={() => setActiveView('recommendations')}
-                  className="flex items-center gap-1.5 text-xs font-semibold text-violet-300 hover:text-violet-200"
+                  className="mb-1 hidden items-center gap-1 text-xs text-slate-500 transition hover:text-white sm:flex"
                 >
-                  Wróć do odkrywania
+                  Odkrywaj dalej
                   <ChevronRight className="h-3.5 w-3.5" />
                 </button>
               </div>
               {savedMovies.length ? (
-                <div className="grid gap-5 md:grid-cols-2 2xl:grid-cols-3">
-                  {visibleMovies.map((movie, index) => (
-                    <RecommendationCard
-                      key={movie.id}
-                      movie={movie}
-                      index={index}
-                      isSaved={savedMovieIds.includes(movie.id)}
-                      isWatched={watchedMovieIds.includes(movie.id)}
-                      onOpen={setSelectedMovie}
-                      onToggleSaved={handleToggleSaved}
-                      onToggleWatched={handleToggleWatched}
-                    />
-                  ))}
-                </div>
+                <div className="space-y-4">{savedMovies.map(renderCard)}</div>
               ) : (
                 <EmptyState onDiscover={() => setActiveView('recommendations')} />
               )}
             </div>
           ) : (
             <>
-              <div className="mb-8 overflow-hidden rounded-3xl border border-white/[0.06] bg-gradient-to-r from-violet-500/[0.07] via-transparent to-blue-500/[0.06] px-5 py-6 sm:px-7 sm:py-8">
-                <div className="flex flex-col justify-between gap-6 2xl:flex-row 2xl:items-end">
-                  <div>
-                    <p className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-violet-400">
-                      <WandSparkles className="h-4 w-4" />
-                      Rekomendacje, które rozumieją kontekst
-                    </p>
-                    <h1 className="max-w-3xl text-3xl font-bold leading-tight tracking-[-0.03em] text-white sm:text-5xl">
-                      Mniej scrollowania.{' '}
-                      <span className="bg-gradient-to-r from-violet-300 to-blue-300 bg-clip-text text-transparent">
-                        Więcej dobrych seansów.
-                      </span>
-                    </h1>
-                    <p className="mt-4 max-w-2xl text-sm leading-6 text-slate-500 sm:text-base">
-                      Opisz, czego dziś potrzebujesz. Czterech agentów przeanalizuje Twój nastrój,
-                      przeszuka katalog i wyjaśni każdy wybór.
-                    </p>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-3 rounded-2xl border border-white/[0.06] bg-black/10 px-4 py-3">
-                    <div className="flex -space-x-2">
-                      {['P', 'D', 'R', 'W'].map((letter, index) => (
-                        <span
-                          key={letter}
-                          className={`flex h-8 w-8 items-center justify-center rounded-full border-2 border-ink-900 text-[10px] font-bold text-white ${
-                            index % 2 === 0 ? 'bg-violet-600' : 'bg-blue-600'
-                          }`}
-                        >
-                          {letter}
-                        </span>
-                      ))}
-                    </div>
-                    <div>
-                      <p className="text-xs font-semibold text-slate-200">Zespół agentów gotowy</p>
-                      <p className="mt-0.5 text-[10px] text-slate-600">Profil · Dane · Ranking · Wyjaśnienia</p>
-                    </div>
-                  </div>
-                </div>
+              <div className="mb-7 border-b border-white/[0.07] pb-7">
+                <p className="mb-2 text-xs text-slate-500">Dobry wieczór, {user.name.split(' ')[0]}.</p>
+                <h1 className="max-w-3xl text-3xl font-semibold tracking-[-0.035em] text-white sm:text-4xl">
+                  Co masz ochotę dziś obejrzeć?
+                </h1>
+                <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500">
+                  Opisz nastrój lub rodzaj historii. Nie musisz wybierać gatunku.
+                </p>
               </div>
 
-              <div className="grid items-start gap-6 lg:grid-cols-[minmax(340px,0.76fr)_minmax(0,1.24fr)] 2xl:grid-cols-[minmax(390px,0.72fr)_minmax(0,1.28fr)]">
+              <div className="grid items-start gap-7 xl:grid-cols-[minmax(560px,1.18fr)_minmax(460px,0.82fr)]">
                 <ChatInterface
                   messages={messages}
                   agentSteps={agentSteps}
@@ -223,41 +169,28 @@ export default function App() {
                 />
 
                 <section aria-labelledby="recommendations-title">
-                  <div className="mb-4 flex items-end justify-between px-1">
+                  <div className="mb-4 flex items-end justify-between border-b border-white/[0.07] pb-3">
                     <div>
-                      <div className="mb-1.5 flex items-center gap-2">
-                        <Sparkles className="h-4 w-4 text-violet-400" />
-                        <h2 id="recommendations-title" className="text-lg font-bold text-white sm:text-xl">
-                          Wybrane dla Ciebie
-                        </h2>
-                      </div>
-                      <p className="text-xs text-slate-600">
-                        Ranking uwzględnia nastrój, preferencje i historię rozmów.
+                      <h2 id="recommendations-title" className="text-sm font-semibold text-white">
+                        Propozycje na dziś
+                      </h2>
+                      <p className="mt-1 text-[11px] text-slate-600">
+                        Posortowane według zgodności z Twoim profilem
                       </p>
                     </div>
-                    <span className="hidden rounded-full border border-white/[0.06] bg-white/[0.025] px-3 py-1.5 text-[10px] text-slate-500 sm:block">
-                      {recommendations.length} trafne propozycje
-                    </span>
+                    <div className="flex items-center gap-2 text-[10px] text-slate-600">
+                      <SlidersHorizontal className="h-3.5 w-3.5" />
+                      {recommendations.length} wyniki
+                    </div>
                   </div>
 
                   <div
-                    className={`grid gap-5 transition duration-500 2xl:grid-cols-2 ${
-                      isProcessing ? 'opacity-55' : 'opacity-100'
+                    className={`space-y-4 transition-opacity duration-300 ${
+                      isProcessing ? 'opacity-50' : 'opacity-100'
                     }`}
                     aria-live="polite"
                   >
-                    {recommendations.map((movie, index) => (
-                      <RecommendationCard
-                        key={movie.id}
-                        movie={movie}
-                        index={index}
-                        isSaved={savedMovieIds.includes(movie.id)}
-                        isWatched={watchedMovieIds.includes(movie.id)}
-                        onOpen={setSelectedMovie}
-                        onToggleSaved={handleToggleSaved}
-                        onToggleWatched={handleToggleWatched}
-                      />
-                    ))}
+                    {recommendations.map(renderCard)}
                   </div>
                 </section>
               </div>
@@ -274,6 +207,26 @@ export default function App() {
         onToggleSaved={handleToggleSaved}
         onToggleWatched={handleToggleWatched}
       />
+    </div>
+  );
+}
+
+interface PageHeadingProps {
+  eyebrow: string;
+  title: string;
+  description: string;
+  icon: ReactNode;
+}
+
+function PageHeading({ eyebrow, title, description, icon }: PageHeadingProps) {
+  return (
+    <div className="mb-7">
+      <p className="mb-2 flex items-center gap-2 text-[10px] font-medium uppercase tracking-[0.14em] text-slate-600">
+        {icon}
+        {eyebrow}
+      </p>
+      <h1 className="text-3xl font-semibold tracking-tight text-white">{title}</h1>
+      <p className="mt-2 text-sm text-slate-500">{description}</p>
     </div>
   );
 }

@@ -1,13 +1,4 @@
-import {
-  Bookmark,
-  Check,
-  ChevronRight,
-  Eye,
-  Film,
-  Info,
-  Sparkles,
-  Star,
-} from 'lucide-react';
+import { Bookmark, Check, ChevronRight, Eye, Film, Star } from 'lucide-react';
 import { useState } from 'react';
 import type { Movie } from '../types';
 
@@ -33,113 +24,108 @@ export function RecommendationCard({
   const [imageFailed, setImageFailed] = useState(false);
 
   return (
-    <article className="group overflow-hidden rounded-3xl border border-white/[0.08] bg-ink-900/80 shadow-card transition duration-500 hover:-translate-y-1 hover:border-white/[0.14]">
+    <article className="group grid grid-cols-[104px_minmax(0,1fr)] overflow-hidden rounded-xl border border-white/[0.08] bg-[#0d0f15] transition-colors hover:border-white/[0.14] sm:grid-cols-[148px_minmax(0,1fr)]">
       <button
         type="button"
         onClick={() => onOpen(movie)}
-        className="relative block aspect-[16/10] w-full overflow-hidden text-left"
+        className="relative min-h-[230px] overflow-hidden bg-slate-900 text-left sm:min-h-[250px]"
         aria-label={`Pokaż szczegóły: ${movie.title}`}
       >
         {!imageFailed ? (
           <img
-            src={movie.backdropUrl}
-            alt=""
+            src={movie.posterUrl}
+            alt={`Plakat filmu ${movie.title}`}
             onError={() => setImageFailed(true)}
-            className="h-full w-full object-cover transition duration-700 group-hover:scale-105"
+            className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.03]"
           />
         ) : (
-          <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-violet-950 via-slate-900 to-blue-950">
-            <Film className="h-10 w-10 text-white/15" />
-          </div>
+          <span className="flex h-full w-full items-center justify-center bg-slate-900">
+            <Film className="h-7 w-7 text-slate-700" />
+          </span>
         )}
-        <div className="absolute inset-0 bg-gradient-to-t from-ink-900 via-ink-900/25 to-transparent" />
-        <div className="absolute left-4 top-4 flex items-center gap-2">
-          <span className="rounded-lg border border-white/10 bg-black/50 px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-white backdrop-blur-md">
-            #{index + 1} wybór
-          </span>
-          <span className="rounded-lg border border-emerald-300/15 bg-emerald-400/15 px-2 py-1 text-[10px] font-semibold text-emerald-200 backdrop-blur-md">
-            {movie.matchScore}% dopasowania
-          </span>
-        </div>
-        <div className="absolute right-4 top-4 flex gap-2">
-          {isWatched && (
-            <span className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-black/50 text-emerald-300 backdrop-blur-md">
-              <Check className="h-4 w-4" />
-            </span>
-          )}
-          <span className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-black/50 text-white opacity-0 backdrop-blur-md transition group-hover:opacity-100">
-            <Info className="h-4 w-4" />
-          </span>
-        </div>
-        <div className="absolute inset-x-4 bottom-3">
-          <div className="mb-1.5 flex items-center gap-2 text-[11px] text-slate-300">
-            <span className="flex items-center gap-1 font-semibold text-amber-300">
-              <Star className="h-3 w-3 fill-current" />
-              {movie.rating.toFixed(1)}
-            </span>
-            <span className="h-1 w-1 rounded-full bg-slate-500" />
-            <span>{movie.year}</span>
-            <span className="h-1 w-1 rounded-full bg-slate-500" />
-            <span>{movie.runtime}</span>
-            <span className="rounded border border-white/15 px-1 py-0.5 text-[9px]">{movie.certification}</span>
-          </div>
-          <h3 className="text-xl font-bold tracking-tight text-white sm:text-2xl">{movie.title}</h3>
-          <p className="mt-0.5 text-xs text-slate-400">{movie.originalTitle}</p>
-        </div>
+        <span className="absolute left-2 top-2 bg-black/75 px-1.5 py-1 text-[9px] font-semibold text-white backdrop-blur-sm">
+          {String(index + 1).padStart(2, '0')}
+        </span>
       </button>
 
-      <div className="p-4 sm:p-5">
-        <div className="mb-4 flex flex-wrap gap-1.5">
-          {movie.genres.map((genre) => (
-            <span
-              key={genre}
-              className="rounded-md bg-white/[0.05] px-2 py-1 text-[10px] font-medium text-slate-400"
-            >
+      <div className="flex min-w-0 flex-col p-3.5 sm:p-5">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <button type="button" onClick={() => onOpen(movie)} className="text-left">
+              <h3 className="truncate text-base font-semibold tracking-tight text-white transition group-hover:text-violet-200 sm:text-xl">
+                {movie.title}
+              </h3>
+            </button>
+            <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[10px] text-slate-500 sm:text-xs">
+              <span>{movie.year}</span>
+              <span className="text-slate-700">/</span>
+              <span>{movie.runtime}</span>
+              <span className="hidden text-slate-700 sm:inline">/</span>
+              <span className="hidden sm:inline">{movie.certification}</span>
+            </div>
+          </div>
+          <div className="shrink-0 text-right">
+            <p className="text-sm font-semibold text-emerald-400">{movie.matchScore}%</p>
+            <p className="text-[9px] text-slate-600">dopasowania</p>
+          </div>
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center gap-1.5">
+          <span className="mr-1 flex items-center gap-1 text-[10px] font-medium text-amber-300">
+            <Star className="h-3 w-3 fill-current" />
+            {movie.rating.toFixed(1)}
+          </span>
+          {movie.genres.slice(0, 3).map((genre, genreIndex) => (
+            <span key={genre} className="text-[10px] text-slate-500">
               {genre}
+              {genreIndex < Math.min(movie.genres.length, 3) - 1 ? (
+                <span className="ml-1.5 text-slate-700">·</span>
+              ) : null}
             </span>
           ))}
         </div>
 
-        <div className="rounded-2xl border border-violet-400/10 bg-gradient-to-br from-violet-500/[0.08] to-blue-500/[0.04] p-4">
-          <div className="mb-2 flex items-center gap-2 text-violet-300">
-            <Sparkles className="h-3.5 w-3.5" />
-            <h4 className="text-xs font-semibold">Dlaczego to polecamy?</h4>
-          </div>
-          <p className="line-clamp-4 text-xs leading-relaxed text-slate-400">{movie.explanation}</p>
-          <button
-            type="button"
-            onClick={() => onOpen(movie)}
-            className="mt-3 flex items-center gap-1 text-[11px] font-semibold text-violet-300 transition hover:text-violet-200"
-          >
-            Pełne uzasadnienie
-            <ChevronRight className="h-3 w-3" />
-          </button>
+        <div className="mt-4 border-l-2 border-violet-500/50 pl-3">
+          <p className="mb-1 text-[10px] font-medium uppercase tracking-[0.1em] text-slate-600">
+            Dlaczego ten tytuł
+          </p>
+          <p className="line-clamp-4 text-[11px] leading-5 text-slate-400 sm:text-xs">
+            {movie.explanation}
+          </p>
         </div>
 
-        <div className="mt-4 flex gap-2">
+        <div className="mt-auto flex items-center gap-1 pt-4">
           <button
             type="button"
             onClick={() => onToggleSaved(movie.id)}
-            className={`flex h-10 flex-1 items-center justify-center gap-2 rounded-xl text-xs font-semibold transition ${
+            className={`flex h-8 items-center gap-1.5 rounded-md px-2.5 text-[10px] font-medium transition sm:text-[11px] ${
               isSaved
-                ? 'bg-violet-500/15 text-violet-200 ring-1 ring-violet-400/20 hover:bg-violet-500/20'
-                : 'bg-white text-ink-950 hover:bg-violet-100'
+                ? 'bg-violet-500/15 text-violet-200'
+                : 'bg-white/[0.05] text-slate-400 hover:bg-white/[0.08] hover:text-white'
             }`}
           >
             <Bookmark className={`h-3.5 w-3.5 ${isSaved ? 'fill-current' : ''}`} />
-            {isSaved ? 'Zapisano' : 'Zapisz'}
+            <span className="hidden sm:inline">{isSaved ? 'Zapisano' : 'Zapisz'}</span>
           </button>
           <button
             type="button"
             onClick={() => onToggleWatched(movie.id)}
-            className={`flex h-10 flex-1 items-center justify-center gap-2 rounded-xl border text-xs font-semibold transition ${
+            className={`flex h-8 items-center gap-1.5 rounded-md px-2.5 text-[10px] font-medium transition sm:text-[11px] ${
               isWatched
-                ? 'border-emerald-400/20 bg-emerald-400/10 text-emerald-200'
-                : 'border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/[0.07]'
+                ? 'bg-emerald-500/10 text-emerald-300'
+                : 'text-slate-500 hover:bg-white/[0.05] hover:text-slate-300'
             }`}
           >
-            <Eye className="h-3.5 w-3.5" />
-            {isWatched ? 'Obejrzano' : 'Oznacz jako obejrzany'}
+            {isWatched ? <Check className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+            <span className="hidden sm:inline">{isWatched ? 'Obejrzano' : 'Obejrzany'}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => onOpen(movie)}
+            className="ml-auto flex h-8 items-center gap-1 text-[10px] font-medium text-slate-500 transition hover:text-white sm:text-[11px]"
+          >
+            Szczegóły
+            <ChevronRight className="h-3.5 w-3.5" />
           </button>
         </div>
       </div>

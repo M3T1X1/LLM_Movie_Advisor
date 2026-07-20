@@ -5,7 +5,6 @@ import {
   Eye,
   Film,
   Play,
-  Sparkles,
   Star,
   X,
 } from 'lucide-react';
@@ -60,7 +59,7 @@ export function MovieDetailModal({
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <div className="max-h-[96vh] w-full max-w-5xl overflow-y-auto rounded-t-3xl border border-white/10 bg-ink-900 shadow-2xl [scrollbar-color:rgba(148,163,184,0.2)_transparent] sm:rounded-3xl">
+      <div className="max-h-[96vh] w-full max-w-5xl overflow-y-auto rounded-t-xl border border-white/10 bg-[#0d0f15] shadow-2xl [scrollbar-color:rgba(148,163,184,0.2)_transparent] sm:rounded-xl">
         <div className="relative min-h-[340px] overflow-hidden sm:min-h-[420px]">
           {!imageFailed ? (
             <img
@@ -77,7 +76,7 @@ export function MovieDetailModal({
           <div className="absolute inset-0 bg-gradient-to-t from-ink-900 via-ink-900/45 to-black/20" />
           <div className="absolute inset-x-0 bottom-0 p-5 sm:p-8 lg:p-10">
             <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-slate-300">
-              <span className="rounded-lg bg-emerald-400/15 px-2 py-1 font-semibold text-emerald-200 ring-1 ring-emerald-300/15">
+              <span className="bg-emerald-400/15 px-2 py-1 font-semibold text-emerald-200">
                 {movie.matchScore}% dopasowania
               </span>
               <span>{movie.year}</span>
@@ -92,7 +91,7 @@ export function MovieDetailModal({
             <div className="mt-5 flex flex-wrap gap-2">
               <button
                 type="button"
-                className="flex h-11 items-center gap-2 rounded-xl bg-white px-5 text-sm font-bold text-ink-950 transition hover:bg-violet-100"
+                className="flex h-10 items-center gap-2 rounded-md bg-white px-4 text-xs font-semibold text-ink-950 transition hover:bg-slate-200"
               >
                 <Play className="h-4 w-4 fill-current" />
                 Zobacz zwiastun
@@ -100,7 +99,7 @@ export function MovieDetailModal({
               <button
                 type="button"
                 onClick={() => onToggleSaved(movie.id)}
-                className={`flex h-11 items-center gap-2 rounded-xl px-4 text-sm font-semibold transition ${
+                className={`flex h-10 items-center gap-2 rounded-md px-4 text-xs font-semibold transition ${
                   isSaved
                     ? 'bg-violet-500/20 text-violet-100 ring-1 ring-violet-400/30'
                     : 'bg-black/40 text-white ring-1 ring-white/15 hover:bg-black/60'
@@ -123,15 +122,11 @@ export function MovieDetailModal({
 
         <div className="grid gap-8 p-5 sm:p-8 lg:grid-cols-[minmax(0,1.5fr)_minmax(250px,0.6fr)] lg:p-10">
           <div>
-            <div className="mb-8 rounded-2xl border border-violet-400/15 bg-gradient-to-br from-violet-500/10 to-blue-500/5 p-5">
-              <div className="mb-3 flex items-center gap-2 text-violet-300">
-                <Sparkles className="h-4 w-4" />
-                <h3 className="text-sm font-semibold">Dlaczego Scene poleca Ci ten tytuł?</h3>
+            <div className="mb-8 border-l-2 border-violet-500/60 pl-5">
+              <div className="mb-2 text-slate-300">
+                <h3 className="text-xs font-semibold uppercase tracking-[0.1em]">Dlaczego ten tytuł?</h3>
               </div>
               <p className="text-sm leading-7 text-slate-300">{movie.explanation}</p>
-              <p className="mt-3 text-[10px] uppercase tracking-widest text-slate-600">
-                Wygenerowane przez Agenta Wyjaśnień
-              </p>
             </div>
 
             <h3 className="text-sm font-semibold text-white">Opis</h3>
@@ -140,8 +135,8 @@ export function MovieDetailModal({
             <h3 className="mt-8 text-sm font-semibold text-white">Główna obsada</h3>
             <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
               {movie.cast.map((person) => (
-                <div key={person.id} className="rounded-xl border border-white/[0.06] bg-white/[0.025] p-3">
-                  <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-slate-700 to-slate-800 text-xs font-bold text-slate-300">
+                <div key={person.id} className="rounded-md border border-white/[0.06] bg-white/[0.025] p-3">
+                  <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-full bg-slate-800 text-[10px] font-semibold text-slate-400">
                     {person.name
                       .split(' ')
                       .map((part) => part[0])
@@ -155,7 +150,7 @@ export function MovieDetailModal({
           </div>
 
           <aside>
-            <div className="rounded-2xl border border-white/[0.07] bg-white/[0.025] p-5">
+            <div className="rounded-lg border border-white/[0.07] bg-white/[0.025] p-5">
               <div className="flex items-center justify-between border-b border-white/[0.06] pb-4">
                 <span className="text-xs text-slate-500">Ocena widzów</span>
                 <span className="flex items-center gap-1.5 text-sm font-bold text-white">
@@ -186,7 +181,7 @@ export function MovieDetailModal({
               <button
                 type="button"
                 onClick={() => onToggleWatched(movie.id)}
-                className={`mt-1 flex h-11 w-full items-center justify-center gap-2 rounded-xl border text-xs font-semibold transition ${
+                className={`mt-1 flex h-10 w-full items-center justify-center gap-2 rounded-md border text-xs font-medium transition ${
                   isWatched
                     ? 'border-emerald-400/20 bg-emerald-400/10 text-emerald-200'
                     : 'border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/[0.07]'
