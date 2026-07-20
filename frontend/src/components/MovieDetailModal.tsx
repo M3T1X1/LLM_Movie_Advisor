@@ -99,11 +99,11 @@ export function MovieDetailModal({
             <div className="mt-5 flex flex-wrap gap-2">
               <button
                 type="button"
-                disabled={isWatchlisted}
                 onClick={() => onWatchlist(candidate)}
+                title={isWatchlisted ? 'Usuń z listy' : 'Zapisz na później'}
                 className={`flex h-10 items-center gap-2 rounded-md px-4 text-xs font-semibold transition ${
                   isWatchlisted
-                    ? 'cursor-default bg-violet-500/20 text-violet-100 ring-1 ring-violet-400/30'
+                    ? 'bg-violet-500/20 text-violet-100 ring-1 ring-violet-400/30 hover:bg-red-500/15 hover:text-red-200 hover:ring-red-400/20'
                     : 'bg-black/40 text-white ring-1 ring-white/15 hover:bg-black/60'
                 }`}
               >
@@ -178,11 +178,11 @@ export function MovieDetailModal({
               </dl>
               <button
                 type="button"
-                disabled={isWatched}
                 onClick={() => onMarkWatched(candidate)}
+                title={isWatched ? 'Cofnij oznaczenie jako obejrzany' : 'Oznacz jako obejrzany'}
                 className={`mt-1 flex h-10 w-full items-center justify-center gap-2 rounded-md border text-xs font-medium transition ${
                   isWatched
-                    ? 'cursor-default border-emerald-400/20 bg-emerald-400/10 text-emerald-200'
+                    ? 'border-emerald-400/20 bg-emerald-400/10 text-emerald-200 hover:border-red-400/20 hover:bg-red-500/10 hover:text-red-300'
                     : 'border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/[0.07]'
                 }`}
               >

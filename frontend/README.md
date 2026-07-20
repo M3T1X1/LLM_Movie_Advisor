@@ -32,6 +32,7 @@ Frontend jest przygotowany pod kontrakt odpowiadający encjom z diagramu ERD:
   kandydatów; odpowiedź jest zgodna z `RecommendationResponse` w `src/types/index.ts`.
 - `POST /api/interactions/` — zapisuje zdarzenie zgodne z `interaction_type_enum`, np.
   `details_opened`, `watchlisted` albo `watched`.
+- `DELETE /api/interactions/:id/` — usuwa zapisanie lub oznaczenie tytułu jako obejrzany.
 - `GET /api/contents/` — zwraca katalog filmów i seriali z gatunkami oraz metadanymi TMDB.
 
 Wywołania wysyłają cookie sesyjne i nagłówek `X-CSRFToken`, więc są przygotowane do autoryzacji
@@ -45,6 +46,8 @@ sesyjnej Django.
 - `src/components/ChatInterface.tsx` — rozmowa i status pracy agentów,
 - `src/components/RecommendationCard.tsx` — rekomendacja z wyjaśnieniem AI,
 - `src/components/CatalogView.tsx` — katalog treści, wyszukiwanie, filtry i sortowanie,
+- `src/components/AnalyticsView.tsx` — statystyki użytkownika, dashboard wykresów i interaktywna
+  mapa gustu,
 - `src/components/MovieDetailModal.tsx` — metadane treści i akcje użytkownika,
 - `src/components/ProfileView.tsx` — konto, profil semantyczny i znormalizowane preferencje.
 
@@ -54,7 +57,7 @@ sesyjnej Django.
 - `content.id` i `content.tmdb_id` są osobnymi polami (`id` i `tmdbId`).
 - Typ treści przyjmuje wyłącznie wartości `movie` i `tv`.
 - Wynik, pozycja i wyjaśnienie rekomendacji należą do `RunCandidate`, a nie do `Content`.
-- Zapisanie i obejrzenie są jednokierunkowymi zdarzeniami `Interaction`; ERD nie definiuje
-  zdarzeń cofających te operacje.
+- Zapisanie i obejrzenie tworzą rekordy `Interaction`. Cofnięcie oznaczenia usuwa odpowiedni
+  rekord zamiast dodawać typ zdarzenia spoza `interaction_type_enum`.
 - Dane demonstracyjne zachowują strukturę relacji z diagramu, mimo że nie są jeszcze pobierane z
   PostgreSQL.

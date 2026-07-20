@@ -122,3 +122,17 @@ export async function createInteraction(
 
   if (!response.ok) throw new Error(`Nie udało się zapisać interakcji (${response.status}).`);
 }
+
+export async function deleteInteraction(interactionId: DatabaseId) {
+  if (USE_MOCK_API) return;
+
+  const response = await fetch(`${API_BASE_URL}/interactions/${interactionId}/`, {
+    method: 'DELETE',
+    credentials: 'include',
+    headers: {
+      'X-CSRFToken': getCookie('csrftoken'),
+    },
+  });
+
+  if (!response.ok) throw new Error(`Nie udało się usunąć interakcji (${response.status}).`);
+}

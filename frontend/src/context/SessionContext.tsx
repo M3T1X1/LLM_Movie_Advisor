@@ -50,9 +50,13 @@ interface SessionContextValue extends StoredSession {
     interactionType: InteractionType,
     rating?: number,
   ) => void;
+  removeInteraction: (
+    contentId: DatabaseId,
+    interactionType: 'watchlisted' | 'watched',
+  ) => Interaction | null;
 }
 
-const STORAGE_KEY = 'scene-ai-session-erd-v1';
+const STORAGE_KEY = 'scene-ai-session-erd-v2';
 const CURRENT_CONVERSATION_ID = '1';
 const SessionContext = createContext<SessionContextValue | undefined>(undefined);
 let localIdOffset = 0;
@@ -233,6 +237,24 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     });
   };
 
+  const removeInteraction = (
+    contentId: DatabaseId,
+    interactionType: 'watchlisted' | 'watched',
+  ) => {
+    const interaction = [...session.interactions]
+      .reverse()
+      .find(
+        (item) => item.contentId === contentId && item.interactionType === interactionType,
+      );
+    if (!interaction) return null;
+
+    setSession((current) => ({
+      ...current,
+      interactions: current.interactions.filter((item) => item.id !== interaction.id),
+    }));
+    return interaction;
+  };
+
   const watchlistedContentIds = Array.from(
     new Set(
       session.interactions
@@ -260,6 +282,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     addDetectedPreferences,
     updateConversationFromQuery,
     recordInteraction,
+    removeInteraction,
   };
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

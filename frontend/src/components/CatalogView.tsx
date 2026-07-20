@@ -2,6 +2,7 @@ import {
   ArrowUpDown,
   Bookmark,
   Check,
+  Eye,
   Film,
   Library,
   Search,
@@ -22,6 +23,7 @@ interface CatalogViewProps {
   watchlistedContentIds: DatabaseId[];
   watchedContentIds: DatabaseId[];
   onWatchlist: (content: Content) => void;
+  onMarkWatched: (content: Content) => void;
 }
 
 export function CatalogView({
@@ -29,6 +31,7 @@ export function CatalogView({
   watchlistedContentIds,
   watchedContentIds,
   onWatchlist,
+  onMarkWatched,
 }: CatalogViewProps) {
   const [query, setQuery] = useState('');
   const [mediaType, setMediaType] = useState<MediaFilter>('all');
@@ -195,6 +198,7 @@ export function CatalogView({
               isWatchlisted={watchlistedContentIds.includes(item.id)}
               isWatched={watchedContentIds.includes(item.id)}
               onWatchlist={onWatchlist}
+              onMarkWatched={onMarkWatched}
             />
           ))}
         </div>
@@ -266,11 +270,13 @@ export function CatalogCard({
   isWatchlisted,
   isWatched,
   onWatchlist,
+  onMarkWatched,
 }: {
   content: Content;
   isWatchlisted: boolean;
   isWatched: boolean;
   onWatchlist: (content: Content) => void;
+  onMarkWatched: (content: Content) => void;
 }) {
   const [imageFailed, setImageFailed] = useState(false);
   const posterUrl = getPosterUrl(content);
@@ -316,19 +322,34 @@ export function CatalogCard({
         <p className="mt-2 truncate text-[10px] text-slate-600">
           {content.genres.slice(0, 2).map((genre) => genre.name).join(' · ')}
         </p>
-        <button
-          type="button"
-          disabled={isWatchlisted}
-          onClick={() => onWatchlist(content)}
-          className={`mt-3 flex h-8 w-full items-center justify-center gap-1.5 rounded-md text-[10px] font-medium transition ${
-            isWatchlisted
-              ? 'cursor-default bg-violet-500/15 text-violet-200'
-              : 'bg-white/[0.05] text-slate-400 hover:bg-white/[0.09] hover:text-white'
-          }`}
-        >
-          <Bookmark className={`h-3.5 w-3.5 ${isWatchlisted ? 'fill-current' : ''}`} />
-          {isWatchlisted ? 'Na Twojej liście' : 'Zapisz na później'}
-        </button>
+        <div className="mt-3 grid grid-cols-2 gap-1.5">
+          <button
+            type="button"
+            onClick={() => onWatchlist(content)}
+            title={isWatchlisted ? 'Usuń z listy' : 'Zapisz na później'}
+            className={`flex h-8 items-center justify-center gap-1.5 rounded-md text-[10px] font-medium transition ${
+              isWatchlisted
+                ? 'bg-violet-500/15 text-violet-200 hover:bg-red-500/10 hover:text-red-300'
+                : 'bg-white/[0.05] text-slate-400 hover:bg-white/[0.09] hover:text-white'
+            }`}
+          >
+            <Bookmark className={`h-3.5 w-3.5 ${isWatchlisted ? 'fill-current' : ''}`} />
+            {isWatchlisted ? 'Zapisano' : 'Zapisz'}
+          </button>
+          <button
+            type="button"
+            onClick={() => onMarkWatched(content)}
+            title={isWatched ? 'Cofnij oznaczenie jako obejrzany' : 'Oznacz jako obejrzany'}
+            className={`flex h-8 items-center justify-center gap-1.5 rounded-md text-[10px] font-medium transition ${
+              isWatched
+                ? 'bg-emerald-500/10 text-emerald-300 hover:bg-red-500/10 hover:text-red-300'
+                : 'bg-white/[0.03] text-slate-500 hover:bg-white/[0.08] hover:text-white'
+            }`}
+          >
+            {isWatched ? <Check className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+            {isWatched ? 'Obejrzano' : 'Obejrzyj'}
+          </button>
+        </div>
       </div>
     </article>
   );

@@ -1,5 +1,6 @@
 import { Bookmark, ChevronRight, SlidersHorizontal } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
+import { AnalyticsView } from './components/AnalyticsView';
 import { CatalogCard, CatalogView } from './components/CatalogView';
 import { ChatInterface } from './components/ChatInterface';
 import { EmptyState } from './components/EmptyState';
@@ -9,7 +10,12 @@ import { ProfileView } from './components/ProfileView';
 import { RecommendationCard } from './components/RecommendationCard';
 import { useSession } from './context/SessionContext';
 import { demoCandidates, demoCatalogContent, initialAgentSteps } from './data/mockData';
-import { createInteraction, getCatalogContent, requestRecommendations } from './services/api';
+import {
+  createInteraction,
+  deleteInteraction,
+  getCatalogContent,
+  requestRecommendations,
+} from './services/api';
 import type { AgentStep, AppView, Content, RunCandidate } from './types';
 
 function wait(duration: number) {
@@ -21,6 +27,7 @@ export default function App() {
     user,
     semanticProfile,
     preferences,
+    interactions,
     messages,
     conversations,
     currentConversationId,
@@ -33,6 +40,7 @@ export default function App() {
     addDetectedPreferences,
     updateConversationFromQuery,
     recordInteraction: storeInteraction,
+    removeInteraction: removeStoredInteraction,
   } = useSession();
   const [activeView, setActiveView] = useState<AppView>('recommendations');
   const [recommendations, setRecommendations] = useState<RunCandidate[]>(demoCandidates);
@@ -96,13 +104,21 @@ export default function App() {
   };
 
   const handleWatchlist = (candidate: RunCandidate) => {
-    if (watchlistedContentIds.includes(candidate.contentId)) return;
+    if (watchlistedContentIds.includes(candidate.contentId)) {
+      const interaction = removeStoredInteraction(candidate.contentId, 'watchlisted');
+      if (interaction) void deleteInteraction(interaction.id).catch(() => undefined);
+      return;
+    }
     storeInteraction(candidate.contentId, candidate.id, 'watchlisted');
     void createInteraction(candidate.contentId, candidate.id, 'watchlisted').catch(() => undefined);
   };
 
   const handleMarkWatched = (candidate: RunCandidate) => {
-    if (watchedContentIds.includes(candidate.contentId)) return;
+    if (watchedContentIds.includes(candidate.contentId)) {
+      const interaction = removeStoredInteraction(candidate.contentId, 'watched');
+      if (interaction) void deleteInteraction(interaction.id).catch(() => undefined);
+      return;
+    }
     storeInteraction(candidate.contentId, candidate.id, 'watched');
     void createInteraction(candidate.contentId, candidate.id, 'watched').catch(() => undefined);
   };
@@ -114,9 +130,23 @@ export default function App() {
   };
 
   const handleCatalogWatchlist = (content: Content) => {
-    if (watchlistedContentIds.includes(content.id)) return;
+    if (watchlistedContentIds.includes(content.id)) {
+      const interaction = removeStoredInteraction(content.id, 'watchlisted');
+      if (interaction) void deleteInteraction(interaction.id).catch(() => undefined);
+      return;
+    }
     storeInteraction(content.id, null, 'watchlisted');
     void createInteraction(content.id, null, 'watchlisted').catch(() => undefined);
+  };
+
+  const handleCatalogWatched = (content: Content) => {
+    if (watchedContentIds.includes(content.id)) {
+      const interaction = removeStoredInteraction(content.id, 'watched');
+      if (interaction) void deleteInteraction(interaction.id).catch(() => undefined);
+      return;
+    }
+    storeInteraction(content.id, null, 'watched');
+    void createInteraction(content.id, null, 'watched').catch(() => undefined);
   };
 
   const savedContent = catalogContent.filter((content) =>
@@ -157,12 +187,19 @@ export default function App() {
               onUpdateUser={updateUser}
               onReplacePreferenceGroups={replacePreferenceGroups}
             />
+          ) : activeView === 'analytics' ? (
+            <AnalyticsView
+              content={catalogContent}
+              interactions={interactions}
+              preferences={preferences}
+            />
           ) : activeView === 'catalog' ? (
             <CatalogView
               content={catalogContent}
               watchlistedContentIds={watchlistedContentIds}
               watchedContentIds={watchedContentIds}
               onWatchlist={handleCatalogWatchlist}
+              onMarkWatched={handleCatalogWatched}
             />
           ) : activeView === 'saved' ? (
             <div className="mx-auto max-w-4xl">
@@ -191,6 +228,7 @@ export default function App() {
                       isWatchlisted
                       isWatched={watchedContentIds.includes(content.id)}
                       onWatchlist={handleCatalogWatchlist}
+                      onMarkWatched={handleCatalogWatched}
                     />
                   ))}
                 </div>

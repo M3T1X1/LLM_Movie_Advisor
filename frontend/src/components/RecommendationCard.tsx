@@ -114,11 +114,11 @@ export function RecommendationCard({
         <div className="mt-auto flex items-center gap-1 pt-4">
           <button
             type="button"
-            disabled={isWatchlisted}
             onClick={() => onWatchlist(candidate)}
+            title={isWatchlisted ? 'Usuń z listy' : 'Zapisz na później'}
             className={`flex h-8 items-center gap-1.5 rounded-md px-2.5 text-[10px] font-medium transition sm:text-[11px] ${
               isWatchlisted
-                ? 'cursor-default bg-violet-500/15 text-violet-200'
+                ? 'bg-violet-500/15 text-violet-200 hover:bg-red-500/10 hover:text-red-300'
                 : 'bg-white/[0.05] text-slate-400 hover:bg-white/[0.08] hover:text-white'
             }`}
           >
@@ -127,11 +127,11 @@ export function RecommendationCard({
           </button>
           <button
             type="button"
-            disabled={isWatched}
             onClick={() => onMarkWatched(candidate)}
+            title={isWatched ? 'Cofnij oznaczenie jako obejrzany' : 'Oznacz jako obejrzany'}
             className={`flex h-8 items-center gap-1.5 rounded-md px-2.5 text-[10px] font-medium transition sm:text-[11px] ${
               isWatched
-                ? 'cursor-default bg-emerald-500/10 text-emerald-300'
+                ? 'bg-emerald-500/10 text-emerald-300 hover:bg-red-500/10 hover:text-red-300'
                 : 'text-slate-500 hover:bg-white/[0.05] hover:text-slate-300'
             }`}
           >
