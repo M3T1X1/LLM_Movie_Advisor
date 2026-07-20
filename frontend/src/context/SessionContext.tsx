@@ -1,132 +1,264 @@
+import { createContext, type ReactNode, useContext, useEffect, useState } from 'react';
 import {
-  createContext,
-  type ReactNode,
-  useContext,
-  useEffect,
-  useState,
-} from 'react';
-import { demoHistory, demoUser, initialMessages } from '../data/mockData';
+  demoConversations,
+  demoInteractions,
+  demoPreferences,
+  demoProfile,
+  demoUser,
+  initialMessages,
+} from '../data/mockData';
 import type {
+  AppUser,
   ChatMessage,
+  Conversation,
+  DatabaseId,
+  Interaction,
+  InteractionType,
   MessageRole,
-  RecommendationHistoryItem,
-  UserProfile,
+  UserPreference,
+  UserSemanticProfile,
 } from '../types';
 
 interface StoredSession {
-  user: UserProfile;
-  savedMovieIds: number[];
-  watchedMovieIds: number[];
-  history: RecommendationHistoryItem[];
+  user: AppUser;
+  semanticProfile: UserSemanticProfile;
+  preferences: UserPreference[];
+  conversations: Conversation[];
+  messages: ChatMessage[];
+  interactions: Interaction[];
+}
+
+interface PreferenceGroups {
+  favoriteGenres: string[];
+  positivePreferences: string[];
+  avoidedPreferences: string[];
 }
 
 interface SessionContextValue extends StoredSession {
-  messages: ChatMessage[];
-  addMessage: (role: MessageRole, content: string) => void;
-  toggleSaved: (movieId: number) => void;
-  toggleWatched: (movieId: number) => void;
-  updateUser: (changes: Partial<UserProfile>) => void;
-  addDetectedPreferences: (preferences: string[]) => void;
-  recordInteraction: (query: string, resultCount: number) => void;
+  currentConversationId: DatabaseId;
+  watchlistedContentIds: DatabaseId[];
+  watchedContentIds: DatabaseId[];
+  addMessage: (role: MessageRole, content: string) => ChatMessage;
+  appendMessage: (message: ChatMessage) => void;
+  updateUser: (changes: Partial<Pick<AppUser, 'username' | 'email'>>) => void;
+  replacePreferenceGroups: (groups: PreferenceGroups) => void;
+  addDetectedPreferences: (preferences: UserPreference[]) => void;
+  updateConversationFromQuery: (query: string) => void;
+  recordInteraction: (
+    contentId: DatabaseId,
+    sourceCandidateId: DatabaseId | null,
+    interactionType: InteractionType,
+    rating?: number,
+  ) => void;
 }
 
-const STORAGE_KEY = 'scene-ai-session';
+const STORAGE_KEY = 'scene-ai-session-erd-v1';
+const CURRENT_CONVERSATION_ID = '1';
 const SessionContext = createContext<SessionContextValue | undefined>(undefined);
+let localIdOffset = 0;
+
+function createLocalDatabaseId() {
+  localIdOffset += 1;
+  return String(Date.now() + localIdOffset);
+}
+
+function createInitialSession(): StoredSession {
+  return {
+    user: demoUser,
+    semanticProfile: demoProfile,
+    preferences: demoPreferences,
+    conversations: demoConversations,
+    messages: initialMessages,
+    interactions: demoInteractions,
+  };
+}
 
 function loadSession(): StoredSession {
-  const fallback: StoredSession = {
-    user: demoUser,
-    savedMovieIds: [210577],
-    watchedMovieIds: [],
-    history: demoHistory,
-  };
-
   try {
     const stored = window.localStorage.getItem(STORAGE_KEY);
-    return stored ? { ...fallback, ...JSON.parse(stored) } : fallback;
+    return stored ? (JSON.parse(stored) as StoredSession) : createInitialSession();
   } catch {
-    return fallback;
+    return createInitialSession();
   }
 }
 
-function createMessage(role: MessageRole, content: string): ChatMessage {
-  return {
-    id: crypto.randomUUID(),
-    role,
-    content,
-    createdAt: new Date().toISOString(),
-  };
-}
-
 export function SessionProvider({ children }: { children: ReactNode }) {
-  const [storedSession, setStoredSession] = useState<StoredSession>(loadSession);
-  const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
+  const [session, setSession] = useState<StoredSession>(loadSession);
 
   useEffect(() => {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(storedSession));
-  }, [storedSession]);
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
+  }, [session]);
 
   const addMessage = (role: MessageRole, content: string) => {
-    setMessages((current) => [...current, createMessage(role, content)]);
+    const conversationMessages = session.messages.filter(
+      (message) => message.conversationId === CURRENT_CONVERSATION_ID,
+    );
+    const sequenceNo = Math.max(0, ...conversationMessages.map((message) => message.sequenceNo)) + 1;
+    const message: ChatMessage = {
+      id: createLocalDatabaseId(),
+      conversationId: CURRENT_CONVERSATION_ID,
+      role,
+      content,
+      sequenceNo,
+      createdAt: new Date().toISOString(),
+    };
+    setSession((current) => ({ ...current, messages: [...current.messages, message] }));
+    return message;
   };
 
-  const toggleSaved = (movieId: number) => {
-    setStoredSession((current) => ({
+  const appendMessage = (message: ChatMessage) => {
+    setSession((current) => ({
       ...current,
-      savedMovieIds: current.savedMovieIds.includes(movieId)
-        ? current.savedMovieIds.filter((id) => id !== movieId)
-        : [...current.savedMovieIds, movieId],
+      messages: current.messages.some((item) => item.id === message.id)
+        ? current.messages
+        : [...current.messages, message],
     }));
   };
 
-  const toggleWatched = (movieId: number) => {
-    setStoredSession((current) => ({
-      ...current,
-      watchedMovieIds: current.watchedMovieIds.includes(movieId)
-        ? current.watchedMovieIds.filter((id) => id !== movieId)
-        : [...current.watchedMovieIds, movieId],
-    }));
-  };
-
-  const updateUser = (changes: Partial<UserProfile>) => {
-    setStoredSession((current) => ({
+  const updateUser = (changes: Partial<Pick<AppUser, 'username' | 'email'>>) => {
+    setSession((current) => ({
       ...current,
       user: { ...current.user, ...changes },
     }));
   };
 
-  const addDetectedPreferences = (preferences: string[]) => {
-    setStoredSession((current) => ({
+  const replacePreferenceGroups = (groups: PreferenceGroups) => {
+    const favoriteGenres = Array.from(new Set(groups.favoriteGenres));
+    const positivePreferences = Array.from(new Set(groups.positivePreferences));
+    const positiveValues = new Set(positivePreferences);
+    const avoidedPreferences = Array.from(new Set(groups.avoidedPreferences)).filter(
+      (value) => !positiveValues.has(value),
+    );
+
+    setSession((current) => {
+      const timestamp = new Date().toISOString();
+      const mapPreference = (
+        preferenceValue: string,
+        polarity: -1 | 1,
+        requiredType?: string,
+      ): UserPreference => {
+        const existing = current.preferences.find(
+          (preference) =>
+            preference.preferenceValue === preferenceValue &&
+            (requiredType
+              ? preference.preferenceType === requiredType
+              : preference.preferenceType !== 'genre'),
+        );
+        return existing
+          ? { ...existing, polarity, updatedAt: timestamp }
+          : {
+              id: createLocalDatabaseId(),
+              userId: current.user.id,
+              preferenceType: requiredType ?? 'user_defined',
+              preferenceValue,
+              polarity,
+              weight: 1,
+              confidence: 1,
+              createdAt: timestamp,
+              updatedAt: timestamp,
+            };
+      };
+
+      const preferences = [
+        ...favoriteGenres.map((value) => mapPreference(value, 1, 'genre')),
+        ...positivePreferences.map((value) => mapPreference(value, 1)),
+        ...avoidedPreferences.map((value) => mapPreference(value, -1)),
+      ];
+      return { ...current, preferences };
+    });
+  };
+
+  const addDetectedPreferences = (detectedPreferences: UserPreference[]) => {
+    setSession((current) => {
+      const merged = [...current.preferences];
+      detectedPreferences.forEach((preference) => {
+        const index = merged.findIndex(
+          (item) =>
+            item.preferenceType === preference.preferenceType &&
+            item.preferenceValue === preference.preferenceValue,
+        );
+        if (index >= 0) merged[index] = preference;
+        else merged.push(preference);
+      });
+      return { ...current, preferences: merged };
+    });
+  };
+
+  const updateConversationFromQuery = (query: string) => {
+    setSession((current) => ({
       ...current,
-      user: {
-        ...current.user,
-        preferences: Array.from(new Set([...preferences, ...current.user.preferences])).slice(0, 6),
-      },
+      conversations: current.conversations.map((conversation) =>
+        conversation.id === CURRENT_CONVERSATION_ID
+          ? {
+              ...conversation,
+              title: query.slice(0, 255),
+              updatedAt: new Date().toISOString(),
+            }
+          : conversation,
+      ),
     }));
   };
 
-  const recordInteraction = (query: string, resultCount: number) => {
-    const item: RecommendationHistoryItem = {
-      id: crypto.randomUUID(),
-      query,
-      resultCount,
-      createdAt: new Date().toISOString(),
-    };
+  const recordInteraction = (
+    contentId: DatabaseId,
+    sourceCandidateId: DatabaseId | null,
+    interactionType: InteractionType,
+    rating?: number,
+  ) => {
+    setSession((current) => {
+      if (
+        interactionType === 'rated' &&
+        (rating === undefined || rating < 0 || rating > 10)
+      ) {
+        return current;
+      }
+      const isSingleStateEvent = interactionType === 'watchlisted' || interactionType === 'watched';
+      const alreadyRecorded = current.interactions.some(
+        (interaction) =>
+          interaction.contentId === contentId && interaction.interactionType === interactionType,
+      );
+      if (isSingleStateEvent && alreadyRecorded) return current;
 
-    setStoredSession((current) => ({
-      ...current,
-      history: [item, ...current.history].slice(0, 12),
-    }));
+      const interaction: Interaction = {
+        id: createLocalDatabaseId(),
+        userId: current.user.id,
+        contentId,
+        sourceCandidateId,
+        interactionType,
+        rating: interactionType === 'rated' ? (rating ?? null) : null,
+        metadata: {},
+        createdAt: new Date().toISOString(),
+      };
+      return { ...current, interactions: [...current.interactions, interaction] };
+    });
   };
+
+  const watchlistedContentIds = Array.from(
+    new Set(
+      session.interactions
+        .filter((interaction) => interaction.interactionType === 'watchlisted')
+        .map((interaction) => interaction.contentId),
+    ),
+  );
+  const watchedContentIds = Array.from(
+    new Set(
+      session.interactions
+        .filter((interaction) => interaction.interactionType === 'watched')
+        .map((interaction) => interaction.contentId),
+    ),
+  );
 
   const value: SessionContextValue = {
-    ...storedSession,
-    messages,
+    ...session,
+    currentConversationId: CURRENT_CONVERSATION_ID,
+    watchlistedContentIds,
+    watchedContentIds,
     addMessage,
-    toggleSaved,
-    toggleWatched,
+    appendMessage,
     updateUser,
+    replacePreferenceGroups,
     addDetectedPreferences,
+    updateConversationFromQuery,
     recordInteraction,
   };
 
@@ -135,10 +267,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
 export function useSession() {
   const context = useContext(SessionContext);
-
-  if (!context) {
-    throw new Error('useSession musi być użyty wewnątrz SessionProvider.');
-  }
-
+  if (!context) throw new Error('useSession musi być użyty wewnątrz SessionProvider.');
   return context;
 }

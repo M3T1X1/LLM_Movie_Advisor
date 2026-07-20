@@ -1,8 +1,8 @@
-import { Bookmark, Clapperboard, Sparkles, UserRound } from 'lucide-react';
-import type { AppView, UserProfile } from '../types';
+import { Bookmark, Sparkles, UserRound } from 'lucide-react';
+import type { AppUser, AppView } from '../types';
 
 interface NavbarProps {
-  user: UserProfile;
+  user: AppUser;
   activeView: AppView;
   onViewChange: (view: AppView) => void;
 }
@@ -14,21 +14,11 @@ const navigation: { id: AppView; label: string; icon: typeof Sparkles }[] = [
 ];
 
 export function Navbar({ user, activeView, onViewChange }: NavbarProps) {
+  const initials = user.username.slice(0, 2).toUpperCase();
+
   return (
     <header className="sticky top-0 z-40 border-b border-white/[0.07] bg-ink-950/95 backdrop-blur-lg">
       <div className="mx-auto flex h-14 max-w-[1480px] items-center px-4 sm:px-6 lg:px-8">
-        <button
-          type="button"
-          onClick={() => onViewChange('recommendations')}
-          className="mr-6 flex items-center gap-2.5"
-          aria-label="Przejdź do rekomendacji"
-        >
-          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-600 text-white">
-            <Clapperboard className="h-4 w-4" />
-          </span>
-          <span className="text-sm font-semibold tracking-tight text-white">Scene</span>
-        </button>
-
         <nav className="flex h-full items-center gap-1">
           {navigation.map((item) => {
             const Icon = item.icon;
@@ -52,15 +42,11 @@ export function Navbar({ user, activeView, onViewChange }: NavbarProps) {
         </nav>
 
         <div className="ml-auto flex items-center gap-4">
-          <div className="hidden items-center gap-2 text-[11px] text-slate-500 lg:flex">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-            System gotowy
-          </div>
           <div className="flex items-center gap-2 py-1 pl-1 pr-2 text-xs text-slate-400">
             <span className="flex h-7 w-7 items-center justify-center rounded-md bg-slate-800 text-[10px] font-semibold text-slate-200">
-              {user.initials}
+              {initials}
             </span>
-            <span className="hidden md:inline">{user.name.split(' ')[0]}</span>
+            <span className="hidden md:inline">{user.username}</span>
           </div>
         </div>
       </div>

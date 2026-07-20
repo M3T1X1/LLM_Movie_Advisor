@@ -1,154 +1,295 @@
 import type {
+  AgentExecution,
   AgentStep,
+  AppUser,
   ChatMessage,
-  Movie,
-  RecommendationHistoryItem,
-  UserProfile,
+  Conversation,
+  Interaction,
+  RecommendationRequestRecord,
+  RecommendationRun,
+  RunCandidate,
+  UserPreference,
+  UserSemanticProfile,
 } from '../types';
+
+const now = new Date().toISOString();
+const yesterday = new Date(Date.now() - 86_400_000).toISOString();
+const fourDaysAgo = new Date(Date.now() - 4 * 86_400_000).toISOString();
+
+export const demoUser: AppUser = {
+  id: '1',
+  email: 'kacper@example.com',
+  username: 'kacper',
+  dateJoined: '2026-07-01T10:00:00.000Z',
+  isActive: true,
+};
+
+export const demoProfile: UserSemanticProfile = {
+  userId: '1',
+  semanticSummary:
+    'Preferuje kino o mrocznym klimacie, z powolnie budowanym napięciem i niejednoznacznym finałem.',
+  version: 1,
+  lastRebuiltAt: yesterday,
+  updatedAt: yesterday,
+};
+
+export const demoPreferences: UserPreference[] = [
+  createPreference('1', 'genre', 'Thriller', 1, 0.95),
+  createPreference('2', 'genre', 'Science Fiction', 1, 0.87),
+  createPreference('3', 'genre', 'Drama', 1, 0.82),
+  createPreference('4', 'narrative', 'Niejednoznaczne zakończenia', 1, 0.9),
+  createPreference('5', 'pacing', 'Powolne budowanie napięcia', 1, 0.84),
+  createPreference('6', 'mood', 'Mroczny klimat', 1, 0.92),
+  createPreference('7', 'humor', 'Slapstick', -1, 0.88),
+  createPreference('8', 'violence', 'Nadmierny gore', -1, 0.8),
+];
+
+export const demoConversations: Conversation[] = [
+  {
+    id: '1',
+    userId: '1',
+    title: 'Mroczny thriller z twistem',
+    createdAt: now,
+    updatedAt: now,
+  },
+  {
+    id: '2',
+    userId: '1',
+    title: 'Inteligentne sci-fi na spokojny wieczór',
+    createdAt: yesterday,
+    updatedAt: yesterday,
+  },
+  {
+    id: '3',
+    userId: '1',
+    title: 'Krótki serial kryminalny',
+    createdAt: fourDaysAgo,
+    updatedAt: fourDaysAgo,
+  },
+];
+
+export const initialMessages: ChatMessage[] = [
+  {
+    id: '1',
+    conversationId: '1',
+    role: 'assistant',
+    content:
+      'Cześć. Opowiedz mi, jaki masz dziś nastrój albo jakiego doświadczenia szukasz — resztą zajmie się mój zespół agentów.',
+    sequenceNo: 1,
+    createdAt: now,
+  },
+];
 
 export const initialAgentSteps: AgentStep[] = [
   {
     key: 'profiling',
     name: 'Agent Profilowania',
     activity: 'Analizuje nastrój i intencję',
-    status: 'idle',
+    status: 'pending',
   },
   {
     key: 'retrieval',
     name: 'Agent Danych',
     activity: 'Przeszukuje katalog TMDB',
-    status: 'idle',
+    status: 'pending',
   },
   {
     key: 'ranking',
     name: 'Agent Rankingu',
     activity: 'Porównuje tytuły z Twoim gustem',
-    status: 'idle',
+    status: 'pending',
   },
   {
     key: 'explanation',
     name: 'Agent Wyjaśnień',
     activity: 'Uzasadnia najlepsze wybory',
-    status: 'idle',
+    status: 'pending',
   },
 ];
 
-export const initialMessages: ChatMessage[] = [
-  {
-    id: 'welcome-message',
-    role: 'assistant',
-    content:
-      'Cześć, Kacper. Opowiedz mi, jaki masz dziś nastrój albo jakiego doświadczenia szukasz — resztą zajmie się mój zespół agentów.',
-    createdAt: new Date().toISOString(),
+export const demoRequest: RecommendationRequestRecord = {
+  id: '1',
+  conversationId: '1',
+  triggerMessageId: '2',
+  mood: 'mroczny',
+  extractedContext: {
+    themes: ['twist fabularny'],
+    desired_tone: 'mroczny',
   },
-];
-
-export const demoUser: UserProfile = {
-  id: 'user-1',
-  name: 'Kacper Dusza',
-  email: 'kacper@example.com',
-  initials: 'KD',
-  favoriteGenres: ['Thriller', 'Sci-Fi', 'Dramat'],
-  preferences: ['Niejednoznaczne zakończenia', 'Powolne budowanie napięcia', 'Mroczny klimat'],
-  avoidedThemes: ['Slapstick', 'Nadmierny gore'],
+  constraintsData: {
+    ending: 'bez happy endu',
+  },
+  createdAt: now,
 };
 
-export const demoHistory: RecommendationHistoryItem[] = [
+export const demoRun: RecommendationRun = {
+  id: '1',
+  requestId: '1',
+  status: 'completed',
+  graphVersion: '1.0',
+  modelName: 'mock-model',
+  startedAt: now,
+  finishedAt: now,
+};
+
+export const demoCandidates: RunCandidate[] = [
   {
-    id: 'history-1',
-    query: 'Inteligentne sci-fi na spokojny wieczór',
-    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 26).toISOString(),
-    resultCount: 6,
+    id: '1',
+    runId: '1',
+    contentId: '101',
+    sourceRank: 2,
+    relevanceScore: 0.95,
+    criticScore: 0.92,
+    finalScore: 0.96,
+    status: 'selected',
+    finalRank: 1,
+    decisionReason: 'Najwyższa zgodność z nastrojem i preferowanym typem zakończenia.',
+    explanation:
+      'Trafia w Twoją potrzebę mrocznej historii z mocnym twistem i bez komfortowego domknięcia. Film stale podważa ocenę bohaterów, a napięcie wynika bardziej z psychologicznej gry niż z przemocy.',
+    metadataSnapshot: {},
+    createdAt: now,
+    content: {
+      id: '101',
+      tmdbId: 210577,
+      mediaType: 'movie',
+      title: 'Zaginiona dziewczyna',
+      originalTitle: 'Gone Girl',
+      overview:
+        'W dniu piątej rocznicy ślubu Nick Dunne odkrywa, że jego żona Amy zniknęła. Presja policji i mediów odsłania pęknięcia w ich pozornie idealnym małżeństwie.',
+      releaseDate: '2014-10-01',
+      originalLanguage: 'en',
+      posterPath: '/ts996lKsxvjkO2yiYG0ht4qAicO.jpg',
+      voteAverage: 8.1,
+      popularity: 78.4,
+      metadata: {
+        runtimeMinutes: 149,
+        voteCount: 19100,
+        certification: '16+',
+        backdropPath: '/7LZ0K4FsALrt7OeNIGOVLNuKQRU.jpg',
+        director: 'David Fincher',
+        providers: ['Netflix', 'Apple TV'],
+      },
+      tmdbRefreshedAt: now,
+      genres: [
+        { id: '1', tmdbGenreId: 53, name: 'Thriller' },
+        { id: '2', tmdbGenreId: 9648, name: 'Tajemnica' },
+        { id: '3', tmdbGenreId: 18, name: 'Dramat' },
+      ],
+    },
   },
   {
-    id: 'history-2',
-    query: 'Krótki serial kryminalny bez zbędnych wątków',
-    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 4).toISOString(),
-    resultCount: 5,
+    id: '2',
+    runId: '1',
+    contentId: '102',
+    sourceRank: 1,
+    relevanceScore: 0.94,
+    criticScore: 0.91,
+    finalScore: 0.93,
+    status: 'selected',
+    finalRank: 2,
+    decisionReason: 'Bardzo wysoka zgodność z preferowanym tempem i moralną niejednoznacznością.',
+    explanation:
+      'To najcięższa emocjonalnie propozycja w zestawie. Powolne budowanie napięcia, moralnie niejednoznaczne decyzje i finał pozostawiający przestrzeń do interpretacji dobrze odpowiadają Twojemu profilowi.',
+    metadataSnapshot: {},
+    createdAt: now,
+    content: {
+      id: '102',
+      tmdbId: 146233,
+      mediaType: 'movie',
+      title: 'Labirynt',
+      originalTitle: 'Prisoners',
+      overview:
+        'Gdy znikają dwie dziewczynki, zdesperowany ojciec bierze sprawy w swoje ręce, podczas gdy prowadzący śledztwo detektyw podąża za kolejnymi niepokojącymi tropami.',
+      releaseDate: '2013-09-19',
+      originalLanguage: 'en',
+      posterPath: '/tuZhZ6biFMr5n9YSVuHOJnNL1uU.jpg',
+      voteAverage: 8.2,
+      popularity: 66.7,
+      metadata: {
+        runtimeMinutes: 153,
+        voteCount: 11800,
+        certification: '16+',
+        backdropPath: '/cCvp5Sni75agCtyJkNOMapORUQV.jpg',
+        director: 'Denis Villeneuve',
+        providers: ['Max', 'Canal+'],
+      },
+      tmdbRefreshedAt: now,
+      genres: [
+        { id: '1', tmdbGenreId: 53, name: 'Thriller' },
+        { id: '4', tmdbGenreId: 80, name: 'Kryminał' },
+        { id: '3', tmdbGenreId: 18, name: 'Dramat' },
+      ],
+    },
+  },
+  {
+    id: '3',
+    runId: '1',
+    contentId: '103',
+    sourceRank: 4,
+    relevanceScore: 0.9,
+    criticScore: 0.94,
+    finalScore: 0.89,
+    status: 'selected',
+    finalRank: 3,
+    decisionReason: 'Mocne dopasowanie do oczekiwanego tonu i braku klasycznego happy endu.',
+    explanation:
+      'Brak klasycznego happy endu jest tu czymś więcej niż zabiegiem fabularnym — wzmacnia fatalistyczny ton całej historii. Oszczędna narracja i niepokojący antagonista tworzą dokładnie ten rodzaj mroku, którego szukasz.',
+    metadataSnapshot: {},
+    createdAt: now,
+    content: {
+      id: '103',
+      tmdbId: 6977,
+      mediaType: 'movie',
+      title: 'To nie jest kraj dla starych ludzi',
+      originalTitle: 'No Country for Old Men',
+      overview:
+        'Przypadkowe znalezienie walizki pełnej pieniędzy uruchamia bezlitosny pościg przez zachodni Teksas, w którym los i przemoc splatają się ze sobą.',
+      releaseDate: '2007-11-08',
+      originalLanguage: 'en',
+      posterPath: '/bj1v6YKF8yHqA489VFfnQvOJpnc.jpg',
+      voteAverage: 7.9,
+      popularity: 57.1,
+      metadata: {
+        runtimeMinutes: 122,
+        voteCount: 12100,
+        certification: '16+',
+        backdropPath: '/kK9v1wclQxug6ZUJucD4DTaHgVF.jpg',
+        director: 'Joel i Ethan Coen',
+        providers: ['SkyShowtime', 'Prime Video'],
+      },
+      tmdbRefreshedAt: now,
+      genres: [
+        { id: '4', tmdbGenreId: 80, name: 'Kryminał' },
+        { id: '1', tmdbGenreId: 53, name: 'Thriller' },
+        { id: '5', tmdbGenreId: 37, name: 'Western' },
+      ],
+    },
   },
 ];
 
-export const demoMovies: Movie[] = [
+export const demoAgentExecutions: AgentExecution[] = initialAgentSteps.map((step, index) => ({
+  id: String(index + 1),
+  runId: '1',
+  agentType: step.key,
+  sequenceNo: index + 1,
+  status: 'success',
+  inputSnapshot: {},
+  outputSnapshot: {},
+  durationMs: 500 + index * 120,
+  startedAt: now,
+  finishedAt: now,
+}));
+
+export const demoInteractions: Interaction[] = [
   {
-    id: 210577,
-    mediaType: 'movie',
-    title: 'Zaginiona dziewczyna',
-    originalTitle: 'Gone Girl',
-    year: 2014,
-    runtime: '2 godz. 29 min',
-    rating: 8.1,
-    voteCount: 19100,
-    matchScore: 96,
-    certification: '16+',
-    genres: ['Thriller', 'Tajemnica', 'Dramat'],
-    posterUrl: 'https://image.tmdb.org/t/p/w780/ts996lKsxvjkO2yiYG0ht4qAicO.jpg',
-    backdropUrl: 'https://image.tmdb.org/t/p/original/7LZ0K4FsALrt7OeNIGOVLNuKQRU.jpg',
-    overview:
-      'W dniu piątej rocznicy ślubu Nick Dunne odkrywa, że jego żona Amy zniknęła. Presja policji i mediów odsłania pęknięcia w ich pozornie idealnym małżeństwie.',
-    explanation:
-      'Trafia w Twoją potrzebę mrocznej historii z mocnym twistem i bez komfortowego domknięcia. Film stale podważa ocenę bohaterów, a napięcie wynika bardziej z psychologicznej gry niż z przemocy.',
-    director: 'David Fincher',
-    cast: [
-      { id: 1, name: 'Ben Affleck', character: 'Nick Dunne' },
-      { id: 2, name: 'Rosamund Pike', character: 'Amy Dunne' },
-      { id: 3, name: 'Carrie Coon', character: 'Margo Dunne' },
-      { id: 4, name: 'Neil Patrick Harris', character: 'Desi Collings' },
-    ],
-    providers: ['Netflix', 'Apple TV'],
-  },
-  {
-    id: 146233,
-    mediaType: 'movie',
-    title: 'Labirynt',
-    originalTitle: 'Prisoners',
-    year: 2013,
-    runtime: '2 godz. 33 min',
-    rating: 8.2,
-    voteCount: 11800,
-    matchScore: 93,
-    certification: '16+',
-    genres: ['Thriller', 'Kryminał', 'Dramat'],
-    posterUrl: 'https://image.tmdb.org/t/p/w780/tuZhZ6biFMr5n9YSVuHOJnNL1uU.jpg',
-    backdropUrl: 'https://image.tmdb.org/t/p/original/cCvp5Sni75agCtyJkNOMapORUQV.jpg',
-    overview:
-      'Gdy znikają dwie dziewczynki, zdesperowany ojciec bierze sprawy w swoje ręce, podczas gdy prowadzący śledztwo detektyw podąża za kolejnymi niepokojącymi tropami.',
-    explanation:
-      'To najcięższa emocjonalnie propozycja w zestawie. Powolne budowanie napięcia, moralnie niejednoznaczne decyzje i finał pozostawiający przestrzeń do interpretacji dobrze odpowiadają Twojemu profilowi.',
-    director: 'Denis Villeneuve',
-    cast: [
-      { id: 5, name: 'Hugh Jackman', character: 'Keller Dover' },
-      { id: 6, name: 'Jake Gyllenhaal', character: 'Detektyw Loki' },
-      { id: 7, name: 'Viola Davis', character: 'Nancy Birch' },
-      { id: 8, name: 'Paul Dano', character: 'Alex Jones' },
-    ],
-    providers: ['Max', 'Canal+'],
-  },
-  {
-    id: 6977,
-    mediaType: 'movie',
-    title: 'To nie jest kraj dla starych ludzi',
-    originalTitle: 'No Country for Old Men',
-    year: 2007,
-    runtime: '2 godz. 2 min',
-    rating: 7.9,
-    voteCount: 12100,
-    matchScore: 89,
-    certification: '16+',
-    genres: ['Kryminał', 'Thriller', 'Western'],
-    posterUrl: 'https://image.tmdb.org/t/p/w780/bj1v6YKF8yHqA489VFfnQvOJpnc.jpg',
-    backdropUrl: 'https://image.tmdb.org/t/p/original/kK9v1wclQxug6ZUJucD4DTaHgVF.jpg',
-    overview:
-      'Przypadkowe znalezienie walizki pełnej pieniędzy uruchamia bezlitosny pościg przez zachodni Teksas, w którym los i przemoc splatają się ze sobą.',
-    explanation:
-      'Brak klasycznego happy endu jest tu czymś więcej niż zabiegiem fabularnym — wzmacnia fatalistyczny ton całej historii. Oszczędna narracja i niepokojący antagonista tworzą dokładnie ten rodzaj mroku, którego szukasz.',
-    director: 'Joel i Ethan Coen',
-    cast: [
-      { id: 9, name: 'Javier Bardem', character: 'Anton Chigurh' },
-      { id: 10, name: 'Josh Brolin', character: 'Llewelyn Moss' },
-      { id: 11, name: 'Tommy Lee Jones', character: 'Ed Tom Bell' },
-      { id: 12, name: 'Kelly Macdonald', character: 'Carla Jean Moss' },
-    ],
-    providers: ['SkyShowtime', 'Prime Video'],
+    id: '1',
+    userId: '1',
+    contentId: '101',
+    sourceCandidateId: '1',
+    interactionType: 'watchlisted',
+    rating: null,
+    metadata: {},
+    createdAt: yesterday,
   },
 ];
 
@@ -157,3 +298,23 @@ export const promptSuggestions = [
   'Lekki serial na dwa wieczory',
   'Ambitne sci-fi, które daje do myślenia',
 ];
+
+function createPreference(
+  id: string,
+  preferenceType: string,
+  preferenceValue: string,
+  polarity: -1 | 0 | 1,
+  confidence: number,
+): UserPreference {
+  return {
+    id,
+    userId: '1',
+    preferenceType,
+    preferenceValue,
+    polarity,
+    weight: 1,
+    confidence,
+    createdAt: yesterday,
+    updatedAt: yesterday,
+  };
+}

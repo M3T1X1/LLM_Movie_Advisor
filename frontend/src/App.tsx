@@ -7,9 +7,9 @@ import { Navbar } from './components/Navbar';
 import { ProfileView } from './components/ProfileView';
 import { RecommendationCard } from './components/RecommendationCard';
 import { useSession } from './context/SessionContext';
-import { demoMovies, initialAgentSteps } from './data/mockData';
-import { requestRecommendations, updateMovieState } from './services/api';
-import type { AgentStep, AppView, Movie } from './types';
+import { demoCandidates, initialAgentSteps } from './data/mockData';
+import { createInteraction, requestRecommendations } from './services/api';
+import type { AgentStep, AppView, RunCandidate } from './types';
 
 function wait(duration: number) {
   return new Promise((resolve) => window.setTimeout(resolve, duration));
@@ -18,20 +18,24 @@ function wait(duration: number) {
 export default function App() {
   const {
     user,
+    semanticProfile,
+    preferences,
     messages,
-    history,
-    savedMovieIds,
-    watchedMovieIds,
+    conversations,
+    currentConversationId,
+    watchlistedContentIds,
+    watchedContentIds,
     addMessage,
-    toggleSaved,
-    toggleWatched,
+    appendMessage,
     updateUser,
+    replacePreferenceGroups,
     addDetectedPreferences,
-    recordInteraction,
+    updateConversationFromQuery,
+    recordInteraction: storeInteraction,
   } = useSession();
   const [activeView, setActiveView] = useState<AppView>('recommendations');
-  const [recommendations, setRecommendations] = useState<Movie[]>(demoMovies);
-  const [selectedMovie, setSelectedMovie] = useState<Movie | null>(null);
+  const [recommendations, setRecommendations] = useState<RunCandidate[]>(demoCandidates);
+  const [selectedCandidate, setSelectedCandidate] = useState<RunCandidate | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [agentSteps, setAgentSteps] = useState<AgentStep[]>(initialAgentSteps);
 
@@ -40,10 +44,10 @@ export default function App() {
 
     setActiveView('recommendations');
     setIsProcessing(true);
-    addMessage('user', query);
-    setAgentSteps(initialAgentSteps.map((step) => ({ ...step, status: 'idle' })));
+    const userMessage = addMessage('user', query);
+    setAgentSteps(initialAgentSteps.map((step) => ({ ...step, status: 'pending' })));
 
-    const responsePromise = requestRecommendations(query).then(
+    const responsePromise = requestRecommendations(currentConversationId, userMessage).then(
       (response) => ({ response, error: null }),
       (error: unknown) => ({ response: null, error }),
     );
@@ -53,7 +57,7 @@ export default function App() {
         setAgentSteps((steps) =>
           steps.map((step, stepIndex) => ({
             ...step,
-            status: stepIndex < index ? 'completed' : stepIndex === index ? 'working' : 'idle',
+            status: stepIndex < index ? 'success' : stepIndex === index ? 'running' : 'pending',
           })),
         );
         await wait(index === 0 ? 650 : 520);
@@ -62,13 +66,16 @@ export default function App() {
       const result = await responsePromise;
       if (result.error || !result.response) throw result.error;
 
-      setAgentSteps((steps) => steps.map((step) => ({ ...step, status: 'completed' })));
-      setRecommendations(result.response.recommendations);
+      setAgentSteps((steps) => steps.map((step) => ({ ...step, status: 'success' })));
+      setRecommendations(result.response.candidates);
       addDetectedPreferences(result.response.detectedPreferences);
-      recordInteraction(query, result.response.recommendations.length);
-      addMessage('assistant', result.response.message);
+      updateConversationFromQuery(query);
+      appendMessage(result.response.assistantMessage);
       await wait(350);
     } catch {
+      setAgentSteps((steps) =>
+        steps.map((step) => (step.status === 'running' ? { ...step, status: 'failed' } : step)),
+      );
       addMessage(
         'assistant',
         'Nie udało mi się teraz pobrać rekomendacji. Sprawdź połączenie z backendem i spróbuj ponownie za chwilę.',
@@ -78,30 +85,38 @@ export default function App() {
     }
   };
 
-  const handleToggleSaved = (movieId: number) => {
-    const enabled = !savedMovieIds.includes(movieId);
-    toggleSaved(movieId);
-    void updateMovieState(movieId, 'saved', enabled).catch(() => undefined);
+  const handleWatchlist = (candidate: RunCandidate) => {
+    if (watchlistedContentIds.includes(candidate.contentId)) return;
+    storeInteraction(candidate.contentId, candidate.id, 'watchlisted');
+    void createInteraction(candidate.contentId, candidate.id, 'watchlisted').catch(() => undefined);
   };
 
-  const handleToggleWatched = (movieId: number) => {
-    const enabled = !watchedMovieIds.includes(movieId);
-    toggleWatched(movieId);
-    void updateMovieState(movieId, 'watched', enabled).catch(() => undefined);
+  const handleMarkWatched = (candidate: RunCandidate) => {
+    if (watchedContentIds.includes(candidate.contentId)) return;
+    storeInteraction(candidate.contentId, candidate.id, 'watched');
+    void createInteraction(candidate.contentId, candidate.id, 'watched').catch(() => undefined);
   };
 
-  const savedMovies = recommendations.filter((movie) => savedMovieIds.includes(movie.id));
+  const handleOpenCandidate = (candidate: RunCandidate) => {
+    setSelectedCandidate(candidate);
+    storeInteraction(candidate.contentId, candidate.id, 'details_opened');
+    void createInteraction(candidate.contentId, candidate.id, 'details_opened').catch(() => undefined);
+  };
 
-  const renderCard = (movie: Movie, index: number) => (
+  const savedCandidates = recommendations.filter((candidate) =>
+    watchlistedContentIds.includes(candidate.contentId),
+  );
+
+  const renderCard = (candidate: RunCandidate, index: number) => (
     <RecommendationCard
-      key={movie.id}
-      movie={movie}
+      key={candidate.id}
+      candidate={candidate}
       index={index}
-      isSaved={savedMovieIds.includes(movie.id)}
-      isWatched={watchedMovieIds.includes(movie.id)}
-      onOpen={setSelectedMovie}
-      onToggleSaved={handleToggleSaved}
-      onToggleWatched={handleToggleWatched}
+      isWatchlisted={watchlistedContentIds.includes(candidate.contentId)}
+      isWatched={watchedContentIds.includes(candidate.contentId)}
+      onOpen={handleOpenCandidate}
+      onWatchlist={handleWatchlist}
+      onMarkWatched={handleMarkWatched}
     />
   );
 
@@ -118,10 +133,13 @@ export default function App() {
           {activeView === 'profile' ? (
             <ProfileView
               user={user}
-              history={history}
-              savedCount={savedMovieIds.length}
-              watchedCount={watchedMovieIds.length}
+              semanticProfile={semanticProfile}
+              preferences={preferences}
+              conversations={conversations}
+              savedCount={watchlistedContentIds.length}
+              watchedCount={watchedContentIds.length}
               onUpdateUser={updateUser}
+              onReplacePreferenceGroups={replacePreferenceGroups}
             />
           ) : activeView === 'saved' ? (
             <div className="mx-auto max-w-4xl">
@@ -141,8 +159,8 @@ export default function App() {
                   <ChevronRight className="h-3.5 w-3.5" />
                 </button>
               </div>
-              {savedMovies.length ? (
-                <div className="space-y-4">{savedMovies.map(renderCard)}</div>
+              {savedCandidates.length ? (
+                <div className="space-y-4">{savedCandidates.map(renderCard)}</div>
               ) : (
                 <EmptyState onDiscover={() => setActiveView('recommendations')} />
               )}
@@ -150,7 +168,7 @@ export default function App() {
           ) : (
             <>
               <div className="mb-7 border-b border-white/[0.07] pb-7">
-                <p className="mb-2 text-xs text-slate-500">Dobry wieczór, {user.name.split(' ')[0]}.</p>
+                <p className="mb-2 text-xs text-slate-500">Dobry wieczór, {user.username}.</p>
                 <h1 className="max-w-3xl text-3xl font-semibold tracking-[-0.035em] text-white sm:text-4xl">
                   Co masz ochotę dziś obejrzeć?
                 </h1>
@@ -161,7 +179,9 @@ export default function App() {
 
               <div className="grid items-start gap-7 xl:grid-cols-[minmax(560px,1.18fr)_minmax(460px,0.82fr)]">
                 <ChatInterface
-                  messages={messages}
+                  messages={messages.filter(
+                    (message) => message.conversationId === currentConversationId,
+                  )}
                   agentSteps={agentSteps}
                   isProcessing={isProcessing}
                   onSubmit={handlePrompt}
@@ -199,12 +219,14 @@ export default function App() {
       </div>
 
       <MovieDetailModal
-        movie={selectedMovie}
-        isSaved={selectedMovie ? savedMovieIds.includes(selectedMovie.id) : false}
-        isWatched={selectedMovie ? watchedMovieIds.includes(selectedMovie.id) : false}
-        onClose={() => setSelectedMovie(null)}
-        onToggleSaved={handleToggleSaved}
-        onToggleWatched={handleToggleWatched}
+        candidate={selectedCandidate}
+        isWatchlisted={
+          selectedCandidate ? watchlistedContentIds.includes(selectedCandidate.contentId) : false
+        }
+        isWatched={selectedCandidate ? watchedContentIds.includes(selectedCandidate.contentId) : false}
+        onClose={() => setSelectedCandidate(null)}
+        onWatchlist={handleWatchlist}
+        onMarkWatched={handleMarkWatched}
       />
     </div>
   );

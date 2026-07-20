@@ -26,20 +26,33 @@ VITE_API_BASE_URL=/api
 VITE_USE_MOCK_API=false
 ```
 
-Frontend oczekuje dwóch endpointów:
+Frontend jest przygotowany pod kontrakt odpowiadający encjom z diagramu ERD:
 
-- `POST /api/agents/recommendations/` — body: `{ "query": "..." }`; odpowiedź zgodna z typem
-  `RecommendationResponse` w `src/types/index.ts`.
-- `PATCH /api/profile/movies/:tmdbId/` — body: `{ "saved": true }` albo `{ "watched": true }`.
+- `POST /api/recommendation-requests/` — tworzy wiadomość, żądanie rekomendacji, przebieg oraz
+  kandydatów; odpowiedź jest zgodna z `RecommendationResponse` w `src/types/index.ts`.
+- `POST /api/interactions/` — zapisuje zdarzenie zgodne z `interaction_type_enum`, np.
+  `details_opened`, `watchlisted` albo `watched`.
 
 Wywołania wysyłają cookie sesyjne i nagłówek `X-CSRFToken`, więc są przygotowane do autoryzacji
 sesyjnej Django.
 
 ## Najważniejsze moduły
 
-- `src/context/SessionContext.tsx` — użytkownik, sesja, preferencje, zapisane i obejrzane tytuły,
+- `src/context/SessionContext.tsx` — użytkownik, profil semantyczny, preferencje, rozmowy, wiadomości
+  i interakcje,
 - `src/services/api.ts` — izolowana warstwa komunikacji z Django,
 - `src/components/ChatInterface.tsx` — rozmowa i status pracy agentów,
 - `src/components/RecommendationCard.tsx` — rekomendacja z wyjaśnieniem AI,
-- `src/components/MovieDetailModal.tsx` — metadane, obsada i akcje użytkownika,
-- `src/components/UserProfileSidebar.tsx` — profil gustu i historia interakcji.
+- `src/components/MovieDetailModal.tsx` — metadane treści i akcje użytkownika,
+- `src/components/ProfileView.tsx` — konto, profil semantyczny i znormalizowane preferencje.
+
+## Zgodność z ERD
+
+- Identyfikatory `BIGINT` są reprezentowane w TypeScript jako `string`.
+- `content.id` i `content.tmdb_id` są osobnymi polami (`id` i `tmdbId`).
+- Typ treści przyjmuje wyłącznie wartości `movie` i `tv`.
+- Wynik, pozycja i wyjaśnienie rekomendacji należą do `RunCandidate`, a nie do `Content`.
+- Zapisanie i obejrzenie są jednokierunkowymi zdarzeniami `Interaction`; ERD nie definiuje
+  zdarzeń cofających te operacje.
+- Dane demonstracyjne zachowują strukturę relacji z diagramu, mimo że nie są jeszcze pobierane z
+  PostgreSQL.

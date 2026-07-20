@@ -1,40 +1,51 @@
 import { Bookmark, Check, ChevronRight, Eye, Film, Star } from 'lucide-react';
 import { useState } from 'react';
-import type { Movie } from '../types';
+import type { RunCandidate } from '../types';
+import {
+  formatRuntime,
+  getMatchPercent,
+  getPosterUrl,
+  getReleaseYear,
+} from '../utils/content';
 
 interface RecommendationCardProps {
-  movie: Movie;
+  candidate: RunCandidate;
   index: number;
-  isSaved: boolean;
+  isWatchlisted: boolean;
   isWatched: boolean;
-  onOpen: (movie: Movie) => void;
-  onToggleSaved: (movieId: number) => void;
-  onToggleWatched: (movieId: number) => void;
+  onOpen: (candidate: RunCandidate) => void;
+  onWatchlist: (candidate: RunCandidate) => void;
+  onMarkWatched: (candidate: RunCandidate) => void;
 }
 
 export function RecommendationCard({
-  movie,
+  candidate,
   index,
-  isSaved,
+  isWatchlisted,
   isWatched,
   onOpen,
-  onToggleSaved,
-  onToggleWatched,
+  onWatchlist,
+  onMarkWatched,
 }: RecommendationCardProps) {
   const [imageFailed, setImageFailed] = useState(false);
+  const { content } = candidate;
+  const posterUrl = getPosterUrl(content);
+  const releaseYear = getReleaseYear(content);
+  const runtime = formatRuntime(content.metadata.runtimeMinutes);
+  const matchPercent = getMatchPercent(candidate);
 
   return (
     <article className="group grid grid-cols-[104px_minmax(0,1fr)] overflow-hidden rounded-xl border border-white/[0.08] bg-[#0d0f15] transition-colors hover:border-white/[0.14] sm:grid-cols-[148px_minmax(0,1fr)]">
       <button
         type="button"
-        onClick={() => onOpen(movie)}
+        onClick={() => onOpen(candidate)}
         className="relative min-h-[230px] overflow-hidden bg-slate-900 text-left sm:min-h-[250px]"
-        aria-label={`Pokaż szczegóły: ${movie.title}`}
+        aria-label={`Pokaż szczegóły: ${content.title}`}
       >
-        {!imageFailed ? (
+        {posterUrl && !imageFailed ? (
           <img
-            src={movie.posterUrl}
-            alt={`Plakat filmu ${movie.title}`}
+            src={posterUrl}
+            alt={`Plakat: ${content.title}`}
             onError={() => setImageFailed(true)}
             className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.03]"
           />
@@ -44,41 +55,47 @@ export function RecommendationCard({
           </span>
         )}
         <span className="absolute left-2 top-2 bg-black/75 px-1.5 py-1 text-[9px] font-semibold text-white backdrop-blur-sm">
-          {String(index + 1).padStart(2, '0')}
+          {String(candidate.finalRank ?? index + 1).padStart(2, '0')}
         </span>
       </button>
 
       <div className="flex min-w-0 flex-col p-3.5 sm:p-5">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <button type="button" onClick={() => onOpen(movie)} className="text-left">
+            <button type="button" onClick={() => onOpen(candidate)} className="text-left">
               <h3 className="truncate text-base font-semibold tracking-tight text-white transition group-hover:text-violet-200 sm:text-xl">
-                {movie.title}
+                {content.title}
               </h3>
             </button>
             <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[10px] text-slate-500 sm:text-xs">
-              <span>{movie.year}</span>
-              <span className="text-slate-700">/</span>
-              <span>{movie.runtime}</span>
-              <span className="hidden text-slate-700 sm:inline">/</span>
-              <span className="hidden sm:inline">{movie.certification}</span>
+              {releaseYear && <span>{releaseYear}</span>}
+              {runtime && <span className="text-slate-700">/</span>}
+              {runtime && <span>{runtime}</span>}
+              {content.metadata.certification && <span className="hidden text-slate-700 sm:inline">/</span>}
+              {content.metadata.certification && (
+                <span className="hidden sm:inline">{content.metadata.certification}</span>
+              )}
             </div>
           </div>
-          <div className="shrink-0 text-right">
-            <p className="text-sm font-semibold text-emerald-400">{movie.matchScore}%</p>
-            <p className="text-[9px] text-slate-600">dopasowania</p>
-          </div>
+          {matchPercent !== null && (
+            <div className="shrink-0 text-right">
+              <p className="text-sm font-semibold text-emerald-400">{matchPercent}%</p>
+              <p className="text-[9px] text-slate-600">dopasowania</p>
+            </div>
+          )}
         </div>
 
         <div className="mt-3 flex flex-wrap items-center gap-1.5">
-          <span className="mr-1 flex items-center gap-1 text-[10px] font-medium text-amber-300">
-            <Star className="h-3 w-3 fill-current" />
-            {movie.rating.toFixed(1)}
-          </span>
-          {movie.genres.slice(0, 3).map((genre, genreIndex) => (
-            <span key={genre} className="text-[10px] text-slate-500">
-              {genre}
-              {genreIndex < Math.min(movie.genres.length, 3) - 1 ? (
+          {content.voteAverage !== null && (
+            <span className="mr-1 flex items-center gap-1 text-[10px] font-medium text-amber-300">
+              <Star className="h-3 w-3 fill-current" />
+              {content.voteAverage.toFixed(1)}
+            </span>
+          )}
+          {content.genres.slice(0, 3).map((genre, genreIndex) => (
+            <span key={genre.id} className="text-[10px] text-slate-500">
+              {genre.name}
+              {genreIndex < Math.min(content.genres.length, 3) - 1 ? (
                 <span className="ml-1.5 text-slate-700">·</span>
               ) : null}
             </span>
@@ -90,29 +107,31 @@ export function RecommendationCard({
             Dlaczego ten tytuł
           </p>
           <p className="line-clamp-4 text-[11px] leading-5 text-slate-400 sm:text-xs">
-            {movie.explanation}
+            {candidate.explanation ?? 'Brak wyjaśnienia dla tej rekomendacji.'}
           </p>
         </div>
 
         <div className="mt-auto flex items-center gap-1 pt-4">
           <button
             type="button"
-            onClick={() => onToggleSaved(movie.id)}
+            disabled={isWatchlisted}
+            onClick={() => onWatchlist(candidate)}
             className={`flex h-8 items-center gap-1.5 rounded-md px-2.5 text-[10px] font-medium transition sm:text-[11px] ${
-              isSaved
-                ? 'bg-violet-500/15 text-violet-200'
+              isWatchlisted
+                ? 'cursor-default bg-violet-500/15 text-violet-200'
                 : 'bg-white/[0.05] text-slate-400 hover:bg-white/[0.08] hover:text-white'
             }`}
           >
-            <Bookmark className={`h-3.5 w-3.5 ${isSaved ? 'fill-current' : ''}`} />
-            <span className="hidden sm:inline">{isSaved ? 'Zapisano' : 'Zapisz'}</span>
+            <Bookmark className={`h-3.5 w-3.5 ${isWatchlisted ? 'fill-current' : ''}`} />
+            <span className="hidden sm:inline">{isWatchlisted ? 'Zapisano' : 'Zapisz'}</span>
           </button>
           <button
             type="button"
-            onClick={() => onToggleWatched(movie.id)}
+            disabled={isWatched}
+            onClick={() => onMarkWatched(candidate)}
             className={`flex h-8 items-center gap-1.5 rounded-md px-2.5 text-[10px] font-medium transition sm:text-[11px] ${
               isWatched
-                ? 'bg-emerald-500/10 text-emerald-300'
+                ? 'cursor-default bg-emerald-500/10 text-emerald-300'
                 : 'text-slate-500 hover:bg-white/[0.05] hover:text-slate-300'
             }`}
           >
@@ -121,7 +140,7 @@ export function RecommendationCard({
           </button>
           <button
             type="button"
-            onClick={() => onOpen(movie)}
+            onClick={() => onOpen(candidate)}
             className="ml-auto flex h-8 items-center gap-1 text-[10px] font-medium text-slate-500 transition hover:text-white sm:text-[11px]"
           >
             Szczegóły

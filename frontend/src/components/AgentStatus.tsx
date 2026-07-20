@@ -9,14 +9,21 @@ export function AgentStatus({ steps }: { steps: AgentStep[] }) {
       </p>
       <div className="space-y-1.5">
         {steps.map((step) => {
-          const isWorking = step.status === 'working';
-          const isCompleted = step.status === 'completed';
+          const isWorking = step.status === 'running';
+          const isCompleted = step.status === 'success';
+          const isFailed = step.status === 'failed';
 
           return (
             <div key={step.key} className="flex items-center gap-2.5 text-[11px]">
               <span
                 className={`flex h-4 w-4 items-center justify-center ${
-                  isWorking ? 'text-violet-300' : isCompleted ? 'text-emerald-400' : 'text-slate-700'
+                  isWorking
+                    ? 'text-violet-300'
+                    : isCompleted
+                      ? 'text-emerald-400'
+                      : isFailed
+                        ? 'text-red-400'
+                        : 'text-slate-700'
                 }`}
               >
                 {isWorking ? (
@@ -29,7 +36,7 @@ export function AgentStatus({ steps }: { steps: AgentStep[] }) {
               </span>
               <span className={isWorking ? 'text-slate-200' : 'text-slate-500'}>{step.name}</span>
               <span className="ml-auto hidden truncate text-slate-700 sm:block">
-                {isCompleted ? 'Gotowe' : step.activity}
+                {isCompleted ? 'Gotowe' : isFailed ? 'Błąd' : step.activity}
               </span>
             </div>
           );

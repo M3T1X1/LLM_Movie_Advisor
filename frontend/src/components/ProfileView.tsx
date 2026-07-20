@@ -11,39 +11,64 @@ import {
   X,
 } from 'lucide-react';
 import { useState, type FormEvent, type ReactNode } from 'react';
-import type { RecommendationHistoryItem, UserProfile } from '../types';
+import type {
+  AppUser,
+  Conversation,
+  UserPreference,
+  UserSemanticProfile,
+} from '../types';
 
 interface ProfileViewProps {
-  user: UserProfile;
-  history: RecommendationHistoryItem[];
+  user: AppUser;
+  semanticProfile: UserSemanticProfile;
+  preferences: UserPreference[];
+  conversations: Conversation[];
   savedCount: number;
   watchedCount: number;
-  onUpdateUser: (changes: Partial<UserProfile>) => void;
+  onUpdateUser: (changes: Partial<Pick<AppUser, 'username' | 'email'>>) => void;
+  onReplacePreferenceGroups: (groups: {
+    favoriteGenres: string[];
+    positivePreferences: string[];
+    avoidedPreferences: string[];
+  }) => void;
 }
 
 interface ProfileFormState {
-  name: string;
+  username: string;
   email: string;
   favoriteGenres: string;
   preferences: string;
   avoidedThemes: string;
 }
 
-function createFormState(user: UserProfile): ProfileFormState {
+function createFormState(user: AppUser, preferences: UserPreference[]): ProfileFormState {
   return {
-    name: user.name,
+    username: user.username,
     email: user.email,
-    favoriteGenres: user.favoriteGenres.join(', '),
-    preferences: user.preferences.join(', '),
-    avoidedThemes: user.avoidedThemes.join(', '),
+    favoriteGenres: preferences
+      .filter((preference) => preference.preferenceType === 'genre' && preference.polarity === 1)
+      .map((preference) => preference.preferenceValue)
+      .join(', '),
+    preferences: preferences
+      .filter((preference) => preference.preferenceType !== 'genre' && preference.polarity === 1)
+      .map((preference) => preference.preferenceValue)
+      .join(', '),
+    avoidedThemes: preferences
+      .filter((preference) => preference.polarity === -1)
+      .map((preference) => preference.preferenceValue)
+      .join(', '),
   };
 }
 
 function splitValues(value: string) {
-  return value
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean);
+  return Array.from(
+    new Set(
+      value
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean),
+    ),
+  );
 }
 
 function formatDate(date: string) {
@@ -57,35 +82,42 @@ function formatDate(date: string) {
 
 export function ProfileView({
   user,
-  history,
+  semanticProfile,
+  preferences,
+  conversations,
   savedCount,
   watchedCount,
   onUpdateUser,
+  onReplacePreferenceGroups,
 }: ProfileViewProps) {
   const [isEditing, setIsEditing] = useState(false);
-  const [form, setForm] = useState<ProfileFormState>(() => createFormState(user));
+  const [form, setForm] = useState<ProfileFormState>(() => createFormState(user, preferences));
+  const initials = user.username.slice(0, 2).toUpperCase();
+  const favoriteGenres = preferences
+    .filter((preference) => preference.preferenceType === 'genre' && preference.polarity === 1)
+    .map((preference) => preference.preferenceValue);
+  const positivePreferences = preferences
+    .filter((preference) => preference.preferenceType !== 'genre' && preference.polarity === 1)
+    .map((preference) => preference.preferenceValue);
+  const avoidedPreferences = preferences
+    .filter((preference) => preference.polarity === -1)
+    .map((preference) => preference.preferenceValue);
 
   const startEditing = () => {
-    setForm(createFormState(user));
+    setForm(createFormState(user, preferences));
     setIsEditing(true);
   };
 
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();
-    const name = form.name.trim() || user.name;
-    const initials = name
-      .split(' ')
-      .slice(0, 2)
-      .map((part) => part[0]?.toUpperCase())
-      .join('');
-
     onUpdateUser({
-      name,
+      username: form.username.trim() || user.username,
       email: form.email.trim() || user.email,
-      initials: initials || user.initials,
+    });
+    onReplacePreferenceGroups({
       favoriteGenres: splitValues(form.favoriteGenres),
-      preferences: splitValues(form.preferences),
-      avoidedThemes: splitValues(form.avoidedThemes),
+      positivePreferences: splitValues(form.preferences),
+      avoidedPreferences: splitValues(form.avoidedThemes),
     });
     setIsEditing(false);
   };
@@ -100,10 +132,10 @@ export function ProfileView({
         <div className="flex flex-col justify-between gap-5 border-b border-white/[0.07] pb-7 sm:flex-row sm:items-end">
           <div className="flex items-center gap-4">
             <span className="flex h-16 w-16 items-center justify-center rounded-xl bg-slate-800 text-lg font-semibold text-white">
-              {user.initials}
+              {initials}
             </span>
             <div>
-              <h1 className="text-2xl font-semibold tracking-tight text-white sm:text-3xl">{user.name}</h1>
+              <h1 className="text-2xl font-semibold tracking-tight text-white sm:text-3xl">{user.username}</h1>
               <p className="mt-1 text-sm text-slate-500">{user.email}</p>
             </div>
           </div>
@@ -123,7 +155,7 @@ export function ProfileView({
         <ProfileStat icon={<Eye className="h-4 w-4" />} value={watchedCount} label="Obejrzane" bordered />
         <ProfileStat
           icon={<MessageSquareText className="h-4 w-4" />}
-          value={history.length}
+          value={conversations.length}
           label="Rozmowy"
         />
       </div>
@@ -147,9 +179,9 @@ export function ProfileView({
 
           <div className="grid gap-5 sm:grid-cols-2">
             <ProfileInput
-              label="Imię i nazwisko"
-              value={form.name}
-              onChange={(value) => setForm((current) => ({ ...current, name: value }))}
+              label="Nazwa użytkownika"
+              value={form.username}
+              onChange={(value) => setForm((current) => ({ ...current, username: value }))}
             />
             <ProfileInput
               label="Adres e-mail"
@@ -197,21 +229,30 @@ export function ProfileView({
         <div className="grid gap-7 lg:grid-cols-[minmax(0,1.35fr)_minmax(280px,0.65fr)]">
           <div className="space-y-5">
             <ProfileSection title="Twój gust" icon={<SlidersHorizontal className="h-4 w-4" />}>
-              <PreferenceGroup label="Ulubione gatunki" values={user.favoriteGenres} />
-              <PreferenceGroup label="Zapamiętane preferencje" values={user.preferences} />
-              <PreferenceGroup label="Pomijaj w rekomendacjach" values={user.avoidedThemes} muted />
+              <PreferenceGroup label="Ulubione gatunki" values={favoriteGenres} />
+              <PreferenceGroup label="Zapamiętane preferencje" values={positivePreferences} />
+              <PreferenceGroup label="Pomijaj w rekomendacjach" values={avoidedPreferences} muted />
+              {semanticProfile.semanticSummary && (
+                <div className="mt-5 border-t border-white/[0.06] pt-4">
+                  <p className="mb-2 text-[10px] text-slate-600">Podsumowanie semantyczne</p>
+                  <p className="text-xs leading-5 text-slate-500">{semanticProfile.semanticSummary}</p>
+                </div>
+              )}
             </ProfileSection>
 
             <ProfileSection title="Ostatnia aktywność" icon={<Clock3 className="h-4 w-4" />}>
-              {history.length ? (
+              {conversations.length ? (
                 <div className="divide-y divide-white/[0.05]">
-                  {history.slice(0, 4).map((item) => (
-                    <div key={item.id} className="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0">
+                  {conversations.slice(0, 4).map((conversation) => (
+                    <div key={conversation.id} className="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0">
                       <div className="min-w-0">
-                        <p className="truncate text-xs text-slate-300">„{item.query}”</p>
-                        <p className="mt-1 text-[10px] text-slate-700">{item.resultCount} rekomendacji</p>
+                        <p className="truncate text-xs text-slate-300">
+                          {conversation.title ?? 'Rozmowa bez tytułu'}
+                        </p>
                       </div>
-                      <time className="shrink-0 text-[10px] text-slate-600">{formatDate(item.createdAt)}</time>
+                      <time className="shrink-0 text-[10px] text-slate-600">
+                        {formatDate(conversation.updatedAt)}
+                      </time>
                     </div>
                   ))}
                 </div>
@@ -226,7 +267,7 @@ export function ProfileView({
               <dl className="space-y-4 text-xs">
                 <div>
                   <dt className="text-[10px] text-slate-600">Nazwa użytkownika</dt>
-                  <dd className="mt-1 text-slate-300">{user.name}</dd>
+                  <dd className="mt-1 text-slate-300">{user.username}</dd>
                 </div>
                 <div>
                   <dt className="text-[10px] text-slate-600">Adres e-mail</dt>
