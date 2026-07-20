@@ -32,6 +32,7 @@ Frontend jest przygotowany pod kontrakt odpowiadający encjom z diagramu ERD:
   kandydatów; odpowiedź jest zgodna z `RecommendationResponse` w `src/types/index.ts`.
 - `POST /api/interactions/` — zapisuje zdarzenie zgodne z `interaction_type_enum`, np.
   `details_opened`, `watchlisted` albo `watched`.
+- `GET /api/contents/` — zwraca katalog filmów i seriali z gatunkami oraz metadanymi TMDB.
 
 Wywołania wysyłają cookie sesyjne i nagłówek `X-CSRFToken`, więc są przygotowane do autoryzacji
 sesyjnej Django.
@@ -43,6 +44,7 @@ sesyjnej Django.
 - `src/services/api.ts` — izolowana warstwa komunikacji z Django,
 - `src/components/ChatInterface.tsx` — rozmowa i status pracy agentów,
 - `src/components/RecommendationCard.tsx` — rekomendacja z wyjaśnieniem AI,
+- `src/components/CatalogView.tsx` — katalog treści, wyszukiwanie, filtry i sortowanie,
 - `src/components/MovieDetailModal.tsx` — metadane treści i akcje użytkownika,
 - `src/components/ProfileView.tsx` — konto, profil semantyczny i znormalizowane preferencje.
 

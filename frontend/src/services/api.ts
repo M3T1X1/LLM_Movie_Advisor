@@ -1,5 +1,6 @@
 import {
   demoAgentExecutions,
+  demoCatalogContent,
   demoCandidates,
   demoPreferences,
   demoRequest,
@@ -8,6 +9,7 @@ import {
 import type {
   DatabaseId,
   ChatMessage,
+  Content,
   InteractionType,
   RecommendationResponse,
 } from '../types';
@@ -24,6 +26,17 @@ function getCookie(name: string) {
 
 function wait(duration: number) {
   return new Promise((resolve) => window.setTimeout(resolve, duration));
+}
+
+export async function getCatalogContent(): Promise<Content[]> {
+  if (USE_MOCK_API) return demoCatalogContent;
+
+  const response = await fetch(`${API_BASE_URL}/contents/`, {
+    credentials: 'include',
+    headers: { Accept: 'application/json' },
+  });
+  if (!response.ok) throw new Error(`Nie udało się pobrać katalogu (${response.status}).`);
+  return response.json() as Promise<Content[]>;
 }
 
 export async function requestRecommendations(

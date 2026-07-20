@@ -59,7 +59,7 @@ export function ChatInterface({
         </span>
         <div>
           <h2 className="text-sm font-semibold text-white">Rozmowa</h2>
-          <p className="mt-0.5 text-[10px] text-slate-600">Scene · doradca filmowy</p>
+          <p className="mt-0.5 text-[10px] text-slate-600">FilmiQ</p>
         </div>
       </div>
 
@@ -71,7 +71,7 @@ export function ChatInterface({
           >
             <div className="mb-1.5 flex items-center gap-2">
               <span className="text-[10px] font-medium text-slate-500">
-                {message.role === 'user' ? 'Ty' : 'Scene'}
+                {message.role === 'user' ? 'Ty' : 'FilmiQ'}
               </span>
               <span className="text-[9px] text-slate-700">{formatTime(message.createdAt)}</span>
             </div>

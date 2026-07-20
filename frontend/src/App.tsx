@@ -1,5 +1,6 @@
 import { Bookmark, ChevronRight, SlidersHorizontal } from 'lucide-react';
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
+import { CatalogCard, CatalogView } from './components/CatalogView';
 import { ChatInterface } from './components/ChatInterface';
 import { EmptyState } from './components/EmptyState';
 import { MovieDetailModal } from './components/MovieDetailModal';
@@ -7,9 +8,9 @@ import { Navbar } from './components/Navbar';
 import { ProfileView } from './components/ProfileView';
 import { RecommendationCard } from './components/RecommendationCard';
 import { useSession } from './context/SessionContext';
-import { demoCandidates, initialAgentSteps } from './data/mockData';
-import { createInteraction, requestRecommendations } from './services/api';
-import type { AgentStep, AppView, RunCandidate } from './types';
+import { demoCandidates, demoCatalogContent, initialAgentSteps } from './data/mockData';
+import { createInteraction, getCatalogContent, requestRecommendations } from './services/api';
+import type { AgentStep, AppView, Content, RunCandidate } from './types';
 
 function wait(duration: number) {
   return new Promise((resolve) => window.setTimeout(resolve, duration));
@@ -35,9 +36,18 @@ export default function App() {
   } = useSession();
   const [activeView, setActiveView] = useState<AppView>('recommendations');
   const [recommendations, setRecommendations] = useState<RunCandidate[]>(demoCandidates);
+  const [catalogContent, setCatalogContent] = useState<Content[]>(demoCatalogContent);
   const [selectedCandidate, setSelectedCandidate] = useState<RunCandidate | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [agentSteps, setAgentSteps] = useState<AgentStep[]>(initialAgentSteps);
+
+  const now = new Date();
+  const curr_hour =  now.getHours();
+  const greeting = curr_hour >= 16 ? "Dobry wieczór" : "Dzień dobry"
+
+  useEffect(() => {
+    void getCatalogContent().then(setCatalogContent).catch(() => undefined);
+  }, []);
 
   const handlePrompt = async (query: string) => {
     if (isProcessing) return;
@@ -103,8 +113,14 @@ export default function App() {
     void createInteraction(candidate.contentId, candidate.id, 'details_opened').catch(() => undefined);
   };
 
-  const savedCandidates = recommendations.filter((candidate) =>
-    watchlistedContentIds.includes(candidate.contentId),
+  const handleCatalogWatchlist = (content: Content) => {
+    if (watchlistedContentIds.includes(content.id)) return;
+    storeInteraction(content.id, null, 'watchlisted');
+    void createInteraction(content.id, null, 'watchlisted').catch(() => undefined);
+  };
+
+  const savedContent = catalogContent.filter((content) =>
+    watchlistedContentIds.includes(content.id),
   );
 
   const renderCard = (candidate: RunCandidate, index: number) => (
@@ -141,6 +157,13 @@ export default function App() {
               onUpdateUser={updateUser}
               onReplacePreferenceGroups={replacePreferenceGroups}
             />
+          ) : activeView === 'catalog' ? (
+            <CatalogView
+              content={catalogContent}
+              watchlistedContentIds={watchlistedContentIds}
+              watchedContentIds={watchedContentIds}
+              onWatchlist={handleCatalogWatchlist}
+            />
           ) : activeView === 'saved' ? (
             <div className="mx-auto max-w-4xl">
               <div className="mb-7 flex items-end justify-between gap-4">
@@ -159,8 +182,18 @@ export default function App() {
                   <ChevronRight className="h-3.5 w-3.5" />
                 </button>
               </div>
-              {savedCandidates.length ? (
-                <div className="space-y-4">{savedCandidates.map(renderCard)}</div>
+              {savedContent.length ? (
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                  {savedContent.map((content) => (
+                    <CatalogCard
+                      key={content.id}
+                      content={content}
+                      isWatchlisted
+                      isWatched={watchedContentIds.includes(content.id)}
+                      onWatchlist={handleCatalogWatchlist}
+                    />
+                  ))}
+                </div>
               ) : (
                 <EmptyState onDiscover={() => setActiveView('recommendations')} />
               )}
@@ -168,7 +201,7 @@ export default function App() {
           ) : (
             <>
               <div className="mb-7 border-b border-white/[0.07] pb-7">
-                <p className="mb-2 text-xs text-slate-500">Dobry wieczór, {user.username}.</p>
+                <p className="mb-2 text-xs text-slate-500">{greeting}, {user.username}.</p>
                 <h1 className="max-w-3xl text-3xl font-semibold tracking-[-0.035em] text-white sm:text-4xl">
                   Co masz ochotę dziś obejrzeć?
                 </h1>

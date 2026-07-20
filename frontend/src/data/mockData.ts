@@ -3,6 +3,7 @@ import type {
   AgentStep,
   AppUser,
   ChatMessage,
+  Content,
   Conversation,
   Interaction,
   RecommendationRequestRecord,
@@ -265,6 +266,93 @@ export const demoCandidates: RunCandidate[] = [
       ],
     },
   },
+];
+
+const additionalCatalogContent: Content[] = [
+  {
+    id: '104',
+    tmdbId: 70523,
+    mediaType: 'tv',
+    title: 'Dark',
+    originalTitle: 'Dark',
+    overview:
+      'Zaginięcie dziecka odsłania tajemnice czterech rodzin i rozpoczyna skomplikowaną podróż przez trzy pokolenia mieszkańców niemieckiego miasteczka.',
+    releaseDate: '2017-12-01',
+    originalLanguage: 'de',
+    posterPath: '/apbrbWs8M9lyOpJYU5WXrpFbk1Z.jpg',
+    voteAverage: 8.4,
+    popularity: 92.3,
+    metadata: {
+      runtimeMinutes: 60,
+      voteCount: 6900,
+      certification: '16+',
+      providers: ['Netflix'],
+    },
+    tmdbRefreshedAt: now,
+    genres: [
+      { id: '6', tmdbGenreId: 10765, name: 'Sci-Fi i Fantasy' },
+      { id: '2', tmdbGenreId: 9648, name: 'Tajemnica' },
+      { id: '3', tmdbGenreId: 18, name: 'Dramat' },
+    ],
+  },
+  {
+    id: '105',
+    tmdbId: 136315,
+    mediaType: 'tv',
+    title: 'The Bear',
+    originalTitle: 'The Bear',
+    overview:
+      'Młody szef kuchni wraca do Chicago, aby prowadzić rodzinny bar kanapkowy i zmierzyć się z chaosem kuchni oraz własną przeszłością.',
+    releaseDate: '2022-06-23',
+    originalLanguage: 'en',
+    posterPath: '/sHFlbKS3WLqMnp9t2ghADIJFnuQ.jpg',
+    voteAverage: 8.2,
+    popularity: 84.6,
+    metadata: {
+      runtimeMinutes: 30,
+      voteCount: 1200,
+      certification: '16+',
+      providers: ['Disney+'],
+    },
+    tmdbRefreshedAt: now,
+    genres: [
+      { id: '3', tmdbGenreId: 18, name: 'Dramat' },
+      { id: '7', tmdbGenreId: 35, name: 'Komedia' },
+    ],
+  },
+  {
+    id: '106',
+    tmdbId: 693134,
+    mediaType: 'movie',
+    title: 'Diuna: Część druga',
+    originalTitle: 'Dune: Part Two',
+    overview:
+      'Paul Atryda jednoczy się z Chani i Fremenami, przygotowując zemstę na spiskowcach odpowiedzialnych za upadek jego rodu.',
+    releaseDate: '2024-02-27',
+    originalLanguage: 'en',
+    posterPath: '/1pdfLvkbY9ohJlCjQH2CZjjYVvJ.jpg',
+    voteAverage: 8.1,
+    popularity: 118.2,
+    metadata: {
+      runtimeMinutes: 166,
+      voteCount: 6200,
+      certification: '13+',
+      backdropPath: '/xOMo8BRK7PfcJv9JCnx7s5hj0PX.jpg',
+      director: 'Denis Villeneuve',
+      providers: ['Max'],
+    },
+    tmdbRefreshedAt: now,
+    genres: [
+      { id: '9', tmdbGenreId: 878, name: 'Science Fiction' },
+      { id: '8', tmdbGenreId: 12, name: 'Przygodowy' },
+      { id: '3', tmdbGenreId: 18, name: 'Dramat' },
+    ],
+  },
+];
+
+export const demoCatalogContent: Content[] = [
+  ...demoCandidates.map((candidate) => candidate.content),
+  ...additionalCatalogContent,
 ];
 
 export const demoAgentExecutions: AgentExecution[] = initialAgentSteps.map((step, index) => ({
