@@ -25,6 +25,7 @@ interface SessionContextValue extends StoredSession {
   addMessage: (role: MessageRole, content: string) => void;
   toggleSaved: (movieId: number) => void;
   toggleWatched: (movieId: number) => void;
+  updateUser: (changes: Partial<UserProfile>) => void;
   addDetectedPreferences: (preferences: string[]) => void;
   recordInteraction: (query: string, resultCount: number) => void;
 }
@@ -87,6 +88,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }));
   };
 
+  const updateUser = (changes: Partial<UserProfile>) => {
+    setStoredSession((current) => ({
+      ...current,
+      user: { ...current.user, ...changes },
+    }));
+  };
+
   const addDetectedPreferences = (preferences: string[]) => {
     setStoredSession((current) => ({
       ...current,
@@ -117,6 +125,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     addMessage,
     toggleSaved,
     toggleWatched,
+    updateUser,
     addDetectedPreferences,
     recordInteraction,
   };

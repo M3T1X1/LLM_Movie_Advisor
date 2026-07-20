@@ -68,4 +68,4 @@ export interface RecommendationResponse {
   detectedPreferences: string[];
 }
 
-export type AppView = 'recommendations' | 'saved' | 'history';
+export type AppView = 'recommendations' | 'saved' | 'profile';

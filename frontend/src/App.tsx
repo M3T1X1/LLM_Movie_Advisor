@@ -1,10 +1,10 @@
-import { Bookmark, ChevronRight, History as HistoryIcon, SlidersHorizontal } from 'lucide-react';
+import { Bookmark, ChevronRight, SlidersHorizontal } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { ChatInterface } from './components/ChatInterface';
 import { EmptyState } from './components/EmptyState';
-import { HistoryView } from './components/HistoryView';
 import { MovieDetailModal } from './components/MovieDetailModal';
 import { Navbar } from './components/Navbar';
+import { ProfileView } from './components/ProfileView';
 import { RecommendationCard } from './components/RecommendationCard';
 import { useSession } from './context/SessionContext';
 import { demoMovies, initialAgentSteps } from './data/mockData';
@@ -25,6 +25,7 @@ export default function App() {
     addMessage,
     toggleSaved,
     toggleWatched,
+    updateUser,
     addDetectedPreferences,
     recordInteraction,
   } = useSession();
@@ -114,16 +115,14 @@ export default function App() {
 
       <div className="mx-auto max-w-[1480px] px-4 py-7 sm:px-6 lg:px-8">
         <main className="min-w-0">
-          {activeView === 'history' ? (
-            <div className="mx-auto max-w-4xl">
-              <PageHeading
-                eyebrow="Twoja aktywność"
-                title="Historia rekomendacji"
-                description="Poprzednie rozmowy i konteksty, do których możesz wrócić."
-                icon={<HistoryIcon className="h-4 w-4" />}
-              />
-              <HistoryView history={history} onRepeat={(query) => void handlePrompt(query)} />
-            </div>
+          {activeView === 'profile' ? (
+            <ProfileView
+              user={user}
+              history={history}
+              savedCount={savedMovieIds.length}
+              watchedCount={watchedMovieIds.length}
+              onUpdateUser={updateUser}
+            />
           ) : activeView === 'saved' ? (
             <div className="mx-auto max-w-4xl">
               <div className="mb-7 flex items-end justify-between gap-4">

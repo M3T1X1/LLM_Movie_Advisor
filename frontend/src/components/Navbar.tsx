@@ -1,4 +1,4 @@
-import { Bookmark, Clapperboard, History, Sparkles } from 'lucide-react';
+import { Bookmark, Clapperboard, Sparkles, UserRound } from 'lucide-react';
 import type { AppView, UserProfile } from '../types';
 
 interface NavbarProps {
@@ -8,9 +8,9 @@ interface NavbarProps {
 }
 
 const navigation: { id: AppView; label: string; icon: typeof Sparkles }[] = [
-  { id: 'recommendations', label: 'Odkrywaj', icon: Sparkles },
+  { id: 'recommendations', label: 'System Rekomendacji', icon: Sparkles },
   { id: 'saved', label: 'Moja lista', icon: Bookmark },
-  { id: 'history', label: 'Historia', icon: History },
+  { id: 'profile', label: 'Profil', icon: UserRound },
 ];
 
 export function Navbar({ user, activeView, onViewChange }: NavbarProps) {
