@@ -4,7 +4,6 @@ import {
   Clock3,
   Eye,
   Film,
-  Play,
   Star,
   X,
 } from 'lucide-react';
@@ -91,13 +90,6 @@ export function MovieDetailModal({
             <div className="mt-5 flex flex-wrap gap-2">
               <button
                 type="button"
-                className="flex h-10 items-center gap-2 rounded-md bg-white px-4 text-xs font-semibold text-ink-950 transition hover:bg-slate-200"
-              >
-                <Play className="h-4 w-4 fill-current" />
-                Zobacz zwiastun
-              </button>
-              <button
-                type="button"
                 onClick={() => onToggleSaved(movie.id)}
                 className={`flex h-10 items-center gap-2 rounded-md px-4 text-xs font-semibold transition ${
                   isSaved
@@ -131,22 +123,6 @@ export function MovieDetailModal({
 
             <h3 className="text-sm font-semibold text-white">Opis</h3>
             <p className="mt-3 text-sm leading-7 text-slate-400">{movie.overview}</p>
-
-            <h3 className="mt-8 text-sm font-semibold text-white">Główna obsada</h3>
-            <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-              {movie.cast.map((person) => (
-                <div key={person.id} className="rounded-md border border-white/[0.06] bg-white/[0.025] p-3">
-                  <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-full bg-slate-800 text-[10px] font-semibold text-slate-400">
-                    {person.name
-                      .split(' ')
-                      .map((part) => part[0])
-                      .join('')}
-                  </div>
-                  <p className="text-xs font-medium text-slate-200">{person.name}</p>
-                  <p className="mt-1 text-[10px] text-slate-600">{person.character}</p>
-                </div>
-              ))}
-            </div>
           </div>
 
           <aside>
