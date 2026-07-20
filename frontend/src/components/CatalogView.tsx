@@ -22,6 +22,7 @@ interface CatalogViewProps {
   content: Content[];
   watchlistedContentIds: DatabaseId[];
   watchedContentIds: DatabaseId[];
+  onOpen: (content: Content) => void;
   onWatchlist: (content: Content) => void;
   onMarkWatched: (content: Content) => void;
 }
@@ -30,6 +31,7 @@ export function CatalogView({
   content,
   watchlistedContentIds,
   watchedContentIds,
+  onOpen,
   onWatchlist,
   onMarkWatched,
 }: CatalogViewProps) {
@@ -197,6 +199,7 @@ export function CatalogView({
               content={item}
               isWatchlisted={watchlistedContentIds.includes(item.id)}
               isWatched={watchedContentIds.includes(item.id)}
+              onOpen={onOpen}
               onWatchlist={onWatchlist}
               onMarkWatched={onMarkWatched}
             />
@@ -269,12 +272,14 @@ export function CatalogCard({
   content,
   isWatchlisted,
   isWatched,
+  onOpen,
   onWatchlist,
   onMarkWatched,
 }: {
   content: Content;
   isWatchlisted: boolean;
   isWatched: boolean;
+  onOpen: (content: Content) => void;
   onWatchlist: (content: Content) => void;
   onMarkWatched: (content: Content) => void;
 }) {
@@ -284,44 +289,54 @@ export function CatalogCard({
 
   return (
     <article className="group overflow-hidden rounded-lg border border-white/[0.08] bg-[#0d0f15] transition hover:border-white/[0.15]">
-      <div className="relative aspect-[2/3] overflow-hidden bg-slate-900">
-        {posterUrl && !imageFailed ? (
-          <img
-            src={posterUrl}
-            alt={`Plakat: ${content.title}`}
-            onError={() => setImageFailed(true)}
-            className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.025]"
-          />
-        ) : (
-          <div className="flex h-full items-center justify-center">
-            {content.mediaType === 'tv' ? <Tv className="h-8 w-8 text-slate-700" /> : <Film className="h-8 w-8 text-slate-700" />}
-          </div>
-        )}
-        <span className="absolute left-2 top-2 flex items-center gap-1 bg-black/75 px-2 py-1 text-[9px] font-medium text-slate-200 backdrop-blur-sm">
-          {content.mediaType === 'tv' ? <Tv className="h-2.5 w-2.5" /> : <Film className="h-2.5 w-2.5" />}
-          {content.mediaType === 'tv' ? 'Serial' : 'Film'}
-        </span>
-        {isWatched && (
-          <span className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500 text-white">
-            <Check className="h-3.5 w-3.5" />
+      <button
+        type="button"
+        onClick={() => onOpen(content)}
+        className="block w-full text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-violet-400/70"
+        aria-label={`Pokaż szczegóły: ${content.title}`}
+      >
+        <div className="relative aspect-[2/3] overflow-hidden bg-slate-900">
+          {posterUrl && !imageFailed ? (
+            <img
+              src={posterUrl}
+              alt={`Plakat: ${content.title}`}
+              onError={() => setImageFailed(true)}
+              className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.025]"
+            />
+          ) : (
+            <div className="flex h-full items-center justify-center">
+              {content.mediaType === 'tv' ? <Tv className="h-8 w-8 text-slate-700" /> : <Film className="h-8 w-8 text-slate-700" />}
+            </div>
+          )}
+          <span className="absolute left-2 top-2 flex items-center gap-1 bg-black/75 px-2 py-1 text-[9px] font-medium text-slate-200 backdrop-blur-sm">
+            {content.mediaType === 'tv' ? <Tv className="h-2.5 w-2.5" /> : <Film className="h-2.5 w-2.5" />}
+            {content.mediaType === 'tv' ? 'Serial' : 'Film'}
           </span>
-        )}
-      </div>
-
-      <div className="p-3.5">
-        <h2 className="truncate text-sm font-semibold text-white" title={content.title}>{content.title}</h2>
-        <div className="mt-1.5 flex items-center gap-2 text-[10px] text-slate-600">
-          {releaseYear && <span>{releaseYear}</span>}
-          {content.voteAverage !== null && (
-            <span className="flex items-center gap-1 text-amber-300">
-              <Star className="h-2.5 w-2.5 fill-current" />
-              {content.voteAverage.toFixed(1)}
+          {isWatched && (
+            <span className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500 text-white">
+              <Check className="h-3.5 w-3.5" />
             </span>
           )}
         </div>
-        <p className="mt-2 truncate text-[10px] text-slate-600">
-          {content.genres.slice(0, 2).map((genre) => genre.name).join(' · ')}
-        </p>
+
+        <div className="px-3.5 pt-3.5">
+          <h2 className="truncate text-sm font-semibold text-white transition group-hover:text-violet-200" title={content.title}>{content.title}</h2>
+          <div className="mt-1.5 flex items-center gap-2 text-[10px] text-slate-600">
+            {releaseYear && <span>{releaseYear}</span>}
+            {content.voteAverage !== null && (
+              <span className="flex items-center gap-1 text-amber-300">
+                <Star className="h-2.5 w-2.5 fill-current" />
+                {content.voteAverage.toFixed(1)}
+              </span>
+            )}
+          </div>
+          <p className="mt-2 truncate text-[10px] text-slate-600">
+            {content.genres.slice(0, 2).map((genre) => genre.name).join(' · ')}
+          </p>
+        </div>
+      </button>
+
+      <div className="px-3.5 pb-3.5">
         <div className="mt-3 grid grid-cols-2 gap-1.5">
           <button
             type="button"

@@ -1,6 +1,6 @@
 import { Bookmark, Check, Clock3, Eye, Film, Star, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import type { RunCandidate } from '../types';
+import type { Content, RunCandidate } from '../types';
 import {
   formatRuntime,
   getBackdropUrl,
@@ -9,16 +9,18 @@ import {
 } from '../utils/content';
 
 interface MovieDetailModalProps {
-  candidate: RunCandidate | null;
+  content: Content | null;
+  recommendation?: RunCandidate | null;
   isWatchlisted: boolean;
   isWatched: boolean;
   onClose: () => void;
-  onWatchlist: (candidate: RunCandidate) => void;
-  onMarkWatched: (candidate: RunCandidate) => void;
+  onWatchlist: () => void;
+  onMarkWatched: () => void;
 }
 
 export function MovieDetailModal({
-  candidate,
+  content,
+  recommendation = null,
   isWatchlisted,
   isWatched,
   onClose,
@@ -28,7 +30,7 @@ export function MovieDetailModal({
   const [imageFailed, setImageFailed] = useState(false);
 
   useEffect(() => {
-    if (!candidate) return;
+    if (!content) return;
     document.body.classList.add('overflow-hidden');
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose();
@@ -38,17 +40,16 @@ export function MovieDetailModal({
       document.body.classList.remove('overflow-hidden');
       window.removeEventListener('keydown', handleEscape);
     };
-  }, [candidate, onClose]);
+  }, [content, onClose]);
 
-  useEffect(() => setImageFailed(false), [candidate?.id]);
+  useEffect(() => setImageFailed(false), [content?.id]);
 
-  if (!candidate) return null;
+  if (!content) return null;
 
-  const { content } = candidate;
   const backdropUrl = getBackdropUrl(content);
   const releaseYear = getReleaseYear(content);
   const runtime = formatRuntime(content.metadata.runtimeMinutes);
-  const matchPercent = getMatchPercent(candidate);
+  const matchPercent = recommendation ? getMatchPercent(recommendation) : null;
   const providers = content.metadata.providers ?? [];
 
   return (
@@ -99,7 +100,7 @@ export function MovieDetailModal({
             <div className="mt-5 flex flex-wrap gap-2">
               <button
                 type="button"
-                onClick={() => onWatchlist(candidate)}
+                onClick={onWatchlist}
                 title={isWatchlisted ? 'Usuń z listy' : 'Zapisz na później'}
                 className={`flex h-10 items-center gap-2 rounded-md px-4 text-xs font-semibold transition ${
                   isWatchlisted
@@ -124,14 +125,16 @@ export function MovieDetailModal({
 
         <div className="grid gap-8 p-5 sm:p-8 lg:grid-cols-[minmax(0,1.5fr)_minmax(250px,0.6fr)] lg:p-10">
           <div>
-            <div className="mb-8 border-l-2 border-violet-500/60 pl-5">
-              <h3 className="mb-2 text-xs font-semibold uppercase tracking-[0.1em] text-slate-300">
-                Dlaczego ten tytuł?
-              </h3>
-              <p className="text-sm leading-7 text-slate-300">
-                {candidate.explanation ?? 'Brak wyjaśnienia dla tej rekomendacji.'}
-              </p>
-            </div>
+            {recommendation && (
+              <div className="mb-8 border-l-2 border-violet-500/60 pl-5">
+                <h3 className="mb-2 text-xs font-semibold uppercase tracking-[0.1em] text-slate-300">
+                  Dlaczego ten tytuł?
+                </h3>
+                <p className="text-sm leading-7 text-slate-300">
+                  {recommendation.explanation ?? 'Brak wyjaśnienia dla tej rekomendacji.'}
+                </p>
+              </div>
+            )}
 
             <h3 className="text-sm font-semibold text-white">Opis</h3>
             <p className="mt-3 text-sm leading-7 text-slate-400">
@@ -178,7 +181,7 @@ export function MovieDetailModal({
               </dl>
               <button
                 type="button"
-                onClick={() => onMarkWatched(candidate)}
+                onClick={onMarkWatched}
                 title={isWatched ? 'Cofnij oznaczenie jako obejrzany' : 'Oznacz jako obejrzany'}
                 className={`mt-1 flex h-10 w-full items-center justify-center gap-2 rounded-md border text-xs font-medium transition ${
                   isWatched

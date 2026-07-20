@@ -46,6 +46,7 @@ export default function App() {
   const [recommendations, setRecommendations] = useState<RunCandidate[]>(demoCandidates);
   const [catalogContent, setCatalogContent] = useState<Content[]>(demoCatalogContent);
   const [selectedCandidate, setSelectedCandidate] = useState<RunCandidate | null>(null);
+  const [selectedCatalogContent, setSelectedCatalogContent] = useState<Content | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [agentSteps, setAgentSteps] = useState<AgentStep[]>(initialAgentSteps);
 
@@ -124,9 +125,17 @@ export default function App() {
   };
 
   const handleOpenCandidate = (candidate: RunCandidate) => {
+    setSelectedCatalogContent(null);
     setSelectedCandidate(candidate);
     storeInteraction(candidate.contentId, candidate.id, 'details_opened');
     void createInteraction(candidate.contentId, candidate.id, 'details_opened').catch(() => undefined);
+  };
+
+  const handleOpenCatalogContent = (content: Content) => {
+    setSelectedCandidate(null);
+    setSelectedCatalogContent(content);
+    storeInteraction(content.id, null, 'details_opened');
+    void createInteraction(content.id, null, 'details_opened').catch(() => undefined);
   };
 
   const handleCatalogWatchlist = (content: Content) => {
@@ -152,6 +161,22 @@ export default function App() {
   const savedContent = catalogContent.filter((content) =>
     watchlistedContentIds.includes(content.id),
   );
+  const selectedContent = selectedCandidate?.content ?? selectedCatalogContent;
+
+  const handleCloseDetails = () => {
+    setSelectedCandidate(null);
+    setSelectedCatalogContent(null);
+  };
+
+  const handleModalWatchlist = () => {
+    if (selectedCandidate) handleWatchlist(selectedCandidate);
+    else if (selectedCatalogContent) handleCatalogWatchlist(selectedCatalogContent);
+  };
+
+  const handleModalWatched = () => {
+    if (selectedCandidate) handleMarkWatched(selectedCandidate);
+    else if (selectedCatalogContent) handleCatalogWatched(selectedCatalogContent);
+  };
 
   const renderCard = (candidate: RunCandidate, index: number) => (
     <RecommendationCard
@@ -198,6 +223,7 @@ export default function App() {
               content={catalogContent}
               watchlistedContentIds={watchlistedContentIds}
               watchedContentIds={watchedContentIds}
+              onOpen={handleOpenCatalogContent}
               onWatchlist={handleCatalogWatchlist}
               onMarkWatched={handleCatalogWatched}
             />
@@ -227,6 +253,7 @@ export default function App() {
                       content={content}
                       isWatchlisted
                       isWatched={watchedContentIds.includes(content.id)}
+                      onOpen={handleOpenCatalogContent}
                       onWatchlist={handleCatalogWatchlist}
                       onMarkWatched={handleCatalogWatched}
                     />
@@ -290,14 +317,13 @@ export default function App() {
       </div>
 
       <MovieDetailModal
-        candidate={selectedCandidate}
-        isWatchlisted={
-          selectedCandidate ? watchlistedContentIds.includes(selectedCandidate.contentId) : false
-        }
-        isWatched={selectedCandidate ? watchedContentIds.includes(selectedCandidate.contentId) : false}
-        onClose={() => setSelectedCandidate(null)}
-        onWatchlist={handleWatchlist}
-        onMarkWatched={handleMarkWatched}
+        content={selectedContent}
+        recommendation={selectedCandidate}
+        isWatchlisted={selectedContent ? watchlistedContentIds.includes(selectedContent.id) : false}
+        isWatched={selectedContent ? watchedContentIds.includes(selectedContent.id) : false}
+        onClose={handleCloseDetails}
+        onWatchlist={handleModalWatchlist}
+        onMarkWatched={handleModalWatched}
       />
     </div>
   );
