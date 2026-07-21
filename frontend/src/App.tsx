@@ -4,6 +4,7 @@ import { AnalyticsView } from './components/AnalyticsView';
 import { CatalogCard, CatalogView } from './components/CatalogView';
 import { ChatInterface } from './components/ChatInterface';
 import { EmptyState } from './components/EmptyState';
+import { LoginView } from './components/LoginView';
 import { MovieDetailModal } from './components/MovieDetailModal';
 import { Navbar } from './components/Navbar';
 import { ProfileView } from './components/ProfileView';
@@ -41,7 +42,7 @@ export default function App() {
     recordInteraction: storeInteraction,
     removeInteraction: removeStoredInteraction,
   } = useSession();
-  const [activeView, setActiveView] = useState<AppView>('recommendations');
+  const [activeView, setActiveView] = useState<AppView>('login');
   const [recommendations, setRecommendations] = useState<RunCandidate[]>(demoCandidates);
   const [catalogContent, setCatalogContent] = useState<Content[]>(demoCatalogContent);
   const [selectedCandidate, setSelectedCandidate] = useState<RunCandidate | null>(null);
@@ -192,15 +193,19 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-ink-950 text-slate-100 selection:bg-violet-500/30">
-      <Navbar
-        user={user}
-        activeView={activeView}
-        onViewChange={setActiveView}
-      />
+      {activeView !== 'login' && (
+        <Navbar
+          user={user}
+          activeView={activeView}
+          onViewChange={setActiveView}
+        />
+      )}
 
-      <div className="mx-auto max-w-[1480px] px-4 py-7 sm:px-6 lg:px-8">
+      <div className={activeView === 'login' ? '' : 'mx-auto max-w-[1480px] px-4 py-7 sm:px-6 lg:px-8'}>
         <main className="min-w-0">
-          {activeView === 'profile' ? (
+          {activeView === 'login' ? (
+            <LoginView onLogin={() => setActiveView('recommendations')} />
+          ) : activeView === 'profile' ? (
             <ProfileView
               user={user}
               semanticProfile={semanticProfile}
