@@ -169,4 +169,12 @@ export interface RecommendationResponse {
   agentExecutions: AgentExecution[];
 }
 
-export type AppView = 'login' | 'recommendations' | 'catalog' | 'saved' | 'analytics' | 'profile';
+export type AppView =
+  | 'login'
+  | 'register'
+  | 'forgot-password'
+  | 'recommendations'
+  | 'catalog'
+  | 'saved'
+  | 'analytics'
+  | 'profile';

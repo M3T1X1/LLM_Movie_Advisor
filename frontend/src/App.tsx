@@ -4,11 +4,13 @@ import { AnalyticsView } from './components/AnalyticsView';
 import { CatalogCard, CatalogView } from './components/CatalogView';
 import { ChatInterface } from './components/ChatInterface';
 import { EmptyState } from './components/EmptyState';
+import { ForgotPasswordView } from './components/ForgotPasswordView';
 import { LoginView } from './components/LoginView';
 import { MovieDetailModal } from './components/MovieDetailModal';
 import { Navbar } from './components/Navbar';
 import { ProfileView } from './components/ProfileView';
 import { RecommendationCard } from './components/RecommendationCard';
+import { RegisterView } from './components/RegisterView';
 import { useSession } from './context/SessionContext';
 import { demoCandidates, demoCatalogContent, initialAgentSteps } from './data/mockData';
 import {
@@ -21,6 +23,12 @@ import type { AgentStep, AppView, Content, RunCandidate } from './types';
 
 function wait(duration: number) {
   return new Promise((resolve) => window.setTimeout(resolve, duration));
+}
+
+function getInitialView(): AppView {
+  if (window.location.pathname === '/register') return 'register';
+  if (window.location.pathname === '/forgot-password') return 'forgot-password';
+  return 'login';
 }
 
 export default function App() {
@@ -42,7 +50,7 @@ export default function App() {
     recordInteraction: storeInteraction,
     removeInteraction: removeStoredInteraction,
   } = useSession();
-  const [activeView, setActiveView] = useState<AppView>('login');
+  const [activeView, setActiveView] = useState<AppView>(getInitialView);
   const [recommendations, setRecommendations] = useState<RunCandidate[]>(demoCandidates);
   const [catalogContent, setCatalogContent] = useState<Content[]>(demoCatalogContent);
   const [selectedCandidate, setSelectedCandidate] = useState<RunCandidate | null>(null);
@@ -57,6 +65,23 @@ export default function App() {
   useEffect(() => {
     void getCatalogContent().then(setCatalogContent).catch(() => undefined);
   }, []);
+
+  useEffect(() => {
+    const handlePopState = () => setActiveView(getInitialView());
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  const navigateAuth = (mode: 'login' | 'register' | 'forgot-password') => {
+    const path = mode === 'login' ? '/login' : mode === 'register' ? '/register' : '/forgot-password';
+    window.history.pushState({}, '', path);
+    setActiveView(mode);
+  };
+
+  const completeLogin = () => {
+    window.history.replaceState({}, '', '/');
+    setActiveView('recommendations');
+  };
 
   const handlePrompt = async (query: string) => {
     if (isProcessing) return;
@@ -193,7 +218,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-ink-950 text-slate-100 selection:bg-violet-500/30">
-      {activeView !== 'login' && (
+      {!['login', 'register', 'forgot-password'].includes(activeView) && (
         <Navbar
           user={user}
           activeView={activeView}
@@ -201,10 +226,21 @@ export default function App() {
         />
       )}
 
-      <div className={activeView === 'login' ? '' : 'mx-auto max-w-[1480px] px-4 py-7 sm:px-6 lg:px-8'}>
+      <div className={['login', 'register', 'forgot-password'].includes(activeView) ? '' : 'mx-auto max-w-[1480px] px-4 py-7 sm:px-6 lg:px-8'}>
         <main className="min-w-0">
           {activeView === 'login' ? (
-            <LoginView onLogin={() => setActiveView('recommendations')} />
+            <LoginView
+              onLogin={completeLogin}
+              onRegister={() => navigateAuth('register')}
+              onForgotPassword={() => navigateAuth('forgot-password')}
+            />
+          ) : activeView === 'register' ? (
+            <RegisterView
+              onBack={() => navigateAuth('login')}
+              onRegistered={() => navigateAuth('login')}
+            />
+          ) : activeView === 'forgot-password' ? (
+            <ForgotPasswordView onBack={() => navigateAuth('login')} />
           ) : activeView === 'profile' ? (
             <ProfileView
               user={user}
