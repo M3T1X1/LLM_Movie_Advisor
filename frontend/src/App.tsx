@@ -25,10 +25,24 @@ function wait(duration: number) {
   return new Promise((resolve) => window.setTimeout(resolve, duration));
 }
 
-function getInitialView(): AppView {
-  if (window.location.pathname === '/register') return 'register';
-  if (window.location.pathname === '/forgot-password') return 'forgot-password';
-  return 'login';
+const viewPaths: Record<AppView, string> = {
+  login: '/login',
+  register: '/register',
+  'forgot-password': '/forgot-password',
+  recommendations: '/recommendations',
+  catalog: '/catalog',
+  saved: '/watchlist',
+  analytics: '/analytics',
+  profile: '/profile',
+};
+
+function getViewFromPath(): AppView {
+  const pathname = window.location.pathname.replace(/\/+$/, '') || '/';
+  if (pathname === '/') return 'login';
+  return (
+    (Object.entries(viewPaths).find(([, path]) => path === pathname)?.[0] as AppView | undefined) ??
+    'login'
+  );
 }
 
 export default function App() {
@@ -50,7 +64,7 @@ export default function App() {
     recordInteraction: storeInteraction,
     removeInteraction: removeStoredInteraction,
   } = useSession();
-  const [activeView, setActiveView] = useState<AppView>(getInitialView);
+  const [activeView, setActiveView] = useState<AppView>(getViewFromPath);
   const [recommendations, setRecommendations] = useState<RunCandidate[]>(demoCandidates);
   const [catalogContent, setCatalogContent] = useState<Content[]>(demoCatalogContent);
   const [selectedCandidate, setSelectedCandidate] = useState<RunCandidate | null>(null);
@@ -67,26 +81,27 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const handlePopState = () => setActiveView(getInitialView());
+    const handlePopState = () => setActiveView(getViewFromPath());
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
-  const navigateAuth = (mode: 'login' | 'register' | 'forgot-password') => {
-    const path = mode === 'login' ? '/login' : mode === 'register' ? '/register' : '/forgot-password';
-    window.history.pushState({}, '', path);
-    setActiveView(mode);
+  const navigateTo = (view: AppView, replace = false) => {
+    const path = viewPaths[view];
+    if (window.location.pathname !== path) {
+      window.history[replace ? 'replaceState' : 'pushState']({}, '', path);
+    }
+    setActiveView(view);
   };
 
   const completeLogin = () => {
-    window.history.replaceState({}, '', '/');
-    setActiveView('recommendations');
+    navigateTo('recommendations', true);
   };
 
   const handlePrompt = async (query: string) => {
     if (isProcessing) return;
 
-    setActiveView('recommendations');
+    navigateTo('recommendations');
     setIsProcessing(true);
     const userMessage = addMessage('user', query);
     setAgentSteps(initialAgentSteps.map((step) => ({ ...step, status: 'pending' })));
@@ -222,7 +237,7 @@ export default function App() {
         <Navbar
           user={user}
           activeView={activeView}
-          onViewChange={setActiveView}
+          onViewChange={navigateTo}
         />
       )}
 
@@ -231,16 +246,16 @@ export default function App() {
           {activeView === 'login' ? (
             <LoginView
               onLogin={completeLogin}
-              onRegister={() => navigateAuth('register')}
-              onForgotPassword={() => navigateAuth('forgot-password')}
+              onRegister={() => navigateTo('register')}
+              onForgotPassword={() => navigateTo('forgot-password')}
             />
           ) : activeView === 'register' ? (
             <RegisterView
-              onBack={() => navigateAuth('login')}
-              onRegistered={() => navigateAuth('login')}
+              onBack={() => navigateTo('login')}
+              onRegistered={() => navigateTo('login')}
             />
           ) : activeView === 'forgot-password' ? (
-            <ForgotPasswordView onBack={() => navigateAuth('login')} />
+            <ForgotPasswordView onBack={() => navigateTo('login')} />
           ) : activeView === 'profile' ? (
             <ProfileView
               user={user}
@@ -277,7 +292,7 @@ export default function App() {
                 />
                 <button
                   type="button"
-                  onClick={() => setActiveView('recommendations')}
+                  onClick={() => navigateTo('recommendations')}
                   className="mb-1 hidden items-center gap-1 text-xs text-slate-500 transition hover:text-white sm:flex"
                 >
                   Odkrywaj dalej
@@ -299,7 +314,7 @@ export default function App() {
                   ))}
                 </div>
               ) : (
-                <EmptyState onDiscover={() => setActiveView('recommendations')} />
+                <EmptyState onDiscover={() => navigateTo('recommendations')} />
               )}
             </div>
           ) : (
