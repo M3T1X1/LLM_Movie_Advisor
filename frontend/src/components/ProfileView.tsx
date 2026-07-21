@@ -26,49 +26,18 @@ interface ProfileViewProps {
   savedCount: number;
   watchedCount: number;
   onUpdateUser: (changes: Partial<Pick<AppUser, 'username' | 'email'>>) => void;
-  onReplacePreferenceGroups: (groups: {
-    favoriteGenres: string[];
-    positivePreferences: string[];
-    avoidedPreferences: string[];
-  }) => void;
 }
 
 interface ProfileFormState {
   username: string;
   email: string;
-  favoriteGenres: string;
-  preferences: string;
-  avoidedThemes: string;
 }
 
-function createFormState(user: AppUser, preferences: UserPreference[]): ProfileFormState {
+function createFormState(user: AppUser): ProfileFormState {
   return {
     username: user.username,
     email: user.email,
-    favoriteGenres: preferences
-      .filter((preference) => preference.preferenceType === 'genre' && preference.polarity === 1)
-      .map((preference) => preference.preferenceValue)
-      .join(', '),
-    preferences: preferences
-      .filter((preference) => preference.preferenceType !== 'genre' && preference.polarity === 1)
-      .map((preference) => preference.preferenceValue)
-      .join(', '),
-    avoidedThemes: preferences
-      .filter((preference) => preference.polarity === -1)
-      .map((preference) => preference.preferenceValue)
-      .join(', '),
   };
-}
-
-function splitValues(value: string) {
-  return Array.from(
-    new Set(
-      value
-        .split(',')
-        .map((item) => item.trim())
-        .filter(Boolean),
-    ),
-  );
 }
 
 function formatDate(date: string) {
@@ -88,10 +57,9 @@ export function ProfileView({
   savedCount,
   watchedCount,
   onUpdateUser,
-  onReplacePreferenceGroups,
 }: ProfileViewProps) {
   const [isEditing, setIsEditing] = useState(false);
-  const [form, setForm] = useState<ProfileFormState>(() => createFormState(user, preferences));
+  const [form, setForm] = useState<ProfileFormState>(() => createFormState(user));
   const initials = user.username.slice(0, 2).toUpperCase();
   const favoriteGenres = preferences
     .filter((preference) => preference.preferenceType === 'genre' && preference.polarity === 1)
@@ -104,7 +72,7 @@ export function ProfileView({
     .map((preference) => preference.preferenceValue);
 
   const startEditing = () => {
-    setForm(createFormState(user, preferences));
+    setForm(createFormState(user));
     setIsEditing(true);
   };
 
@@ -114,11 +82,6 @@ export function ProfileView({
       username: form.username.trim() || user.username,
       email: form.email.trim() || user.email,
     });
-    onReplacePreferenceGroups({
-      favoriteGenres: splitValues(form.favoriteGenres),
-      positivePreferences: splitValues(form.preferences),
-      avoidedPreferences: splitValues(form.avoidedThemes),
-    });
     setIsEditing(false);
   };
 
@@ -126,7 +89,6 @@ export function ProfileView({
     <div className="mx-auto max-w-5xl">
       <div className="mb-7">
         <p className="mb-2 flex items-center gap-2 text-[10px] font-medium uppercase tracking-[0.14em] text-slate-600">
-          <UserRound className="h-4 w-4" />
           Konto użytkownika
         </p>
         <div className="flex flex-col justify-between gap-5 border-b border-white/[0.07] pb-7 sm:flex-row sm:items-end">
@@ -165,7 +127,9 @@ export function ProfileView({
           <div className="mb-6 flex items-center justify-between border-b border-white/[0.06] pb-4">
             <div>
               <h2 className="text-sm font-semibold text-white">Edycja profilu</h2>
-              <p className="mt-1 text-[11px] text-slate-600">Wartości na listach oddzielaj przecinkami.</p>
+              <p className="mt-1 text-[11px] text-slate-600">
+                Gusta są aktualizowane automatycznie na podstawie Twojej aktywności.
+              </p>
             </div>
             <button
               type="button"
@@ -189,23 +153,6 @@ export function ProfileView({
               value={form.email}
               onChange={(value) => setForm((current) => ({ ...current, email: value }))}
             />
-            <ProfileInput
-              label="Ulubione gatunki"
-              value={form.favoriteGenres}
-              onChange={(value) => setForm((current) => ({ ...current, favoriteGenres: value }))}
-            />
-            <ProfileInput
-              label="Czego unikać"
-              value={form.avoidedThemes}
-              onChange={(value) => setForm((current) => ({ ...current, avoidedThemes: value }))}
-            />
-            <div className="sm:col-span-2">
-              <ProfileInput
-                label="Preferencje"
-                value={form.preferences}
-                onChange={(value) => setForm((current) => ({ ...current, preferences: value }))}
-              />
-            </div>
           </div>
 
           <div className="mt-6 flex justify-end gap-2 border-t border-white/[0.06] pt-4">

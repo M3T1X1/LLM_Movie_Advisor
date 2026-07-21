@@ -36,7 +36,6 @@ export default function App() {
     addMessage,
     appendMessage,
     updateUser,
-    replacePreferenceGroups,
     addDetectedPreferences,
     updateConversationFromQuery,
     recordInteraction: storeInteraction,
@@ -210,7 +209,6 @@ export default function App() {
               savedCount={watchlistedContentIds.length}
               watchedCount={watchedContentIds.length}
               onUpdateUser={updateUser}
-              onReplacePreferenceGroups={replacePreferenceGroups}
             />
           ) : activeView === 'analytics' ? (
             <AnalyticsView
