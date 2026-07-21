@@ -179,7 +179,7 @@ export function ProfileView({
               <PreferenceGroup label="Pomijaj w rekomendacjach" values={avoidedPreferences} muted />
               {semanticProfile.semanticSummary && (
                 <div className="mt-5 border-t border-white/[0.06] pt-4">
-                  <p className="mb-2 text-[10px] text-slate-600">Podsumowanie semantyczne</p>
+                  <p className="mb-2 text-[10px] text-slateOstatnia aktywność-600">Podsumowanie semantyczne</p>
                   <p className="text-xs leading-5 text-slate-500">{semanticProfile.semanticSummary}</p>
                 </div>
               )}
