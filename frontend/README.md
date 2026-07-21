@@ -17,6 +17,11 @@ npm run dev
 Aplikacja będzie dostępna pod adresem `http://localhost:5173`. Vite przekazuje zapytania z `/api`
 do Django działającego na `http://localhost:8000`.
 
+Polecenie `npm run dev` najpierw wykonuje cały zestaw testów, a następnie uruchamia serwer Vite
+tylko wtedy, gdy wszystkie testy przejdą poprawnie. Jeśli którykolwiek test zakończy się błędem,
+serwer nie zostanie uruchomiony. Sam serwer bez wstępnych testów można uruchomić poleceniem
+`npm run dev:app`.
+
 ## Integracja z Django
 
 Po wdrożeniu backendu ustaw w `.env`:
