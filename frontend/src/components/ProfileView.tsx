@@ -5,9 +5,7 @@ import {
   Eye,
   MessageSquareText,
   Pencil,
-  ShieldCheck,
   SlidersHorizontal,
-  UserRound,
   X,
 } from 'lucide-react';
 import { useState, type FormEvent, type ReactNode } from 'react';
@@ -173,7 +171,7 @@ export function ProfileView({
           </div>
         </form>
       ) : (
-        <div className="grid gap-7 lg:grid-cols-[minmax(0,1.35fr)_minmax(280px,0.65fr)]">
+        <div className="grid gap-7">
           <div className="space-y-5">
             <ProfileSection title="Twój gust" icon={<SlidersHorizontal className="h-4 w-4" />}>
               <PreferenceGroup label="Ulubione gatunki" values={favoriteGenres} />
@@ -191,7 +189,7 @@ export function ProfileView({
               {conversations.length ? (
                 <div className="divide-y divide-white/[0.05]">
                   {conversations.slice(0, 4).map((conversation) => (
-                    <div key={conversation.id} className="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0">
+                    <div key={conversation.id} className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0">
                       <div className="min-w-0">
                         <p className="truncate text-xs text-slate-300">
                           {conversation.title ?? 'Rozmowa bez tytułu'}
@@ -206,31 +204,6 @@ export function ProfileView({
               ) : (
                 <p className="text-xs text-slate-600">Brak zapisanych rozmów.</p>
               )}
-            </ProfileSection>
-          </div>
-
-          <div className="space-y-5">
-            <ProfileSection title="Konto" icon={<UserRound className="h-4 w-4" />}>
-              <dl className="space-y-4 text-xs">
-                <div>
-                  <dt className="text-[10px] text-slate-600">Nazwa użytkownika</dt>
-                  <dd className="mt-1 text-slate-300">{user.username}</dd>
-                </div>
-                <div>
-                  <dt className="text-[10px] text-slate-600">Adres e-mail</dt>
-                  <dd className="mt-1 break-all text-slate-300">{user.email}</dd>
-                </div>
-              </dl>
-            </ProfileSection>
-
-            <ProfileSection title="Prywatność" icon={<ShieldCheck className="h-4 w-4" />}>
-              <p className="text-xs leading-5 text-slate-500">
-                Historia rozmów i profil gustu są przypisane wyłącznie do Twojego konta.
-              </p>
-              <div className="mt-4 flex items-center gap-2 text-[10px] text-emerald-400">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                Profil prywatny
-              </div>
             </ProfileSection>
           </div>
         </div>
