@@ -13,9 +13,11 @@ describe('navigation and chat components', () => {
     const onViewChange = vi.fn();
     render(<Navbar user={demoUser} activeView="recommendations" onViewChange={onViewChange} />);
     await user.click(screen.getByRole('button', { name: /Baza filmów i seriali/i }));
+    await user.click(screen.getByRole('button', { name: 'Trendy' }));
     await user.click(screen.getByRole('button', { name: /Profil/i }));
     expect(onViewChange).toHaveBeenNthCalledWith(1, 'catalog');
-    expect(onViewChange).toHaveBeenNthCalledWith(2, 'profile');
+    expect(onViewChange).toHaveBeenNthCalledWith(2, 'trends');
+    expect(onViewChange).toHaveBeenNthCalledWith(3, 'profile');
   });
 
   it('renders agent progress states', () => {

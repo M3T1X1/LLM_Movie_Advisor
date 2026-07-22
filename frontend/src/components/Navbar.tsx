@@ -1,4 +1,4 @@
-import { BarChart3, Bookmark, Library, Sparkles, UserRound } from 'lucide-react';
+import { BarChart3, Bookmark, Flame, Library, Sparkles, UserRound } from 'lucide-react';
 import type { AppUser, AppView } from '../types';
 
 interface NavbarProps {
@@ -10,6 +10,7 @@ interface NavbarProps {
 const primaryNavigation: { id: AppView; label: string; icon: typeof Sparkles }[] = [
   { id: 'recommendations', label: 'System Rekomendacji', icon: Sparkles },
   { id: 'catalog', label: 'Baza filmów i seriali', icon: Library },
+  { id: 'trends', label: 'Trendy', icon: Flame },
 ];
 
 const userNavigation: { id: AppView; label: string; icon: typeof Sparkles }[] = [

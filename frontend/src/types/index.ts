@@ -169,12 +169,33 @@ export interface RecommendationResponse {
   agentExecutions: AgentExecution[];
 }
 
+export type TrendPeriod = 'day' | 'week' | 'month';
+
+export interface GenreRecommendationTrend {
+  genreName: string;
+  recommendationCount: number;
+}
+
+export interface ContentRecommendationTrend {
+  content: Content;
+  recommendationCount: number;
+}
+
+export interface RecommendationTrends {
+  period: TrendPeriod;
+  totalRecommendations: number;
+  genreTrends: GenreRecommendationTrend[];
+  contentTrends: ContentRecommendationTrend[];
+  generatedAt: string;
+}
+
 export type AppView =
   | 'login'
   | 'register'
   | 'forgot-password'
   | 'recommendations'
   | 'catalog'
+  | 'trends'
   | 'saved'
   | 'analytics'
   | 'profile';

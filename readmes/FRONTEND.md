@@ -43,6 +43,8 @@ Frontend jest przygotowany pod kontrakt odpowiadający encjom z diagramu ERD:
   `details_opened`, `watchlisted` albo `watched`.
 - `DELETE /api/interactions/:id/` — usuwa zapisanie lub oznaczenie tytułu jako obejrzany.
 - `GET /api/contents/` — zwraca katalog filmów i seriali z gatunkami oraz metadanymi TMDB.
+- `GET /api/recommendation-trends/?period=day|week|month` — zwraca zagregowane statystyki
+  gatunków i tytułów najczęściej pojawiających się w rekomendacjach LLM.
 
 Wywołania wysyłają cookie sesyjne i nagłówek `X-CSRFToken`, więc są przygotowane do autoryzacji
 sesyjnej Django.
@@ -55,6 +57,7 @@ sesyjnej Django.
 - `src/components/ChatInterface.tsx` — rozmowa i status pracy agentów,
 - `src/components/RecommendationCard.tsx` — rekomendacja z wyjaśnieniem AI,
 - `src/components/CatalogView.tsx` — katalog treści, wyszukiwanie, filtry i sortowanie,
+- `src/components/TrendsView.tsx` — trendy rekomendacji LLM dla dnia, tygodnia i miesiąca,
 - `src/components/AnalyticsView.tsx` — statystyki użytkownika, dashboard wykresów i interaktywna
   mapa gustu,
 - `src/components/MovieDetailModal.tsx` — metadane treści i akcje użytkownika,

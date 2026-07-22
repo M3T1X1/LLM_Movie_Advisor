@@ -12,6 +12,7 @@ import { Navbar } from './components/Navbar';
 import { ProfileView } from './components/ProfileView';
 import { RecommendationCard } from './components/RecommendationCard';
 import { RegisterView } from './components/RegisterView';
+import { TrendsView } from './components/TrendsView';
 import { useSession } from './context/SessionContext';
 import { demoCatalogContent, initialAgentSteps } from './data/mockData';
 import {
@@ -32,6 +33,7 @@ const viewPaths: Record<AppView, string> = {
   'forgot-password': '/forgot-password',
   recommendations: '/recommendations',
   catalog: '/catalog',
+  trends: '/trends',
   saved: '/watchlist',
   analytics: '/analytics',
   profile: '/profile',
@@ -319,6 +321,8 @@ export default function App() {
               onWatchlist={handleCatalogWatchlist}
               onMarkWatched={handleCatalogWatched}
             />
+          ) : activeView === 'trends' ? (
+            <TrendsView onOpen={handleOpenCatalogContent} />
           ) : activeView === 'saved' ? (
             <div className="mx-auto max-w-4xl">
               <div className="mb-7 flex items-end justify-between gap-4">

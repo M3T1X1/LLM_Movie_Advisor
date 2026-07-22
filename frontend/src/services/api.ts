@@ -1,6 +1,7 @@
 import {
   demoAgentExecutions,
   demoCatalogContent,
+  demoRecommendationTrends,
   demoCandidates,
   demoPreferences,
   demoRequest,
@@ -12,6 +13,8 @@ import type {
   Content,
   InteractionType,
   RecommendationResponse,
+  RecommendationTrends,
+  TrendPeriod,
 } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api';
@@ -37,6 +40,20 @@ export async function getCatalogContent(): Promise<Content[]> {
   });
   if (!response.ok) throw new Error(`Nie udało się pobrać katalogu (${response.status}).`);
   return response.json() as Promise<Content[]>;
+}
+
+export async function getRecommendationTrends(
+  period: TrendPeriod,
+): Promise<RecommendationTrends> {
+  if (USE_MOCK_API) return demoRecommendationTrends[period];
+
+  const params = new URLSearchParams({ period });
+  const response = await fetch(`${API_BASE_URL}/recommendation-trends/?${params}`, {
+    credentials: 'include',
+    headers: { Accept: 'application/json' },
+  });
+  if (!response.ok) throw new Error(`Nie udało się pobrać trendów (${response.status}).`);
+  return response.json() as Promise<RecommendationTrends>;
 }
 
 export async function requestRecommendations(

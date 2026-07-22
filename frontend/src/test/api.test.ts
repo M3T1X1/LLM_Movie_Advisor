@@ -14,6 +14,18 @@ describe('mock API service', () => {
     expect(content.map((item) => item.title)).toEqual(demoCatalogContent.map((item) => item.title));
   });
 
+  it('returns recommendation trends for the selected period', async () => {
+    const { getRecommendationTrends } = await import('../services/api');
+    const daily = await getRecommendationTrends('day');
+    const monthly = await getRecommendationTrends('month');
+
+    expect(daily.period).toBe('day');
+    expect(daily.genreTrends[0]?.genreName).toBe('Thriller');
+    expect(daily.contentTrends[0]?.content.title).toBe('Zaginiona dziewczyna');
+    expect(monthly.period).toBe('month');
+    expect(monthly.contentTrends[0]?.content.title).toBe('Diuna: Część druga');
+  });
+
   it('validates rated interactions', async () => {
     const { createInteraction } = await import('../services/api');
     await expect(createInteraction('101', null, 'rated')).rejects.toThrow('oceny od 0 do 10');

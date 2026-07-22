@@ -6,11 +6,13 @@ import type {
   Content,
   Conversation,
   Interaction,
+  RecommendationTrends,
   RecommendationRequestRecord,
   RecommendationRun,
   RunCandidate,
   UserPreference,
   UserSemanticProfile,
+  TrendPeriod,
 } from '../types';
 
 const now = new Date().toISOString();
@@ -354,6 +356,60 @@ export const demoCatalogContent: Content[] = [
   ...demoCandidates.map((candidate) => candidate.content),
   ...additionalCatalogContent,
 ];
+
+export const demoRecommendationTrends: Record<TrendPeriod, RecommendationTrends> = {
+  day: {
+    period: 'day',
+    totalRecommendations: 486,
+    generatedAt: now,
+    genreTrends: [
+      { genreName: 'Thriller', recommendationCount: 148 },
+      { genreName: 'Dramat', recommendationCount: 121 },
+      { genreName: 'Tajemnica', recommendationCount: 96 },
+      { genreName: 'Kryminał', recommendationCount: 81 },
+      { genreName: 'Science Fiction', recommendationCount: 69 },
+    ],
+    contentTrends: [
+      { content: demoCatalogContent[0], recommendationCount: 84 },
+      { content: demoCatalogContent[1], recommendationCount: 72 },
+      { content: demoCatalogContent[2], recommendationCount: 63 },
+    ],
+  },
+  week: {
+    period: 'week',
+    totalRecommendations: 3154,
+    generatedAt: now,
+    genreTrends: [
+      { genreName: 'Dramat', recommendationCount: 892 },
+      { genreName: 'Thriller', recommendationCount: 814 },
+      { genreName: 'Science Fiction', recommendationCount: 607 },
+      { genreName: 'Tajemnica', recommendationCount: 536 },
+      { genreName: 'Kryminał', recommendationCount: 471 },
+    ],
+    contentTrends: [
+      { content: demoCatalogContent[1], recommendationCount: 486 },
+      { content: demoCatalogContent[5], recommendationCount: 459 },
+      { content: demoCatalogContent[0], recommendationCount: 421 },
+    ],
+  },
+  month: {
+    period: 'month',
+    totalRecommendations: 12849,
+    generatedAt: now,
+    genreTrends: [
+      { genreName: 'Dramat', recommendationCount: 3842 },
+      { genreName: 'Science Fiction', recommendationCount: 3106 },
+      { genreName: 'Thriller', recommendationCount: 2984 },
+      { genreName: 'Tajemnica', recommendationCount: 2135 },
+      { genreName: 'Kryminał', recommendationCount: 1987 },
+    ],
+    contentTrends: [
+      { content: demoCatalogContent[5], recommendationCount: 1842 },
+      { content: demoCatalogContent[0], recommendationCount: 1693 },
+      { content: demoCatalogContent[2], recommendationCount: 1511 },
+    ],
+  },
+};
 
 export const demoAgentExecutions: AgentExecution[] = initialAgentSteps.map((step, index) => ({
   id: String(index + 1),

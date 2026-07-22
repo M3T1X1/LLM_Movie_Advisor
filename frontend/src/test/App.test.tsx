@@ -17,6 +17,7 @@ describe('App routing', () => {
     ['/register', 'Utwórz konto'],
     ['/forgot-password', 'Odzyskaj hasło'],
     ['/catalog', 'Baza filmów i seriali'],
+    ['/trends', 'Trendy'],
     ['/watchlist', 'Zapisane na później'],
     ['/analytics', 'Analiza oglądania'],
     ['/profile', 'Konto użytkownika'],
