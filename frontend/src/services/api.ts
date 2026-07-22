@@ -1,6 +1,7 @@
 import {
   demoAgentExecutions,
   demoCatalogContent,
+  demoUpcomingReleases,
   demoRecommendationTrends,
   demoCandidates,
   demoPreferences,
@@ -39,6 +40,18 @@ export async function getCatalogContent(): Promise<Content[]> {
     headers: { Accept: 'application/json' },
   });
   if (!response.ok) throw new Error(`Nie udało się pobrać katalogu (${response.status}).`);
+  return response.json() as Promise<Content[]>;
+}
+
+export async function getUpcomingReleases(): Promise<Content[]> {
+  if (USE_MOCK_API) return demoUpcomingReleases;
+
+  const params = new URLSearchParams({ language: 'pl-PL', region: 'PL' });
+  const response = await fetch(`${API_BASE_URL}/contents/upcoming/?${params}`, {
+    credentials: 'include',
+    headers: { Accept: 'application/json' },
+  });
+  if (!response.ok) throw new Error(`Nie udało się pobrać przyszłych premier (${response.status}).`);
   return response.json() as Promise<Content[]>;
 }
 

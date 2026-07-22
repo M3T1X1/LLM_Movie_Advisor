@@ -196,6 +196,7 @@ export type AppView =
   | 'recommendations'
   | 'catalog'
   | 'trends'
+  | 'upcoming'
   | 'saved'
   | 'analytics'
   | 'profile';

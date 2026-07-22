@@ -1,4 +1,4 @@
-import { BarChart3, Bookmark, Flame, Library, LogOut, Sparkles, UserRound } from 'lucide-react';
+import { BarChart3, Bookmark, CalendarDays, Flame, Library, LogOut, Sparkles, UserRound } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import type { AppUser, AppView } from '../types';
 
@@ -13,6 +13,7 @@ const primaryNavigation: { id: AppView; label: string; icon: typeof Sparkles }[]
   { id: 'recommendations', label: 'System Rekomendacji', icon: Sparkles },
   { id: 'catalog', label: 'Baza filmów i seriali', icon: Library },
   { id: 'trends', label: 'Trendy', icon: Flame },
+  { id: 'upcoming', label: 'Przyszłe premiery', icon: CalendarDays },
 ];
 
 export function Navbar({ user, activeView, onViewChange, onLogout }: NavbarProps) {

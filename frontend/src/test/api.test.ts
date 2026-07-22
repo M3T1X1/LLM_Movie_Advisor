@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { demoCatalogContent } from '../data/mockData';
+import { demoCatalogContent, demoUpcomingReleases } from '../data/mockData';
 
 describe('mock API service', () => {
   beforeEach(() => {
@@ -17,6 +17,14 @@ describe('mock API service', () => {
     const content = await getCatalogContent();
     expect(content.map((item) => item.id)).toEqual(demoCatalogContent.map((item) => item.id));
     expect(content.map((item) => item.title)).toEqual(demoCatalogContent.map((item) => item.title));
+  });
+
+  it('returns upcoming releases ordered by their release dates', async () => {
+    const { getUpcomingReleases } = await import('../services/api');
+    const content = await getUpcomingReleases();
+
+    expect(content.map((item) => item.id)).toEqual(demoUpcomingReleases.map((item) => item.id));
+    expect(content.every((item) => item.mediaType === 'movie' && item.releaseDate)).toBe(true);
   });
 
   it('returns recommendation trends for the selected period', async () => {
@@ -75,6 +83,26 @@ describe('mock API service', () => {
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/recommendation-trends/?period=week',
       expect.objectContaining({ credentials: 'include' }),
+    );
+  });
+
+  it('requests Polish upcoming releases through the backend API', async () => {
+    vi.stubEnv('VITE_USE_MOCK_API', 'false');
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue([]),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const { getUpcomingReleases } = await import('../services/api');
+
+    await getUpcomingReleases();
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/contents/upcoming/?language=pl-PL&region=PL',
+      expect.objectContaining({
+        credentials: 'include',
+        headers: { Accept: 'application/json' },
+      }),
     );
   });
 

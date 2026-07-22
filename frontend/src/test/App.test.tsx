@@ -18,6 +18,7 @@ describe('App routing', () => {
     ['/forgot-password', 'Odzyskaj hasło'],
     ['/catalog', 'Baza filmów i seriali'],
     ['/trends', 'Trendy'],
+    ['/upcoming', 'Przyszłe premiery'],
     ['/watchlist', 'Zapisane na później'],
     ['/analytics', 'Analiza oglądania'],
     ['/profile', 'kacper'],
@@ -106,6 +107,21 @@ describe('App routing', () => {
     const savedLabiryntCard = screen.getByRole('heading', { name: 'Labirynt' }).closest('article');
     await user.click(within(savedLabiryntCard!).getByRole('button', { name: 'Zapisano' }));
     expect(screen.queryByRole('heading', { name: 'Labirynt' })).not.toBeInTheDocument();
+  });
+
+  it('keeps a saved upcoming release available in the watchlist', async () => {
+    const user = userEvent.setup();
+    renderApp('/upcoming');
+    const releaseHeading = await screen.findByRole('heading', { name: 'Ostatni sygnał' });
+    const releaseCard = releaseHeading.closest('article');
+    expect(releaseCard).not.toBeNull();
+
+    await user.click(within(releaseCard!).getByRole('button', { name: 'Zapisz na listę' }));
+    await user.click(screen.getByRole('button', { name: /Menu użytkownika:/ }));
+    await user.click(screen.getByRole('menuitem', { name: 'Moja lista' }));
+
+    expect(window.location.pathname).toBe('/watchlist');
+    expect(screen.getByRole('heading', { name: 'Ostatni sygnał' })).toBeInTheDocument();
   });
 
   it('logs out from the avatar menu and returns to login', async () => {

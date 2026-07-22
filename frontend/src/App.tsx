@@ -13,6 +13,7 @@ import { ProfileView } from './components/ProfileView';
 import { RecommendationCard } from './components/RecommendationCard';
 import { RegisterView } from './components/RegisterView';
 import { TrendsView } from './components/TrendsView';
+import { UpcomingReleasesView } from './components/UpcomingReleasesView';
 import { useSession } from './context/SessionContext';
 import { demoCatalogContent, initialAgentSteps } from './data/mockData';
 import {
@@ -34,6 +35,7 @@ const viewPaths: Record<AppView, string> = {
   recommendations: '/recommendations',
   catalog: '/catalog',
   trends: '/trends',
+  upcoming: '/upcoming',
   saved: '/watchlist',
   analytics: '/analytics',
   profile: '/profile',
@@ -76,6 +78,7 @@ export default function App() {
     Record<string, RunCandidate[]>
   >({});
   const [catalogContent, setCatalogContent] = useState<Content[]>(demoCatalogContent);
+  const [upcomingContent, setUpcomingContent] = useState<Content[]>([]);
   const [selectedCandidate, setSelectedCandidate] = useState<RunCandidate | null>(null);
   const [selectedCatalogContent, setSelectedCatalogContent] = useState<Content | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -234,7 +237,13 @@ export default function App() {
     void createInteraction(content.id, null, 'watched').catch(() => undefined);
   };
 
-  const savedContent = catalogContent.filter((content) =>
+  const availableContent = [
+    ...catalogContent,
+    ...upcomingContent.filter(
+      (upcomingItem) => !catalogContent.some((catalogItem) => catalogItem.id === upcomingItem.id),
+    ),
+  ];
+  const savedContent = availableContent.filter((content) =>
     watchlistedContentIds.includes(content.id),
   );
   const selectedContent = selectedCandidate?.content ?? selectedCatalogContent;
@@ -320,6 +329,13 @@ export default function App() {
             />
           ) : activeView === 'trends' ? (
             <TrendsView onOpen={handleOpenCatalogContent} />
+          ) : activeView === 'upcoming' ? (
+            <UpcomingReleasesView
+              watchlistedContentIds={watchlistedContentIds}
+              onOpen={handleOpenCatalogContent}
+              onWatchlist={handleCatalogWatchlist}
+              onLoaded={setUpcomingContent}
+            />
           ) : activeView === 'saved' ? (
             <div className="mx-auto max-w-4xl">
               <div className="mb-7 flex items-end justify-between gap-4">

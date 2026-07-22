@@ -357,6 +357,116 @@ export const demoCatalogContent: Content[] = [
   ...additionalCatalogContent,
 ];
 
+function getFutureDate(daysFromNow: number) {
+  const date = new Date();
+  date.setUTCHours(12, 0, 0, 0);
+  date.setUTCDate(date.getUTCDate() + daysFromNow);
+  return date.toISOString().slice(0, 10);
+}
+
+export const demoUpcomingReleases: Content[] = [
+  {
+    id: 'upcoming-201',
+    tmdbId: 900201,
+    mediaType: 'movie',
+    title: 'Ostatni sygnał',
+    originalTitle: 'The Last Signal',
+    overview:
+      'Załoga stacji badawczej przechwytuje transmisję, która może pochodzić z przyszłości. Próba odczytania wiadomości uruchamia serię zdarzeń zagrażających całej misji.',
+    releaseDate: getFutureDate(12),
+    originalLanguage: 'en',
+    posterPath: null,
+    voteAverage: null,
+    popularity: 82.4,
+    metadata: { runtimeMinutes: 128 },
+    tmdbRefreshedAt: now,
+    genres: [
+      { id: 'upcoming-genre-1', tmdbGenreId: 878, name: 'Science Fiction' },
+      { id: 'upcoming-genre-2', tmdbGenreId: 53, name: 'Thriller' },
+    ],
+  },
+  {
+    id: 'upcoming-202',
+    tmdbId: 900202,
+    mediaType: 'movie',
+    title: 'Po drugiej stronie lata',
+    originalTitle: 'Beyond the Summer',
+    overview:
+      'Po latach rozłąki troje przyjaciół wraca do nadmorskiego miasteczka, aby zamknąć sprawę, która na zawsze zmieniła ich młodość.',
+    releaseDate: getFutureDate(28),
+    originalLanguage: 'pl',
+    posterPath: null,
+    voteAverage: null,
+    popularity: 61.8,
+    metadata: { runtimeMinutes: 112 },
+    tmdbRefreshedAt: now,
+    genres: [
+      { id: 'upcoming-genre-3', tmdbGenreId: 18, name: 'Dramat' },
+      { id: 'upcoming-genre-4', tmdbGenreId: 10749, name: 'Romans' },
+    ],
+  },
+  {
+    id: 'upcoming-203',
+    tmdbId: 900203,
+    mediaType: 'movie',
+    title: 'Archiwum cieni',
+    originalTitle: 'Archive of Shadows',
+    overview:
+      'Młoda konserwatorka odkrywa w zamkniętym archiwum fotografie dokumentujące zbrodnię, o której nie wspomina żaden oficjalny zapis.',
+    releaseDate: getFutureDate(47),
+    originalLanguage: 'en',
+    posterPath: null,
+    voteAverage: null,
+    popularity: 74.1,
+    metadata: { runtimeMinutes: 119 },
+    tmdbRefreshedAt: now,
+    genres: [
+      { id: 'upcoming-genre-2', tmdbGenreId: 53, name: 'Thriller' },
+      { id: 'upcoming-genre-5', tmdbGenreId: 9648, name: 'Tajemnica' },
+    ],
+  },
+  {
+    id: 'upcoming-204',
+    tmdbId: 900204,
+    mediaType: 'movie',
+    title: 'Miasto pod lodem',
+    originalTitle: 'City Under Ice',
+    overview:
+      'Ekspedycja polarna natrafia na pozostałości miasta ukrytego pod lodowcem i budzi mechanizm, który miał już nigdy nie zostać uruchomiony.',
+    releaseDate: getFutureDate(79),
+    originalLanguage: 'en',
+    posterPath: null,
+    voteAverage: null,
+    popularity: 91.6,
+    metadata: { runtimeMinutes: 142 },
+    tmdbRefreshedAt: now,
+    genres: [
+      { id: 'upcoming-genre-1', tmdbGenreId: 878, name: 'Science Fiction' },
+      { id: 'upcoming-genre-6', tmdbGenreId: 12, name: 'Przygodowy' },
+    ],
+  },
+  {
+    id: 'upcoming-205',
+    tmdbId: 900205,
+    mediaType: 'movie',
+    title: 'Nocny kurs',
+    originalTitle: 'Night Route',
+    overview:
+      'Kierowca nocnego autobusu zauważa, że każdy kolejny przystanek prowadzi pasażerów coraz dalej od miasta i znanej im rzeczywistości.',
+    releaseDate: getFutureDate(121),
+    originalLanguage: 'pl',
+    posterPath: null,
+    voteAverage: null,
+    popularity: 58.9,
+    metadata: { runtimeMinutes: 101 },
+    tmdbRefreshedAt: now,
+    genres: [
+      { id: 'upcoming-genre-7', tmdbGenreId: 27, name: 'Horror' },
+      { id: 'upcoming-genre-5', tmdbGenreId: 9648, name: 'Tajemnica' },
+    ],
+  },
+];
+
 export const demoRecommendationTrends: Record<TrendPeriod, RecommendationTrends> = {
   day: {
     period: 'day',

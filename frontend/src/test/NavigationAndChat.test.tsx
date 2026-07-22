@@ -14,11 +14,13 @@ describe('navigation and chat components', () => {
     render(<Navbar user={demoUser} activeView="recommendations" onViewChange={onViewChange} onLogout={vi.fn()} />);
     await user.click(screen.getByRole('button', { name: /Baza filmów i seriali/i }));
     await user.click(screen.getByRole('button', { name: 'Trendy' }));
+    await user.click(screen.getByRole('button', { name: 'Przyszłe premiery' }));
     await user.click(screen.getByRole('button', { name: `Menu użytkownika: ${demoUser.username}` }));
     await user.click(screen.getByRole('menuitem', { name: 'Przejdź do profilu' }));
     expect(onViewChange).toHaveBeenNthCalledWith(1, 'catalog');
     expect(onViewChange).toHaveBeenNthCalledWith(2, 'trends');
-    expect(onViewChange).toHaveBeenNthCalledWith(3, 'profile');
+    expect(onViewChange).toHaveBeenNthCalledWith(3, 'upcoming');
+    expect(onViewChange).toHaveBeenNthCalledWith(4, 'profile');
   });
 
   it('shows account details and handles closing and logout from the user menu', async () => {
