@@ -15,11 +15,6 @@ const primaryNavigation: { id: AppView; label: string; icon: typeof Sparkles }[]
   { id: 'trends', label: 'Trendy', icon: Flame },
 ];
 
-const userNavigation: { id: AppView; label: string; icon: typeof Sparkles }[] = [
-  { id: 'saved', label: 'Moja lista', icon: Bookmark },
-  { id: 'analytics', label: 'Analiza', icon: BarChart3 },
-];
-
 export function Navbar({ user, activeView, onViewChange, onLogout }: NavbarProps) {
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -43,9 +38,9 @@ export function Navbar({ user, activeView, onViewChange, onLogout }: NavbarProps
     };
   }, [isUserMenuOpen]);
 
-  const selectProfile = () => {
+  const selectView = (view: AppView) => {
     setIsUserMenuOpen(false);
-    onViewChange('profile');
+    onViewChange(view);
   };
 
   const logout = () => {
@@ -79,28 +74,6 @@ export function Navbar({ user, activeView, onViewChange, onLogout }: NavbarProps
         </nav>
 
         <div className="ml-auto flex items-center gap-4">
-          <nav className="flex h-14 items-center gap-1" aria-label="Nawigacja użytkownika">
-            {userNavigation.map((item) => {
-              const Icon = item.icon;
-              const isActive = activeView === item.id;
-
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => onViewChange(item.id)}
-                  className={`relative flex h-full items-center gap-2 px-2 text-xs font-medium transition-colors sm:px-3 ${
-                    isActive ? 'text-white' : 'text-slate-500 hover:text-slate-200'
-                  }`}
-                >
-                  <Icon className="h-3.5 w-3.5" />
-                  <span className="hidden md:inline">{item.label}</span>
-                  {isActive && <span className="absolute inset-x-2 bottom-0 h-px bg-violet-400 sm:inset-x-3" />}
-                </button>
-              );
-            })}
-          </nav>
-
           <span className="hidden h-5 w-px bg-white/[0.08] sm:block" />
 
           <div ref={menuRef} className="relative">
@@ -141,12 +114,31 @@ export function Navbar({ user, activeView, onViewChange, onLogout }: NavbarProps
                   <button
                     type="button"
                     role="menuitem"
-                    onClick={selectProfile}
+                    onClick={() => selectView('profile')}
                     className="flex h-9 w-full items-center gap-3 rounded-lg px-3 text-left text-xs text-slate-400 transition hover:bg-white/[0.05] hover:text-white"
                   >
                     <UserRound className="h-3.5 w-3.5" />
                     Przejdź do profilu
                   </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => selectView('saved')}
+                    className="flex h-9 w-full items-center gap-3 rounded-lg px-3 text-left text-xs text-slate-400 transition hover:bg-white/[0.05] hover:text-white"
+                  >
+                    <Bookmark className="h-3.5 w-3.5" />
+                    Moja lista
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => selectView('analytics')}
+                    className="flex h-9 w-full items-center gap-3 rounded-lg px-3 text-left text-xs text-slate-400 transition hover:bg-white/[0.05] hover:text-white"
+                  >
+                    <BarChart3 className="h-3.5 w-3.5" />
+                    Analiza oglądania
+                  </button>
+                  <div className="my-1 border-t border-white/[0.06]" />
                   <button
                     type="button"
                     role="menuitem"

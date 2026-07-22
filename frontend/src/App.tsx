@@ -84,10 +84,6 @@ export default function App() {
     ? (recommendationsByConversation[currentConversationId] ?? [])
     : [];
 
-  const now = new Date();
-  const curr_hour =  now.getHours();
-  const greeting = curr_hour >= 16 ? "Dobry wieczór" : "Dzień dobry"
-
   useEffect(() => {
     void getCatalogContent().then(setCatalogContent).catch(() => undefined);
   }, []);
@@ -363,13 +359,9 @@ export default function App() {
           ) : (
             <>
               <div className="mb-7 border-b border-white/[0.07] pb-7">
-                <p className="mb-2 text-xs text-slate-500">{greeting}, {user.username}.</p>
-                <h1 className="max-w-3xl text-3xl font-semibold tracking-[-0.035em] text-white sm:text-4xl">
-                  Co masz ochotę dziś obejrzeć?
+                <h1 className="text-center text-4xl font-semibold tracking-[-0.045em] text-white sm:text-5xl lg:text-6xl">
+                  Dzień dobry, <span className="text-violet-400">{user.username}</span>
                 </h1>
-                <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500">
-                  Opisz nastrój lub rodzaj historii. Nie musisz wybierać gatunku.
-                </p>
               </div>
 
               <div className="grid items-start gap-7 xl:grid-cols-[220px_minmax(0,1fr)]">
@@ -397,7 +389,14 @@ export default function App() {
                     <ConversationWorkspaceEmpty onCreate={handleCreateConversation} />
                   )}
 
-                  <section aria-labelledby="recommendations-title">
+                  <section
+                    aria-labelledby="recommendations-title"
+                    className={
+                      recommendations.length
+                        ? undefined
+                        : 'flex min-h-[680px] flex-col 2xl:h-[calc(100vh-6rem)] 2xl:min-h-[700px]'
+                    }
+                  >
                     <div className="mb-4 flex items-end justify-between border-b border-white/[0.07] pb-3">
                       <div>
                         <h2 id="recommendations-title" className="text-sm font-semibold text-white">
@@ -415,7 +414,9 @@ export default function App() {
                     </div>
 
                     <div
-                      className={`space-y-4 transition-opacity duration-300 ${
+                      className={`transition-opacity duration-300 ${
+                        recommendations.length ? 'space-y-4' : 'min-h-0 flex-1'
+                      } ${
                         isProcessing ? 'opacity-50' : 'opacity-100'
                       }`}
                       aria-live="polite"
@@ -491,7 +492,7 @@ function ConversationWorkspaceEmpty({ onCreate }: { onCreate: () => void }) {
 
 function RecommendationEmptyState({ isProcessing }: { isProcessing: boolean }) {
   return (
-    <div className="flex min-h-56 flex-col items-center justify-center rounded-xl border border-dashed border-white/[0.08] bg-[#0d0f15]/60 px-6 text-center">
+    <div className="flex h-full min-h-56 flex-col items-center justify-center rounded-xl border border-dashed border-white/[0.08] bg-[#0d0f15]/60 px-6 text-center">
       <Sparkles className={`mb-3 h-5 w-5 ${isProcessing ? 'animate-pulse text-violet-400' : 'text-slate-700'}`} />
       <p className="text-xs font-medium text-slate-400">
         {isProcessing ? 'Analizuję Twój prompt…' : 'Brak rekomendacji w tej rozmowie'}

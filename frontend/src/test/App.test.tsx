@@ -20,11 +20,11 @@ describe('App routing', () => {
     ['/trends', 'Trendy'],
     ['/watchlist', 'Zapisane na później'],
     ['/analytics', 'Analiza oglądania'],
-    ['/profile', 'Konto użytkownika'],
-    ['/recommendations', 'Co masz ochotę dziś obejrzeć?'],
+    ['/profile', 'kacper'],
+    ['/recommendations', 'Dzień dobry, kacper'],
   ])('renders %s route', async (path, heading) => {
     renderApp(path);
-    expect((await screen.findAllByText(heading)).length).toBeGreaterThan(0);
+    expect(await screen.findByRole('heading', { name: heading })).toBeInTheDocument();
   });
 
   it('updates URL when navigating from navbar', async () => {
@@ -42,7 +42,7 @@ describe('App routing', () => {
     await user.type(screen.getByLabelText('Hasło'), 'haslo123');
     await user.click(screen.getByRole('button', { name: 'Zaloguj się' }));
     expect(window.location.pathname).toBe('/recommendations');
-    expect(screen.getByText('Co masz ochotę dziś obejrzeć?')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Dzień dobry, kacper' })).toBeInTheDocument();
   });
 
   it('does not show recommendations before the user sends a prompt', () => {
@@ -98,7 +98,8 @@ describe('App routing', () => {
     expect(labiryntCard).not.toBeNull();
 
     await user.click(within(labiryntCard!).getByRole('button', { name: 'Zapisz' }));
-    await user.click(screen.getByRole('button', { name: 'Moja lista' }));
+    await user.click(screen.getByRole('button', { name: /Menu użytkownika:/ }));
+    await user.click(screen.getByRole('menuitem', { name: 'Moja lista' }));
     expect(window.location.pathname).toBe('/watchlist');
     expect(screen.getByRole('heading', { name: 'Labirynt' })).toBeInTheDocument();
 

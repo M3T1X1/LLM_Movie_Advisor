@@ -24,7 +24,8 @@ describe('navigation and chat components', () => {
   it('shows account details and handles closing and logout from the user menu', async () => {
     const user = userEvent.setup();
     const onLogout = vi.fn();
-    render(<Navbar user={demoUser} activeView="catalog" onViewChange={vi.fn()} onLogout={onLogout} />);
+    const onViewChange = vi.fn();
+    render(<Navbar user={demoUser} activeView="catalog" onViewChange={onViewChange} onLogout={onLogout} />);
     const avatar = screen.getByRole('button', { name: `Menu użytkownika: ${demoUser.username}` });
 
     expect(avatar).toHaveAttribute('aria-expanded', 'false');
@@ -41,9 +42,25 @@ describe('navigation and chat components', () => {
     expect(screen.queryByRole('menu', { name: 'Menu konta' })).not.toBeInTheDocument();
 
     await user.click(avatar);
+    await user.click(screen.getByRole('menuitem', { name: 'Moja lista' }));
+    expect(onViewChange).toHaveBeenCalledWith('saved');
+
+    await user.click(avatar);
+    await user.click(screen.getByRole('menuitem', { name: 'Analiza oglądania' }));
+    expect(onViewChange).toHaveBeenCalledWith('analytics');
+
+    await user.click(avatar);
     await user.click(screen.getByRole('menuitem', { name: 'Wyloguj się' }));
     expect(onLogout).toHaveBeenCalledOnce();
     expect(screen.queryByRole('menu', { name: 'Menu konta' })).not.toBeInTheDocument();
+  });
+
+  it('keeps account destinations out of the primary navigation', () => {
+    render(<Navbar user={demoUser} activeView="catalog" onViewChange={vi.fn()} onLogout={vi.fn()} />);
+
+    expect(screen.queryByRole('button', { name: 'Moja lista' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Analiza' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Profil' })).not.toBeInTheDocument();
   });
 
   it('renders agent progress states', () => {
