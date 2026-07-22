@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { demoUser, initialAgentSteps, initialMessages } from '../data/mockData';
@@ -11,13 +11,39 @@ describe('navigation and chat components', () => {
   it('navigates from navbar', async () => {
     const user = userEvent.setup();
     const onViewChange = vi.fn();
-    render(<Navbar user={demoUser} activeView="recommendations" onViewChange={onViewChange} />);
+    render(<Navbar user={demoUser} activeView="recommendations" onViewChange={onViewChange} onLogout={vi.fn()} />);
     await user.click(screen.getByRole('button', { name: /Baza filmów i seriali/i }));
     await user.click(screen.getByRole('button', { name: 'Trendy' }));
-    await user.click(screen.getByRole('button', { name: /Profil/i }));
+    await user.click(screen.getByRole('button', { name: `Menu użytkownika: ${demoUser.username}` }));
+    await user.click(screen.getByRole('menuitem', { name: 'Przejdź do profilu' }));
     expect(onViewChange).toHaveBeenNthCalledWith(1, 'catalog');
     expect(onViewChange).toHaveBeenNthCalledWith(2, 'trends');
     expect(onViewChange).toHaveBeenNthCalledWith(3, 'profile');
+  });
+
+  it('shows account details and handles closing and logout from the user menu', async () => {
+    const user = userEvent.setup();
+    const onLogout = vi.fn();
+    render(<Navbar user={demoUser} activeView="catalog" onViewChange={vi.fn()} onLogout={onLogout} />);
+    const avatar = screen.getByRole('button', { name: `Menu użytkownika: ${demoUser.username}` });
+
+    expect(avatar).toHaveAttribute('aria-expanded', 'false');
+    await user.click(avatar);
+    expect(avatar).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('menu', { name: 'Menu konta' })).toBeInTheDocument();
+    expect(screen.getByText(demoUser.email)).toBeInTheDocument();
+
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('menu', { name: 'Menu konta' })).not.toBeInTheDocument();
+
+    await user.click(avatar);
+    fireEvent.mouseDown(document.body);
+    expect(screen.queryByRole('menu', { name: 'Menu konta' })).not.toBeInTheDocument();
+
+    await user.click(avatar);
+    await user.click(screen.getByRole('menuitem', { name: 'Wyloguj się' }));
+    expect(onLogout).toHaveBeenCalledOnce();
+    expect(screen.queryByRole('menu', { name: 'Menu konta' })).not.toBeInTheDocument();
   });
 
   it('renders agent progress states', () => {

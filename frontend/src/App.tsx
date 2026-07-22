@@ -278,6 +278,7 @@ export default function App() {
           user={user}
           activeView={activeView}
           onViewChange={navigateTo}
+          onLogout={() => navigateTo('login', true)}
         />
       )}
 

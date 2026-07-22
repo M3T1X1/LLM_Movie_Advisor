@@ -106,4 +106,15 @@ describe('App routing', () => {
     await user.click(within(savedLabiryntCard!).getByRole('button', { name: 'Zapisano' }));
     expect(screen.queryByRole('heading', { name: 'Labirynt' })).not.toBeInTheDocument();
   });
+
+  it('logs out from the avatar menu and returns to login', async () => {
+    const user = userEvent.setup();
+    renderApp('/recommendations');
+
+    await user.click(screen.getByRole('button', { name: /Menu użytkownika:/ }));
+    await user.click(screen.getByRole('menuitem', { name: 'Wyloguj się' }));
+
+    expect(window.location.pathname).toBe('/login');
+    expect(screen.getByRole('heading', { name: 'Zaloguj się' })).toBeInTheDocument();
+  });
 });
