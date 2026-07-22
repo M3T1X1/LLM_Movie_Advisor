@@ -64,6 +64,18 @@ export function ChatInterface({
       </div>
 
       <div className="flex-1 space-y-6 overflow-y-auto px-5 py-6 [scrollbar-color:rgba(148,163,184,0.16)_transparent] sm:px-6">
+        {messages.length === 0 && !isProcessing && (
+          <div className="flex min-h-64 flex-col items-center justify-center text-center">
+            <span className="mb-4 flex h-10 w-10 items-center justify-center rounded-lg bg-violet-500/10 text-violet-300">
+              <Bot className="h-5 w-5" />
+            </span>
+            <h3 className="text-sm font-semibold text-slate-200">Nowa rozmowa</h3>
+            <p className="mt-2 max-w-xs text-xs leading-5 text-slate-600">
+              Opisz, czego chcesz dziś poszukać. Rekomendacje pojawią się dopiero po wysłaniu
+              Twojej wiadomości.
+            </p>
+          </div>
+        )}
         {messages.map((message) => (
           <div
             key={message.id}

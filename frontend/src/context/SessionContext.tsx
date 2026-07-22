@@ -24,6 +24,7 @@ interface StoredSession {
   semanticProfile: UserSemanticProfile;
   preferences: UserPreference[];
   conversations: Conversation[];
+  currentConversationId: DatabaseId | null;
   messages: ChatMessage[];
   interactions: Interaction[];
 }
@@ -35,9 +36,12 @@ interface PreferenceGroups {
 }
 
 interface SessionContextValue extends StoredSession {
-  currentConversationId: DatabaseId;
   watchlistedContentIds: DatabaseId[];
   watchedContentIds: DatabaseId[];
+  createConversation: () => Conversation;
+  selectConversation: (conversationId: DatabaseId) => void;
+  renameConversation: (conversationId: DatabaseId, title: string) => void;
+  deleteConversation: (conversationId: DatabaseId) => void;
   addMessage: (role: MessageRole, content: string) => ChatMessage;
   appendMessage: (message: ChatMessage) => void;
   updateUser: (changes: Partial<Pick<AppUser, 'username' | 'email'>>) => void;
@@ -57,7 +61,6 @@ interface SessionContextValue extends StoredSession {
 }
 
 const STORAGE_KEY = 'scene-ai-session-erd-v2';
-const CURRENT_CONVERSATION_ID = '1';
 const SessionContext = createContext<SessionContextValue | undefined>(undefined);
 let localIdOffset = 0;
 
@@ -72,6 +75,7 @@ function createInitialSession(): StoredSession {
     semanticProfile: demoProfile,
     preferences: demoPreferences,
     conversations: demoConversations,
+    currentConversationId: demoConversations[0]?.id ?? null,
     messages: initialMessages,
     interactions: demoInteractions,
   };
@@ -80,7 +84,18 @@ function createInitialSession(): StoredSession {
 function loadSession(): StoredSession {
   try {
     const stored = window.localStorage.getItem(STORAGE_KEY);
-    return stored ? (JSON.parse(stored) as StoredSession) : createInitialSession();
+    if (!stored) return createInitialSession();
+
+    const parsed = JSON.parse(stored) as Omit<StoredSession, 'currentConversationId'> & {
+      currentConversationId?: DatabaseId | null;
+    };
+    const currentConversationId = parsed.conversations.some(
+      (conversation) => conversation.id === parsed.currentConversationId,
+    )
+      ? (parsed.currentConversationId ?? null)
+      : (parsed.conversations[0]?.id ?? null);
+
+    return { ...parsed, currentConversationId };
   } catch {
     return createInitialSession();
   }
@@ -93,26 +108,101 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
   }, [session]);
 
+  const createConversation = () => {
+    const timestamp = new Date().toISOString();
+    const conversation: Conversation = {
+      id: createLocalDatabaseId(),
+      userId: session.user.id,
+      title: null,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+    setSession((current) => ({
+      ...current,
+      conversations: [conversation, ...current.conversations],
+      currentConversationId: conversation.id,
+    }));
+    return conversation;
+  };
+
+  const selectConversation = (conversationId: DatabaseId) => {
+    setSession((current) =>
+      current.conversations.some((conversation) => conversation.id === conversationId)
+        ? { ...current, currentConversationId: conversationId }
+        : current,
+    );
+  };
+
+  const renameConversation = (conversationId: DatabaseId, title: string) => {
+    const normalizedTitle = title.trim().slice(0, 255);
+    if (!normalizedTitle) return;
+
+    setSession((current) => ({
+      ...current,
+      conversations: current.conversations.map((conversation) =>
+        conversation.id === conversationId
+          ? { ...conversation, title: normalizedTitle, updatedAt: new Date().toISOString() }
+          : conversation,
+      ),
+    }));
+  };
+
+  const deleteConversation = (conversationId: DatabaseId) => {
+    setSession((current) => {
+      const conversations = current.conversations.filter(
+        (conversation) => conversation.id !== conversationId,
+      );
+      return {
+        ...current,
+        conversations,
+        currentConversationId:
+          current.currentConversationId === conversationId
+            ? (conversations[0]?.id ?? null)
+            : current.currentConversationId,
+        messages: current.messages.filter(
+          (message) => message.conversationId !== conversationId,
+        ),
+      };
+    });
+  };
+
   const addMessage = (role: MessageRole, content: string) => {
+    if (!session.currentConversationId) {
+      throw new Error('Nie wybrano aktywnej rozmowy.');
+    }
+    const conversationId = session.currentConversationId;
     const conversationMessages = session.messages.filter(
-      (message) => message.conversationId === CURRENT_CONVERSATION_ID,
+      (message) => message.conversationId === conversationId,
     );
     const sequenceNo = Math.max(0, ...conversationMessages.map((message) => message.sequenceNo)) + 1;
     const message: ChatMessage = {
       id: createLocalDatabaseId(),
-      conversationId: CURRENT_CONVERSATION_ID,
+      conversationId,
       role,
       content,
       sequenceNo,
       createdAt: new Date().toISOString(),
     };
-    setSession((current) => ({ ...current, messages: [...current.messages, message] }));
+    setSession((current) => ({
+      ...current,
+      conversations: current.conversations.map((conversation) =>
+        conversation.id === conversationId
+          ? { ...conversation, updatedAt: message.createdAt }
+          : conversation,
+      ),
+      messages: [...current.messages, message],
+    }));
     return message;
   };
 
   const appendMessage = (message: ChatMessage) => {
     setSession((current) => ({
       ...current,
+      conversations: current.conversations.map((conversation) =>
+        conversation.id === message.conversationId
+          ? { ...conversation, updatedAt: message.createdAt }
+          : conversation,
+      ),
       messages: current.messages.some((item) => item.id === message.id)
         ? current.messages
         : [...current.messages, message],
@@ -192,10 +282,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setSession((current) => ({
       ...current,
       conversations: current.conversations.map((conversation) =>
-        conversation.id === CURRENT_CONVERSATION_ID
+        conversation.id === current.currentConversationId
           ? {
               ...conversation,
-              title: query.slice(0, 255),
+              title: conversation.title ?? query.slice(0, 255),
               updatedAt: new Date().toISOString(),
             }
           : conversation,
@@ -272,9 +362,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const value: SessionContextValue = {
     ...session,
-    currentConversationId: CURRENT_CONVERSATION_ID,
     watchlistedContentIds,
     watchedContentIds,
+    createConversation,
+    selectConversation,
+    renameConversation,
+    deleteConversation,
     addMessage,
     appendMessage,
     updateUser,

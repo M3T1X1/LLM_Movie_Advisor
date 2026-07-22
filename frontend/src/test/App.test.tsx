@@ -43,4 +43,10 @@ describe('App routing', () => {
     expect(window.location.pathname).toBe('/recommendations');
     expect(screen.getByText('Co masz ochotę dziś obejrzeć?')).toBeInTheDocument();
   });
+
+  it('does not show recommendations before the user sends a prompt', () => {
+    renderApp('/recommendations');
+    expect(screen.getByText('Brak rekomendacji w tej rozmowie')).toBeInTheDocument();
+    expect(screen.queryByText('96%')).not.toBeInTheDocument();
+  });
 });

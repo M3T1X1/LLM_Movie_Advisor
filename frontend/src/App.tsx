@@ -1,8 +1,9 @@
-import { Bookmark, ChevronRight, SlidersHorizontal } from 'lucide-react';
+import { Bookmark, ChevronRight, MessageSquareText, Plus, SlidersHorizontal, Sparkles } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { AnalyticsView } from './components/AnalyticsView';
 import { CatalogCard, CatalogView } from './components/CatalogView';
 import { ChatInterface } from './components/ChatInterface';
+import { ConversationManager } from './components/ConversationManager';
 import { EmptyState } from './components/EmptyState';
 import { ForgotPasswordView } from './components/ForgotPasswordView';
 import { LoginView } from './components/LoginView';
@@ -12,7 +13,7 @@ import { ProfileView } from './components/ProfileView';
 import { RecommendationCard } from './components/RecommendationCard';
 import { RegisterView } from './components/RegisterView';
 import { useSession } from './context/SessionContext';
-import { demoCandidates, demoCatalogContent, initialAgentSteps } from './data/mockData';
+import { demoCatalogContent, initialAgentSteps } from './data/mockData';
 import {
   createInteraction,
   deleteInteraction,
@@ -56,6 +57,10 @@ export default function App() {
     currentConversationId,
     watchlistedContentIds,
     watchedContentIds,
+    createConversation,
+    selectConversation,
+    renameConversation,
+    deleteConversation: deleteStoredConversation,
     addMessage,
     appendMessage,
     updateUser,
@@ -65,12 +70,17 @@ export default function App() {
     removeInteraction: removeStoredInteraction,
   } = useSession();
   const [activeView, setActiveView] = useState<AppView>(getViewFromPath);
-  const [recommendations, setRecommendations] = useState<RunCandidate[]>(demoCandidates);
+  const [recommendationsByConversation, setRecommendationsByConversation] = useState<
+    Record<string, RunCandidate[]>
+  >({});
   const [catalogContent, setCatalogContent] = useState<Content[]>(demoCatalogContent);
   const [selectedCandidate, setSelectedCandidate] = useState<RunCandidate | null>(null);
   const [selectedCatalogContent, setSelectedCatalogContent] = useState<Content | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [agentSteps, setAgentSteps] = useState<AgentStep[]>(initialAgentSteps);
+  const recommendations = currentConversationId
+    ? (recommendationsByConversation[currentConversationId] ?? [])
+    : [];
 
   const now = new Date();
   const curr_hour =  now.getHours();
@@ -99,14 +109,15 @@ export default function App() {
   };
 
   const handlePrompt = async (query: string) => {
-    if (isProcessing) return;
+    if (isProcessing || !currentConversationId) return;
 
+    const conversationId = currentConversationId;
     navigateTo('recommendations');
     setIsProcessing(true);
     const userMessage = addMessage('user', query);
     setAgentSteps(initialAgentSteps.map((step) => ({ ...step, status: 'pending' })));
 
-    const responsePromise = requestRecommendations(currentConversationId, userMessage).then(
+    const responsePromise = requestRecommendations(conversationId, userMessage).then(
       (response) => ({ response, error: null }),
       (error: unknown) => ({ response: null, error }),
     );
@@ -126,7 +137,10 @@ export default function App() {
       if (result.error || !result.response) throw result.error;
 
       setAgentSteps((steps) => steps.map((step) => ({ ...step, status: 'success' })));
-      setRecommendations(result.response.candidates);
+      setRecommendationsByConversation((current) => ({
+        ...current,
+        [conversationId]: result.response.candidates,
+      }));
       addDetectedPreferences(result.response.detectedPreferences);
       updateConversationFromQuery(query);
       appendMessage(result.response.assistantMessage);
@@ -142,6 +156,30 @@ export default function App() {
     } finally {
       setIsProcessing(false);
     }
+  };
+
+  const handleCreateConversation = () => {
+    createConversation();
+    setSelectedCandidate(null);
+    setSelectedCatalogContent(null);
+    setAgentSteps(initialAgentSteps.map((step) => ({ ...step, status: 'pending' })));
+  };
+
+  const handleSelectConversation = (conversationId: string) => {
+    selectConversation(conversationId);
+    setSelectedCandidate(null);
+    setSelectedCatalogContent(null);
+    setAgentSteps(initialAgentSteps.map((step) => ({ ...step, status: 'pending' })));
+  };
+
+  const handleDeleteConversation = (conversationId: string) => {
+    deleteStoredConversation(conversationId);
+    setRecommendationsByConversation((current) => {
+      const next = { ...current };
+      delete next[conversationId];
+      return next;
+    });
+    setSelectedCandidate(null);
   };
 
   const handleWatchlist = (candidate: RunCandidate) => {
@@ -329,41 +367,62 @@ export default function App() {
                 </p>
               </div>
 
-              <div className="grid items-start gap-7 xl:grid-cols-[minmax(560px,1.18fr)_minmax(460px,0.82fr)]">
-                <ChatInterface
-                  messages={messages.filter(
-                    (message) => message.conversationId === currentConversationId,
-                  )}
-                  agentSteps={agentSteps}
-                  isProcessing={isProcessing}
-                  onSubmit={handlePrompt}
+              <div className="grid items-start gap-7 xl:grid-cols-[220px_minmax(0,1fr)]">
+                <ConversationManager
+                  conversations={conversations}
+                  currentConversationId={currentConversationId}
+                  disabled={isProcessing}
+                  onCreate={handleCreateConversation}
+                  onSelect={handleSelectConversation}
+                  onRename={renameConversation}
+                  onDelete={handleDeleteConversation}
                 />
 
-                <section aria-labelledby="recommendations-title">
-                  <div className="mb-4 flex items-end justify-between border-b border-white/[0.07] pb-3">
-                    <div>
-                      <h2 id="recommendations-title" className="text-sm font-semibold text-white">
-                        Propozycje na dziś
-                      </h2>
-                      <p className="mt-1 text-[11px] text-slate-600">
-                        Posortowane według zgodności z Twoim profilem
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2 text-[10px] text-slate-600">
-                      <SlidersHorizontal className="h-3.5 w-3.5" />
-                      {recommendations.length} wyniki
-                    </div>
-                  </div>
+                <div className="grid min-w-0 items-start gap-7 2xl:grid-cols-[minmax(500px,1.08fr)_minmax(420px,0.92fr)]">
+                  {currentConversationId ? (
+                    <ChatInterface
+                      messages={messages.filter(
+                        (message) => message.conversationId === currentConversationId,
+                      )}
+                      agentSteps={agentSteps}
+                      isProcessing={isProcessing}
+                      onSubmit={handlePrompt}
+                    />
+                  ) : (
+                    <ConversationWorkspaceEmpty onCreate={handleCreateConversation} />
+                  )}
 
-                  <div
-                    className={`space-y-4 transition-opacity duration-300 ${
-                      isProcessing ? 'opacity-50' : 'opacity-100'
-                    }`}
-                    aria-live="polite"
-                  >
-                    {recommendations.map(renderCard)}
-                  </div>
-                </section>
+                  <section aria-labelledby="recommendations-title">
+                    <div className="mb-4 flex items-end justify-between border-b border-white/[0.07] pb-3">
+                      <div>
+                        <h2 id="recommendations-title" className="text-sm font-semibold text-white">
+                          Propozycje na dziś
+                        </h2>
+                        <p className="mt-1 text-[11px] text-slate-600">
+                          Wyniki pojawiają się wyłącznie po wysłaniu promptu
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 text-[10px] text-slate-600">
+                        <SlidersHorizontal className="h-3.5 w-3.5" />
+                        {recommendations.length}{' '}
+                        {recommendations.length === 1 ? 'wynik' : 'wyników'}
+                      </div>
+                    </div>
+
+                    <div
+                      className={`space-y-4 transition-opacity duration-300 ${
+                        isProcessing ? 'opacity-50' : 'opacity-100'
+                      }`}
+                      aria-live="polite"
+                    >
+                      {recommendations.length ? (
+                        recommendations.map(renderCard)
+                      ) : (
+                        <RecommendationEmptyState isProcessing={isProcessing} />
+                      )}
+                    </div>
+                  </section>
+                </div>
               </div>
             </>
           )}
@@ -399,6 +458,44 @@ function PageHeading({ eyebrow, title, description, icon }: PageHeadingProps) {
       </p>
       <h1 className="text-3xl font-semibold tracking-tight text-white">{title}</h1>
       <p className="mt-2 text-sm text-slate-500">{description}</p>
+    </div>
+  );
+}
+
+function ConversationWorkspaceEmpty({ onCreate }: { onCreate: () => void }) {
+  return (
+    <section className="flex min-h-[520px] flex-col items-center justify-center rounded-xl border border-dashed border-white/[0.1] bg-[#0d0f15] px-6 text-center">
+      <span className="mb-4 flex h-11 w-11 items-center justify-center rounded-lg bg-white/[0.04] text-slate-500">
+        <MessageSquareText className="h-5 w-5" />
+      </span>
+      <h2 className="text-sm font-semibold text-white">Wybierz lub rozpocznij rozmowę</h2>
+      <p className="mt-2 max-w-sm text-xs leading-5 text-slate-600">
+        Rekomendacje pojawią się dopiero wtedy, gdy wyślesz własną wiadomość do LLM.
+      </p>
+      <button
+        type="button"
+        onClick={onCreate}
+        className="mt-5 flex h-9 items-center gap-2 rounded-md bg-violet-600 px-3 text-xs font-medium text-white transition hover:bg-violet-500"
+      >
+        <Plus className="h-3.5 w-3.5" />
+        Nowa rozmowa
+      </button>
+    </section>
+  );
+}
+
+function RecommendationEmptyState({ isProcessing }: { isProcessing: boolean }) {
+  return (
+    <div className="flex min-h-56 flex-col items-center justify-center rounded-xl border border-dashed border-white/[0.08] bg-[#0d0f15]/60 px-6 text-center">
+      <Sparkles className={`mb-3 h-5 w-5 ${isProcessing ? 'animate-pulse text-violet-400' : 'text-slate-700'}`} />
+      <p className="text-xs font-medium text-slate-400">
+        {isProcessing ? 'Analizuję Twój prompt…' : 'Brak rekomendacji w tej rozmowie'}
+      </p>
+      <p className="mt-2 max-w-xs text-[10px] leading-5 text-slate-600">
+        {isProcessing
+          ? 'Wyniki pojawią się po zakończeniu pracy agentów.'
+          : 'Wyślij wiadomość w czacie, aby poprosić LLM o dopasowane filmy lub seriale.'}
+      </p>
     </div>
   );
 }
