@@ -2,7 +2,8 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { TrendsView } from '../components/TrendsView';
-import { demoCatalogContent } from '../data/mockData';
+import { demoCatalogContent, demoRecommendationTrends } from '../data/mockData';
+import * as api from '../services/api';
 
 function getTrendingTitles() {
   const heading = screen.getByRole('heading', { name: 'Najczęściej wyświetlane filmy' });
@@ -24,6 +25,8 @@ describe('TrendsView', () => {
     ]);
     expect(screen.getByLabelText('Pozycja: 1')).toBeInTheDocument();
     expect(screen.getByLabelText('Pozycja: 3')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Dzisiaj' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText(/486\s+wyświetleń rekomendacji/)).toBeInTheDocument();
   });
 
   it('switches trends between week and month', async () => {
@@ -33,11 +36,13 @@ describe('TrendsView', () => {
 
     await user.click(screen.getByRole('button', { name: 'Tydzień' }));
     await waitFor(() => expect(getTrendingTitles()[0]).toBe('Labirynt'));
-    expect(screen.getByText('Dane za ostatnie 7 dni')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Tydzień' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText(/3154\s+wyświetleń rekomendacji/)).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Miesiąc' }));
     await waitFor(() => expect(getTrendingTitles()[0]).toBe('Diuna: Część druga'));
-    expect(screen.getByText('Dane za ostatnie 30 dni')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Miesiąc' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Tydzień' })).toHaveAttribute('aria-pressed', 'false');
   });
 
   it('opens movie details from a trend card', async () => {
@@ -47,5 +52,20 @@ describe('TrendsView', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Pokaż szczegóły: Zaginiona dziewczyna' }));
     expect(onOpen).toHaveBeenCalledWith(demoCatalogContent[0]);
+  });
+
+  it('shows an API error and retries loading trends', async () => {
+    const user = userEvent.setup();
+    const trendsRequest = vi
+      .spyOn(api, 'getRecommendationTrends')
+      .mockRejectedValueOnce(new Error('Brak połączenia'))
+      .mockResolvedValueOnce(demoRecommendationTrends.day);
+    render(<TrendsView onOpen={vi.fn()} />);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Nie udało się pobrać trendów');
+    await user.click(screen.getByRole('button', { name: 'Spróbuj ponownie' }));
+    expect(await screen.findByText('Thriller')).toBeInTheDocument();
+    expect(trendsRequest).toHaveBeenNthCalledWith(1, 'day');
+    expect(trendsRequest).toHaveBeenNthCalledWith(2, 'day');
   });
 });
