@@ -58,7 +58,7 @@ export function ChatInterface({
           <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-[#0d0f15] bg-emerald-400" />
         </span>
         <div>
-          <h2 className="text-sm font-semibold text-white">Rozmowa</h2>
+          <h2 className="text-sm font-semibold text-white">Chat</h2>
           <p className="mt-0.5 text-[10px] text-slate-600">FilmiQ</p>
         </div>
       </div>

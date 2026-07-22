@@ -63,10 +63,10 @@ export function ConversationManager({
   };
 
   return (
-    <aside className="overflow-hidden rounded-xl border border-white/[0.08] bg-[#0d0f15] xl:sticky xl:top-[76px]">
+    <aside className="flex min-h-[680px] flex-col overflow-hidden rounded-xl border border-white/[0.08] bg-[#0d0f15] xl:sticky xl:top-[76px] xl:h-[calc(100vh-6rem)] xl:min-h-[700px]">
       <div className="flex items-center justify-between border-b border-white/[0.06] px-4 py-4">
         <div>
-          <h2 className="text-xs font-semibold text-white">Rozmowy</h2>
+          <h2 className="text-xs font-semibold text-white">Historia Rozmów</h2>
           <p className="mt-1 text-[9px] text-slate-600">{conversations.length} zapisanych</p>
         </div>
         <button
@@ -82,7 +82,7 @@ export function ConversationManager({
       </div>
 
       {orderedConversations.length ? (
-        <div className="max-h-72 space-y-1 overflow-y-auto p-2 [scrollbar-color:rgba(148,163,184,0.16)_transparent] xl:max-h-[calc(100vh-155px)]">
+        <div className="min-h-0 flex-1 space-y-1 overflow-y-auto p-2 [scrollbar-color:rgba(148,163,184,0.16)_transparent]">
           {orderedConversations.map((conversation) => {
             const isActive = conversation.id === currentConversationId;
             const isRenaming = conversation.id === renamedConversationId;
@@ -201,7 +201,7 @@ export function ConversationManager({
           })}
         </div>
       ) : (
-        <div className="flex min-h-40 flex-col items-center justify-center px-5 py-8 text-center">
+        <div className="flex flex-1 flex-col items-center justify-center px-5 py-8 text-center">
           <MessageSquareText className="mb-3 h-5 w-5 text-slate-700" />
           <p className="text-xs font-medium text-slate-400">Brak rozmów</p>
           <p className="mt-1 text-[10px] leading-4 text-slate-600">
