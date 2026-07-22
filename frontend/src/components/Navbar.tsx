@@ -124,7 +124,7 @@ export function Navbar({ user, activeView, onViewChange, onLogout }: NavbarProps
               <div
                 role="menu"
                 aria-label="Menu konta"
-                className="absolute right-0 top-[calc(100%+0.65rem)] w-64 overflow-hidden rounded-xl border border-white/[0.1] bg-[#0d0f15]/98 shadow-2xl backdrop-blur-xl"
+                className="absolute right-0 top-[calc(100%+0.65rem)] w-64 overflow-hidden rounded-xl border border-white/[0.1] bg-[#0d0f15] shadow-2xl"
               >
                 <div className="border-b border-white/[0.07] px-4 py-4">
                   <div className="flex items-center gap-3">
