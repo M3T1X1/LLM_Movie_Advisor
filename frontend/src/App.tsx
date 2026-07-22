@@ -470,7 +470,7 @@ function PageHeading({ eyebrow, title, description, icon }: PageHeadingProps) {
 
 function ConversationWorkspaceEmpty({ onCreate }: { onCreate: () => void }) {
   return (
-    <section className="flex min-h-[520px] flex-col items-center justify-center rounded-xl border border-dashed border-white/[0.1] bg-[#0d0f15] px-6 text-center">
+    <section className="flex min-h-[680px] flex-col items-center justify-center rounded-xl border border-dashed border-white/[0.1] bg-[#0d0f15] px-6 text-center xl:sticky xl:top-[76px] xl:h-[calc(100vh-6rem)] xl:min-h-[700px]">
       <span className="mb-4 flex h-11 w-11 items-center justify-center rounded-lg bg-white/[0.04] text-slate-500">
         <MessageSquareText className="h-5 w-5" />
       </span>
