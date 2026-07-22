@@ -1,4 +1,4 @@
-import { Bookmark, ChevronRight, MessageSquareText, Plus, SlidersHorizontal, Sparkles } from 'lucide-react';
+import { Bookmark, ChevronRight, MessageSquareText, Plus, Sparkles } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { AnalyticsView } from './components/AnalyticsView';
 import { CatalogCard, CatalogView } from './components/CatalogView';
@@ -397,22 +397,6 @@ export default function App() {
                         : 'flex min-h-[680px] flex-col 2xl:h-[calc(100vh-6rem)] 2xl:min-h-[700px]'
                     }
                   >
-                    <div className="mb-4 flex items-end justify-between border-b border-white/[0.07] pb-3">
-                      <div>
-                        <h2 id="recommendations-title" className="text-sm font-semibold text-white">
-                          Propozycje na dziś
-                        </h2>
-                        <p className="mt-1 text-[11px] text-slate-600">
-                          Wyniki pojawiają się wyłącznie po wysłaniu promptu
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2 text-[10px] text-slate-600">
-                        <SlidersHorizontal className="h-3.5 w-3.5" />
-                        {recommendations.length}{' '}
-                        {recommendations.length === 1 ? 'wynik' : 'wyników'}
-                      </div>
-                    </div>
-
                     <div
                       className={`transition-opacity duration-300 ${
                         recommendations.length ? 'space-y-4' : 'min-h-0 flex-1'
