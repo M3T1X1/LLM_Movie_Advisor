@@ -6,11 +6,15 @@ uruchomić cały przepływ UI przed ukończeniem endpointów Django.
 
 ## Uruchomienie
 
-Wymagany jest Node.js 20.19 lub nowszy.
+Projekt używa Node.js 22.23.1 i npm 10.9.8. Dokładna wersja Node jest przypięta w głównym
+pliku `.nvmrc`. Korzystając z NVM, przygotuj środowisko od katalogu głównego repozytorium:
 
 ```bash
+nvm install
+nvm use
+cd frontend
 cp .env.example .env
-npm install
+npm ci
 npm run dev
 ```
 

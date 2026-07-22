@@ -368,7 +368,8 @@ Frontend działa domyślnie pod `http://localhost:5173`, a Django pod
 Wymagania środowiska:
 
 - zalecany Python 3.13,
-- Node.js 20.19 lub nowszy.
+- Node.js 22.23.1 przez NVM (wersja przypięta w `.nvmrc`),
+- npm 10.x; zależności należy instalować poleceniem `npm ci`.
 
 ## 12. Weryfikacja zmian
 
