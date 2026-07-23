@@ -1,3 +1,4 @@
 # Python backend dependencies.
 # Frontend dependencies are managed separately by frontend/package-lock.json.
 Django==6.0.7
+psycopg[binary]==3.3.4
