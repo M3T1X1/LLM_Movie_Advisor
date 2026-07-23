@@ -1,4 +1,6 @@
 import json
+from dataclasses import replace
+from datetime import date
 from pathlib import Path
 from unittest import SkipTest
 
@@ -9,6 +11,12 @@ from django.db import connection
 from django.test import TransactionTestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
+
+from backend.accounts.management.commands.seed_demo_data import (
+    Command as SeedDemoCommand,
+)
+from backend.accounts.management.commands.seed_demo_data import TmdbCatalogItem
+from backend.api.models import Content, Genre, Interaction
 
 
 class ApplicationApiIntegrationTests(TransactionTestCase):
@@ -272,6 +280,58 @@ class ApplicationApiIntegrationTests(TransactionTestCase):
             },
         )
         self.assertEqual(payload["filters"]["genres"], ["Thriller"])
+
+    def test_orm_seeder_upserts_catalog_and_relations_idempotently(self):
+        item = TmdbCatalogItem(
+            tmdb_id=9001,
+            media_type="movie",
+            title="Film ORM",
+            original_title="ORM Movie",
+            overview="Opis",
+            release_date=date(2026, 1, 2),
+            original_language="pl",
+            poster_path="/orm.jpg",
+            vote_average=8.5,
+            popularity=100.0,
+            genre_ids=(18, 53),
+            metadata={"source": "test"},
+        )
+        command = SeedDemoCommand()
+
+        catalog = [
+            item,
+            replace(item, tmdb_id=9002, title="Drugi film ORM"),
+            replace(item, tmdb_id=9003, title="Trzeci film ORM"),
+        ]
+        first_ids = command._seed_catalog(
+            {18: "Dramat", 53: "Thriller"},
+            catalog,
+        )
+        second_ids = command._seed_catalog(
+            {18: "Dramat", 53: "Thriller"},
+            [replace(item, title="Film ORM po aktualizacji"), *catalog[1:]],
+        )
+
+        self.assertEqual(first_ids, second_ids)
+        content = Content.objects.get(pk=first_ids[0])
+        self.assertEqual(content.title, "Film ORM po aktualizacji")
+        self.assertEqual(
+            set(content.genres.values_list("name", flat=True)),
+            {"Dramat", "Thriller"},
+        )
+        self.assertEqual(Genre.objects.count(), 2)
+        conversation_ids, candidates = command._seed_recommendation_history(
+            [self.business_user_id],
+            first_ids,
+        )
+        command._seed_interactions(
+            [self.business_user_id],
+            first_ids,
+            candidates,
+        )
+        self.assertEqual(len(conversation_ids), 5)
+        self.assertEqual(len(candidates), 12)
+        self.assertEqual(Interaction.objects.count(), 30)
 
     def test_catalog_paginates_and_filters_the_full_database_query(self):
         content_ids = []

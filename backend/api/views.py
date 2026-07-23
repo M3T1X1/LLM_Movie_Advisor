@@ -9,11 +9,10 @@ from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.core.management.base import CommandError
 from django.db import DatabaseError, IntegrityError, connection, transaction
+from django.db.models import Count, F, Max, Prefetch, Q
 from django.http import HttpRequest, JsonResponse
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
-from psycopg.types.json import Jsonb
-
 from backend.accounts.management.commands.seed_demo_data import (
     Command as SeedDemoCommand,
 )
@@ -22,6 +21,19 @@ from backend.accounts.management.commands.seed_demo_data import (
     normalize_tmdb_item,
 )
 from backend.accounts.services import get_business_user_id, sync_business_user
+from backend.api.models import (
+    BusinessUser,
+    Content,
+    Conversation,
+    Genre,
+    Interaction,
+    InteractionType,
+    Message,
+    MessageRole,
+    RunCandidate,
+    UserPreference,
+    UserProfile,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -29,10 +41,10 @@ MAX_CHAT_MESSAGE_LENGTH = 800
 CATALOG_DEFAULT_PAGE_SIZE = 20
 CATALOG_MAX_PAGE_SIZE = 50
 CATALOG_SORTS = {
-    "popularity": "c.popularity DESC NULLS LAST, c.id",
-    "rating": "c.vote_average DESC NULLS LAST, c.id",
-    "newest": "c.release_date DESC NULLS LAST, c.id",
-    "title": "LOWER(c.title), c.id",
+    "popularity": (F("popularity").desc(nulls_last=True), "id"),
+    "rating": (F("vote_average").desc(nulls_last=True), "id"),
+    "newest": (F("release_date").desc(nulls_last=True), "id"),
+    "title": ("title", "id"),
 }
 
 
@@ -70,129 +82,82 @@ def json_object(value):
     return {}
 
 
-def json_list(value):
-    if isinstance(value, list):
-        return value
-    if isinstance(value, str):
-        try:
-            parsed = json.loads(value)
-            return parsed if isinstance(parsed, list) else []
-        except json.JSONDecodeError:
-            return []
-    return []
+def content_queryset():
+    return Content.objects.prefetch_related(
+        Prefetch("genres", queryset=Genre.objects.order_by("name"))
+    )
 
 
-def serialize_content_rows(rows) -> list[dict]:
-    return [
-        {
-            "id": str(row[0]),
-            "tmdbId": row[1],
-            "mediaType": row[2],
-            "title": row[3],
-            "originalTitle": row[4],
-            "overview": row[5],
-            "releaseDate": iso(row[6]),
-            "originalLanguage": row[7],
-            "posterPath": row[8],
-            "voteAverage": float(row[9]) if row[9] is not None else None,
-            "popularity": float(row[10]) if row[10] is not None else None,
-            "metadata": json_object(row[11]),
-            "tmdbRefreshedAt": iso(row[12]),
-            "genres": json_list(row[13]),
-        }
-        for row in rows
-    ]
-
-
-CONTENT_SELECT = """
-    SELECT
-        c.id, c.tmdb_id, c.media_type::text, c.title, c.original_title,
-        c.overview, c.release_date, c.original_language, c.poster_path,
-        c.vote_average, c.popularity, c.metadata, c.tmdb_refreshed_at,
-        COALESCE(
-            jsonb_agg(
-                jsonb_build_object(
-                    'id', g.id::text,
-                    'tmdbGenreId', g.tmdb_genre_id,
-                    'name', g.name
-                )
-                ORDER BY g.name
-            ) FILTER (WHERE g.id IS NOT NULL),
-            '[]'::jsonb
-        ) AS genres
-    FROM content c
-    LEFT JOIN content_genre cg ON cg.content_id = c.id
-    LEFT JOIN genre g ON g.id = cg.genre_id
-"""
-
-
-def fetch_content(
-    where_sql="",
-    params=None,
-    order_sql="c.popularity DESC NULLS LAST, c.id",
-    *,
-    limit: int | None = None,
-    offset: int = 0,
-):
-    query_params = list(params or [])
-    pagination_sql = ""
-    if limit is not None:
-        pagination_sql = "LIMIT %s OFFSET %s"
-        query_params.extend([limit, offset])
-    with connection.cursor() as cursor:
-        cursor.execute(
-            f"""
-            {CONTENT_SELECT}
-            {where_sql}
-            GROUP BY c.id
-            ORDER BY {order_sql}
-            {pagination_sql}
-            """,
-            query_params,
-        )
-        return serialize_content_rows(cursor.fetchall())
-
-
-def serialize_conversation(row) -> dict:
+def serialize_content(item: Content) -> dict:
     return {
-        "id": str(row[0]),
-        "userId": str(row[1]),
-        "title": row[2],
-        "createdAt": iso(row[3]),
-        "updatedAt": iso(row[4]),
+        "id": str(item.pk),
+        "tmdbId": item.tmdb_id,
+        "mediaType": item.media_type,
+        "title": item.title,
+        "originalTitle": item.original_title,
+        "overview": item.overview,
+        "releaseDate": iso(item.release_date),
+        "originalLanguage": item.original_language,
+        "posterPath": item.poster_path,
+        "voteAverage": (
+            float(item.vote_average) if item.vote_average is not None else None
+        ),
+        "popularity": float(item.popularity) if item.popularity is not None else None,
+        "metadata": json_object(item.metadata),
+        "tmdbRefreshedAt": iso(item.tmdb_refreshed_at),
+        "genres": [
+            {
+                "id": str(genre.pk),
+                "tmdbGenreId": genre.tmdb_genre_id,
+                "name": genre.name,
+            }
+            for genre in item.genres.all()
+        ],
     }
 
 
-def serialize_message(row) -> dict:
+def serialize_conversation(item: Conversation) -> dict:
     return {
-        "id": str(row[0]),
-        "conversationId": str(row[1]),
-        "role": row[2],
-        "content": row[3],
-        "sequenceNo": row[4],
-        "createdAt": iso(row[5]),
+        "id": str(item.pk),
+        "userId": str(item.user_id),
+        "title": item.title,
+        "createdAt": iso(item.created_at),
+        "updatedAt": iso(item.updated_at),
     }
 
 
-def serialize_interaction(row) -> dict:
+def serialize_message(item: Message) -> dict:
     return {
-        "id": str(row[0]),
-        "userId": str(row[1]),
-        "contentId": str(row[2]),
-        "sourceCandidateId": str(row[3]) if row[3] is not None else None,
-        "interactionType": row[4],
-        "rating": float(row[5]) if row[5] is not None else None,
-        "metadata": json_object(row[6]),
-        "createdAt": iso(row[7]),
+        "id": str(item.pk),
+        "conversationId": str(item.conversation_id),
+        "role": item.role,
+        "content": item.content,
+        "sequenceNo": item.sequence_no,
+        "createdAt": iso(item.created_at),
+    }
+
+
+def serialize_interaction(item: Interaction) -> dict:
+    return {
+        "id": str(item.pk),
+        "userId": str(item.user_id),
+        "contentId": str(item.content_id),
+        "sourceCandidateId": (
+            str(item.source_candidate_id)
+            if item.source_candidate_id is not None
+            else None
+        ),
+        "interactionType": item.interaction_type,
+        "rating": float(item.rating) if item.rating is not None else None,
+        "metadata": json_object(item.metadata),
+        "createdAt": iso(item.created_at),
     }
 
 
 @require_http_methods(["GET"])
 def health(request: HttpRequest) -> JsonResponse:
     try:
-        with connection.cursor() as cursor:
-            cursor.execute("SELECT 1")
-            cursor.fetchone()
+        connection.ensure_connection()
     except DatabaseError:
         logger.exception("Database health check failed.")
         return JsonResponse({"status": "unavailable"}, status=503)
@@ -204,94 +169,49 @@ def health(request: HttpRequest) -> JsonResponse:
 def bootstrap(request: HttpRequest) -> JsonResponse:
     user_id = get_business_user_id(request.user)
     user = sync_business_user(request.user)
-    with connection.cursor() as cursor:
-        cursor.execute(
-            """
-            SELECT user_id, semantic_summary, version, last_rebuilt_at, updated_at
-            FROM user_profile
-            WHERE user_id = %s
-            """,
-            [user_id],
-        )
-        profile_row = cursor.fetchone()
-        cursor.execute(
-            """
-            SELECT id, user_id, preference_type, preference_value, polarity,
-                   weight, confidence, created_at, updated_at
-            FROM user_preference
-            WHERE user_id = %s
-            ORDER BY polarity DESC, weight DESC, id
-            """,
-            [user_id],
-        )
-        preference_rows = cursor.fetchall()
-        cursor.execute(
-            """
-            SELECT id, user_id, title, created_at, updated_at
-            FROM conversation
-            WHERE user_id = %s
-            ORDER BY updated_at DESC, id DESC
-            """,
-            [user_id],
-        )
-        conversation_rows = cursor.fetchall()
-        conversation_ids = [row[0] for row in conversation_rows]
-        if conversation_ids:
-            cursor.execute(
-                """
-                SELECT id, conversation_id, role::text, content, sequence_no, created_at
-                FROM message
-                WHERE conversation_id = ANY(%s)
-                ORDER BY conversation_id, sequence_no
-                """,
-                [conversation_ids],
-            )
-            message_rows = cursor.fetchall()
-        else:
-            message_rows = []
-        cursor.execute(
-            """
-            SELECT id, user_id, content_id, source_candidate_id,
-                   interaction_type::text, rating, metadata, created_at
-            FROM interaction
-            WHERE user_id = %s
-            ORDER BY created_at, id
-            """,
-            [user_id],
-        )
-        interaction_rows = cursor.fetchall()
+    profile = UserProfile.objects.filter(user_id=user_id).first()
+    preferences = UserPreference.objects.filter(user_id=user_id).order_by(
+        "-polarity", "-weight", "id"
+    )
+    conversations = list(
+        Conversation.objects.filter(user_id=user_id).order_by("-updated_at", "-id")
+    )
+    messages = Message.objects.filter(
+        conversation_id__in=[item.pk for item in conversations]
+    ).order_by("conversation_id", "sequence_no")
+    interactions = Interaction.objects.filter(user_id=user_id).order_by(
+        "created_at", "id"
+    )
 
-    profile = {
+    profile_data = {
         "userId": str(user_id),
-        "semanticSummary": profile_row[1] if profile_row else None,
-        "version": profile_row[2] if profile_row else 1,
-        "lastRebuiltAt": iso(profile_row[3]) if profile_row else None,
-        "updatedAt": iso(profile_row[4]) if profile_row else iso(timezone.now()),
+        "semanticSummary": profile.semantic_summary if profile else None,
+        "version": profile.version if profile else 1,
+        "lastRebuiltAt": iso(profile.last_rebuilt_at) if profile else None,
+        "updatedAt": iso(profile.updated_at) if profile else iso(timezone.now()),
     }
-    preferences = [
+    preference_data = [
         {
-            "id": str(row[0]),
-            "userId": str(row[1]),
-            "preferenceType": row[2],
-            "preferenceValue": row[3],
-            "polarity": row[4],
-            "weight": float(row[5]),
-            "confidence": float(row[6]),
-            "createdAt": iso(row[7]),
-            "updatedAt": iso(row[8]),
+            "id": str(item.pk),
+            "userId": str(item.user_id),
+            "preferenceType": item.preference_type,
+            "preferenceValue": item.preference_value,
+            "polarity": item.polarity,
+            "weight": float(item.weight),
+            "confidence": float(item.confidence),
+            "createdAt": iso(item.created_at),
+            "updatedAt": iso(item.updated_at),
         }
-        for row in preference_rows
+        for item in preferences
     ]
     return JsonResponse(
         {
             "user": user,
-            "semanticProfile": profile,
-            "preferences": preferences,
-            "conversations": [serialize_conversation(row) for row in conversation_rows],
-            "messages": [serialize_message(row) for row in message_rows],
-            "interactions": [
-                serialize_interaction(row) for row in interaction_rows
-            ],
+            "semanticProfile": profile_data,
+            "preferences": preference_data,
+            "conversations": [serialize_conversation(item) for item in conversations],
+            "messages": [serialize_message(item) for item in messages],
+            "interactions": [serialize_interaction(item) for item in interactions],
         }
     )
 
@@ -341,8 +261,7 @@ def contents(request: HttpRequest) -> JsonResponse:
     if sort not in CATALOG_SORTS:
         return JsonResponse({"detail": "Invalid sort option."}, status=400)
 
-    conditions = []
-    params = []
+    queryset = content_queryset()
     ids_value = request.GET.get("ids", "").strip()
     if ids_value:
         try:
@@ -370,29 +289,15 @@ def contents(request: HttpRequest) -> JsonResponse:
                 },
                 status=400,
             )
-        conditions.append("c.id = ANY(%s)")
-        params.append(list(dict.fromkeys(content_ids)))
+        queryset = queryset.filter(pk__in=list(dict.fromkeys(content_ids)))
     if query:
-        conditions.append("(c.title ILIKE %s OR c.original_title ILIKE %s)")
-        search_pattern = f"%{query}%"
-        params.extend([search_pattern, search_pattern])
-    if media_type != "all":
-        conditions.append("c.media_type = %s")
-        params.append(media_type)
-    if genre:
-        conditions.append(
-            """
-            EXISTS (
-                SELECT 1
-                FROM content_genre selected_content_genre
-                JOIN genre selected_genre
-                  ON selected_genre.id = selected_content_genre.genre_id
-                WHERE selected_content_genre.content_id = c.id
-                  AND LOWER(selected_genre.name) = LOWER(%s)
-            )
-            """
+        queryset = queryset.filter(
+            Q(title__icontains=query) | Q(original_title__icontains=query)
         )
-        params.append(genre)
+    if media_type != "all":
+        queryset = queryset.filter(media_type=media_type)
+    if genre:
+        queryset = queryset.filter(genres__name__iexact=genre)
 
     minimum_rating_value = request.GET.get("min_rating")
     if minimum_rating_value not in {None, ""}:
@@ -408,8 +313,7 @@ def contents(request: HttpRequest) -> JsonResponse:
                 {"detail": "min_rating must be between 0 and 10."},
                 status=400,
             )
-        conditions.append("c.vote_average >= %s")
-        params.append(minimum_rating)
+        queryset = queryset.filter(vote_average__gte=minimum_rating)
 
     year_from_value = request.GET.get("year_from")
     if year_from_value not in {None, ""}:
@@ -425,30 +329,20 @@ def contents(request: HttpRequest) -> JsonResponse:
                 {"detail": "year_from is outside the supported range."},
                 status=400,
             )
-        conditions.append("c.release_date >= %s")
-        params.append(date(year_from, 1, 1))
+        queryset = queryset.filter(release_date__gte=date(year_from, 1, 1))
 
-    where_sql = f"WHERE {' AND '.join(conditions)}" if conditions else ""
-    with connection.cursor() as cursor:
-        cursor.execute(
-            f"SELECT COUNT(*) FROM content c {where_sql}",
-            params,
-        )
-        total_items = cursor.fetchone()[0]
-        cursor.execute("SELECT name FROM genre ORDER BY name")
-        genres = [row[0] for row in cursor.fetchall()]
+    queryset = queryset.distinct()
+    total_items = queryset.count()
+    genres = list(Genre.objects.order_by("name").values_list("name", flat=True))
 
     total_pages = ceil(total_items / page_size) if total_items else 0
-    items = fetch_content(
-        where_sql,
-        params,
-        CATALOG_SORTS[sort],
-        limit=page_size,
-        offset=(page - 1) * page_size,
+    start = (page - 1) * page_size
+    items = list(
+        queryset.order_by(*CATALOG_SORTS[sort])[start : start + page_size]
     )
     return JsonResponse(
         {
-            "items": items,
+            "items": [serialize_content(item) for item in items],
             "pagination": {
                 "page": page,
                 "pageSize": page_size,
@@ -490,18 +384,11 @@ def sync_upcoming_from_tmdb():
 @authenticated
 def upcoming_contents(request: HttpRequest) -> JsonResponse:
     refresh = request.GET.get("refresh") == "1"
-    with connection.cursor() as cursor:
-        cursor.execute(
-            """
-            SELECT EXISTS (
-                SELECT 1 FROM content
-                WHERE media_type = 'movie' AND release_date >= CURRENT_DATE
-                  AND tmdb_refreshed_at >= %s
-            )
-            """,
-            [timezone.now() - timedelta(hours=12)],
-        )
-        has_fresh_data = cursor.fetchone()[0]
+    has_fresh_data = Content.objects.filter(
+        media_type="movie",
+        release_date__gte=date.today(),
+        tmdb_refreshed_at__gte=timezone.now() - timedelta(hours=12),
+    ).exists()
     if refresh or not has_fresh_data:
         try:
             sync_upcoming_from_tmdb()
@@ -512,11 +399,14 @@ def upcoming_contents(request: HttpRequest) -> JsonResponse:
                     {"detail": "TMDB upcoming releases are unavailable."},
                     status=503,
                 )
-    data = fetch_content(
-        "WHERE c.media_type = 'movie' AND c.release_date >= CURRENT_DATE",
-        order_sql="c.release_date, c.popularity DESC NULLS LAST",
+    data = content_queryset().filter(
+        media_type="movie",
+        release_date__gte=date.today(),
+    ).order_by(
+        "release_date",
+        F("popularity").desc(nulls_last=True),
     )
-    return JsonResponse(data, safe=False)
+    return JsonResponse([serialize_content(item) for item in data], safe=False)
 
 
 @require_http_methods(["GET"])
@@ -527,48 +417,23 @@ def recommendation_trends(request: HttpRequest) -> JsonResponse:
     if days is None:
         return JsonResponse({"detail": "Invalid trend period."}, status=400)
     since = timezone.now() - timedelta(days=days)
-    with connection.cursor() as cursor:
-        cursor.execute(
-            "SELECT COUNT(*) FROM run_candidate WHERE created_at >= %s",
-            [since],
-        )
-        total = cursor.fetchone()[0]
-        cursor.execute(
-            """
-            SELECT g.name, COUNT(*) AS recommendation_count
-            FROM run_candidate rc
-            JOIN content_genre cg ON cg.content_id = rc.content_id
-            JOIN genre g ON g.id = cg.genre_id
-            WHERE rc.created_at >= %s
-            GROUP BY g.id, g.name
-            ORDER BY recommendation_count DESC, g.name
-            LIMIT 5
-            """,
-            [since],
-        )
-        genre_rows = cursor.fetchall()
-        cursor.execute(
-            """
-            SELECT rc.content_id, COUNT(*) AS recommendation_count
-            FROM run_candidate rc
-            WHERE rc.created_at >= %s
-            GROUP BY rc.content_id
-            ORDER BY recommendation_count DESC, rc.content_id
-            LIMIT 3
-            """,
-            [since],
-        )
-        content_trend_rows = cursor.fetchall()
-    content_ids = [row[0] for row in content_trend_rows]
+    candidates = RunCandidate.objects.filter(created_at__gte=since)
+    total = candidates.count()
+    genre_rows = list(
+        Genre.objects.filter(contents__run_candidates__created_at__gte=since)
+        .values("name")
+        .annotate(recommendation_count=Count("contents__run_candidates"))
+        .order_by("-recommendation_count", "name")[:5]
+    )
+    content_trend_rows = list(
+        candidates.values("content_id")
+        .annotate(recommendation_count=Count("id"))
+        .order_by("-recommendation_count", "content_id")[:3]
+    )
     content_by_id = {
-        item["id"]: item
-        for item in (
-            fetch_content(
-                "WHERE c.id = ANY(%s)",
-                [content_ids],
-            )
-            if content_ids
-            else []
+        item.pk: item
+        for item in content_queryset().filter(
+            pk__in=[row["content_id"] for row in content_trend_rows]
         )
     }
     return JsonResponse(
@@ -576,16 +441,21 @@ def recommendation_trends(request: HttpRequest) -> JsonResponse:
             "period": period,
             "totalRecommendations": total,
             "genreTrends": [
-                {"genreName": row[0], "recommendationCount": row[1]}
+                {
+                    "genreName": row["name"],
+                    "recommendationCount": row["recommendation_count"],
+                }
                 for row in genre_rows
             ],
             "contentTrends": [
                 {
-                    "content": content_by_id[str(content_id)],
-                    "recommendationCount": count,
+                    "content": serialize_content(
+                        content_by_id[row["content_id"]]
+                    ),
+                    "recommendationCount": row["recommendation_count"],
                 }
-                for content_id, count in content_trend_rows
-                if str(content_id) in content_by_id
+                for row in content_trend_rows
+                if row["content_id"] in content_by_id
             ],
             "generatedAt": timezone.now().isoformat(),
         }
@@ -641,59 +511,38 @@ def profile(request: HttpRequest) -> JsonResponse:
 def conversations(request: HttpRequest) -> JsonResponse:
     user_id = get_business_user_id(request.user)
     if request.method == "GET":
-        with connection.cursor() as cursor:
-            cursor.execute(
-                """
-                SELECT id, user_id, title, created_at, updated_at
-                FROM conversation WHERE user_id = %s
-                ORDER BY updated_at DESC, id DESC
-                """,
-                [user_id],
-            )
-            rows = cursor.fetchall()
-        return JsonResponse([serialize_conversation(row) for row in rows], safe=False)
-    now = timezone.now()
-    with connection.cursor() as cursor:
-        cursor.execute(
-            """
-            INSERT INTO conversation (user_id, title, created_at, updated_at)
-            VALUES (%s, NULL, %s, %s)
-            RETURNING id, user_id, title, created_at, updated_at
-            """,
-            [user_id, now, now],
+        items = Conversation.objects.filter(user_id=user_id).order_by(
+            "-updated_at", "-id"
         )
-        row = cursor.fetchone()
-    return JsonResponse(serialize_conversation(row), status=201)
+        return JsonResponse(
+            [serialize_conversation(item) for item in items],
+            safe=False,
+        )
+    item = Conversation.objects.create(user_id=user_id)
+    return JsonResponse(serialize_conversation(item), status=201)
 
 
 @require_http_methods(["PATCH", "DELETE"])
 @authenticated
 def conversation_detail(request: HttpRequest, conversation_id: int) -> JsonResponse:
     user_id = get_business_user_id(request.user)
-    with connection.cursor() as cursor:
-        cursor.execute(
-            "SELECT id FROM conversation WHERE id = %s AND user_id = %s",
-            [conversation_id, user_id],
-        )
-        if cursor.fetchone() is None:
-            return JsonResponse({"detail": "Conversation not found."}, status=404)
-        if request.method == "DELETE":
-            cursor.execute("DELETE FROM conversation WHERE id = %s", [conversation_id])
-            return JsonResponse({}, status=204)
-        data = request_data(request)
-        title = data.get("title") if data else None
-        if not isinstance(title, str) or not title.strip():
-            return JsonResponse({"detail": "Title is required."}, status=400)
-        cursor.execute(
-            """
-            UPDATE conversation
-            SET title = %s, updated_at = %s
-            WHERE id = %s
-            RETURNING id, user_id, title, created_at, updated_at
-            """,
-            [title.strip()[:255], timezone.now(), conversation_id],
-        )
-        return JsonResponse(serialize_conversation(cursor.fetchone()))
+    item = Conversation.objects.filter(
+        pk=conversation_id,
+        user_id=user_id,
+    ).first()
+    if item is None:
+        return JsonResponse({"detail": "Conversation not found."}, status=404)
+    if request.method == "DELETE":
+        item.delete()
+        return JsonResponse({}, status=204)
+    data = request_data(request)
+    title = data.get("title") if data else None
+    if not isinstance(title, str) or not title.strip():
+        return JsonResponse({"detail": "Title is required."}, status=400)
+    item.title = title.strip()[:255]
+    item.updated_at = timezone.now()
+    item.save(update_fields=["title", "updated_at"])
+    return JsonResponse(serialize_conversation(item))
 
 
 @require_http_methods(["POST"])
@@ -717,43 +566,28 @@ def conversation_messages(
             },
             status=400,
         )
-    now = timezone.now()
-    with transaction.atomic(), connection.cursor() as cursor:
-        cursor.execute(
-            """
-            SELECT id FROM conversation
-            WHERE id = %s AND user_id = %s
-            FOR UPDATE
-            """,
-            [conversation_id, user_id],
+    with transaction.atomic():
+        conversation = (
+            Conversation.objects.select_for_update()
+            .filter(pk=conversation_id, user_id=user_id)
+            .first()
         )
-        if cursor.fetchone() is None:
+        if conversation is None:
             return JsonResponse({"detail": "Conversation not found."}, status=404)
-        cursor.execute(
-            "SELECT COALESCE(MAX(sequence_no), 0) + 1 FROM message WHERE conversation_id = %s",
-            [conversation_id],
+        maximum = Message.objects.filter(conversation=conversation).aggregate(
+            maximum=Max("sequence_no")
+        )["maximum"]
+        message = Message.objects.create(
+            conversation=conversation,
+            role=MessageRole.USER,
+            content=content.strip(),
+            sequence_no=(maximum or 0) + 1,
         )
-        sequence_no = cursor.fetchone()[0]
-        cursor.execute(
-            """
-            INSERT INTO message (
-                conversation_id, role, content, sequence_no, created_at
-            )
-            VALUES (%s, 'user', %s, %s, %s)
-            RETURNING id, conversation_id, role::text, content, sequence_no, created_at
-            """,
-            [conversation_id, content.strip(), sequence_no, now],
-        )
-        row = cursor.fetchone()
-        cursor.execute(
-            """
-            UPDATE conversation
-            SET title = COALESCE(title, %s), updated_at = %s
-            WHERE id = %s
-            """,
-            [content.strip()[:255], now, conversation_id],
-        )
-    return JsonResponse(serialize_message(row), status=201)
+        if conversation.title is None:
+            conversation.title = content.strip()[:255]
+        conversation.updated_at = timezone.now()
+        conversation.save(update_fields=["title", "updated_at"])
+    return JsonResponse(serialize_message(message), status=201)
 
 
 @require_http_methods(["POST"])
@@ -794,57 +628,48 @@ def interactions(request: HttpRequest) -> JsonResponse:
             )
     else:
         rating = None
-    with connection.cursor() as cursor:
-        cursor.execute("SELECT EXISTS (SELECT 1 FROM content WHERE id = %s)", [content_id])
-        if not cursor.fetchone()[0]:
-            return JsonResponse({"detail": "Content not found."}, status=404)
-        if interaction_type in {"watchlisted", "watched"}:
-            cursor.execute(
-                """
-                SELECT id, user_id, content_id, source_candidate_id,
-                       interaction_type::text, rating, metadata, created_at
-                FROM interaction
-                WHERE user_id = %s AND content_id = %s AND interaction_type = %s
-                ORDER BY id DESC LIMIT 1
-                """,
-                [user_id, content_id, interaction_type],
+    if not Content.objects.filter(pk=content_id).exists():
+        return JsonResponse({"detail": "Content not found."}, status=404)
+    if source_candidate_id is not None and not RunCandidate.objects.filter(
+        pk=source_candidate_id
+    ).exists():
+        return JsonResponse({"detail": "Source candidate not found."}, status=404)
+    if interaction_type in {
+        InteractionType.WATCHLISTED,
+        InteractionType.WATCHED,
+    }:
+        existing = (
+            Interaction.objects.filter(
+                user_id=user_id,
+                content_id=content_id,
+                interaction_type=interaction_type,
             )
-            existing = cursor.fetchone()
-            if existing:
-                return JsonResponse(serialize_interaction(existing))
-        cursor.execute(
-            """
-            INSERT INTO interaction (
-                user_id, content_id, source_candidate_id, interaction_type,
-                rating, metadata, created_at
-            )
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
-            RETURNING id, user_id, content_id, source_candidate_id,
-                      interaction_type::text, rating, metadata, created_at
-            """,
-            [
-                user_id,
-                content_id,
-                source_candidate_id,
-                interaction_type,
-                rating,
-                Jsonb(data.get("metadata") if isinstance(data.get("metadata"), dict) else {}),
-                timezone.now(),
-            ],
+            .order_by("-id")
+            .first()
         )
-        row = cursor.fetchone()
-    return JsonResponse(serialize_interaction(row), status=201)
+        if existing:
+            return JsonResponse(serialize_interaction(existing))
+    item = Interaction.objects.create(
+        user_id=user_id,
+        content_id=content_id,
+        source_candidate_id=source_candidate_id,
+        interaction_type=interaction_type,
+        rating=rating,
+        metadata=data.get("metadata")
+        if isinstance(data.get("metadata"), dict)
+        else {},
+    )
+    return JsonResponse(serialize_interaction(item), status=201)
 
 
 @require_http_methods(["DELETE"])
 @authenticated
 def interaction_detail(request: HttpRequest, interaction_id: int) -> JsonResponse:
     user_id = get_business_user_id(request.user)
-    with connection.cursor() as cursor:
-        cursor.execute(
-            "DELETE FROM interaction WHERE id = %s AND user_id = %s RETURNING id",
-            [interaction_id, user_id],
-        )
-        if cursor.fetchone() is None:
-            return JsonResponse({"detail": "Interaction not found."}, status=404)
+    deleted, _ = Interaction.objects.filter(
+        pk=interaction_id,
+        user_id=user_id,
+    ).delete()
+    if not deleted:
+        return JsonResponse({"detail": "Interaction not found."}, status=404)
     return JsonResponse({}, status=204)

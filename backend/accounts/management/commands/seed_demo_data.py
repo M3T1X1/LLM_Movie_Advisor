@@ -16,7 +16,26 @@ from django.core.exceptions import ValidationError
 from django.core.management.base import BaseCommand, CommandError
 from django.db import connection, transaction
 from django.utils import timezone
-from psycopg.types.json import Jsonb
+
+from backend.api.models import (
+    AgentExecution,
+    AgentStatus,
+    BusinessUser,
+    CandidateStatus,
+    Content,
+    ContentEmbedding,
+    ContentGenre,
+    Conversation,
+    Genre,
+    Interaction,
+    Message,
+    RecommendationRequest,
+    RecommendationRun,
+    RunCandidate,
+    RunStatus,
+    UserPreference,
+    UserProfile,
+)
 
 
 TMDB_API_URL = "https://api.themoviedb.org/3"
@@ -517,100 +536,55 @@ class Command(BaseCommand):
             auth_user.full_clean()
             auth_user.save()
 
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    """
-                    SELECT id
-                    FROM app_user
-                    WHERE username = %s OR email = %s
-                    ORDER BY (username = %s) DESC
-                    LIMIT 1
-                    """,
-                    [
-                        definition["username"],
-                        definition["email"],
-                        definition["username"],
-                    ],
+            business_user = BusinessUser.objects.filter(
+                username=definition["username"]
+            ).first()
+            if business_user is None:
+                business_user = BusinessUser.objects.filter(
+                    email=definition["email"]
+                ).first()
+            if business_user is None:
+                business_user = BusinessUser(date_joined=now)
+            business_user.email = definition["email"]
+            business_user.username = definition["username"]
+            business_user.password = auth_user.password
+            business_user.is_active = True
+            business_user.save()
+            UserProfile.objects.update_or_create(
+                user=business_user,
+                defaults={
+                    "semantic_summary": definition["summary"],
+                    "version": 1,
+                    "last_rebuilt_at": now,
+                    "updated_at": now,
+                },
+            )
+            for (
+                preference_type,
+                preference_value,
+                polarity,
+                weight,
+                confidence,
+            ) in definition["preferences"]:
+                UserPreference.objects.update_or_create(
+                    user=business_user,
+                    preference_type=preference_type,
+                    preference_value=preference_value,
+                    defaults={
+                        "polarity": polarity,
+                        "weight": weight,
+                        "confidence": confidence,
+                        "updated_at": now,
+                    },
+                    create_defaults={
+                        "polarity": polarity,
+                        "weight": weight,
+                        "confidence": confidence,
+                        "created_at": now,
+                        "updated_at": now,
+                    },
                 )
-                row = cursor.fetchone()
-                if row:
-                    business_user_id = row[0]
-                    cursor.execute(
-                        """
-                        UPDATE app_user
-                        SET email = %s, username = %s, password = %s, is_active = TRUE
-                        WHERE id = %s
-                        """,
-                        [
-                            definition["email"],
-                            definition["username"],
-                            auth_user.password,
-                            business_user_id,
-                        ],
-                    )
-                else:
-                    cursor.execute(
-                        """
-                        INSERT INTO app_user (email, username, password, date_joined, is_active)
-                        VALUES (%s, %s, %s, %s, TRUE)
-                        RETURNING id
-                        """,
-                        [
-                            definition["email"],
-                            definition["username"],
-                            auth_user.password,
-                            now,
-                        ],
-                    )
-                    business_user_id = cursor.fetchone()[0]
-
-                cursor.execute(
-                    """
-                    INSERT INTO user_profile (
-                        user_id, semantic_summary, version, last_rebuilt_at, updated_at
-                    )
-                    VALUES (%s, %s, 1, %s, %s)
-                    ON CONFLICT (user_id) DO UPDATE SET
-                        semantic_summary = EXCLUDED.semantic_summary,
-                        version = EXCLUDED.version,
-                        last_rebuilt_at = EXCLUDED.last_rebuilt_at,
-                        updated_at = EXCLUDED.updated_at
-                    """,
-                    [business_user_id, definition["summary"], now, now],
-                )
-                for (
-                    preference_type,
-                    preference_value,
-                    polarity,
-                    weight,
-                    confidence,
-                ) in definition["preferences"]:
-                    cursor.execute(
-                        """
-                        INSERT INTO user_preference (
-                            user_id, preference_type, preference_value, polarity,
-                            weight, confidence, created_at, updated_at
-                        )
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                        ON CONFLICT (user_id, preference_type, preference_value)
-                        DO UPDATE SET
-                            polarity = EXCLUDED.polarity,
-                            weight = EXCLUDED.weight,
-                            confidence = EXCLUDED.confidence,
-                            updated_at = EXCLUDED.updated_at
-                        """,
-                        [
-                            business_user_id,
-                            preference_type,
-                            preference_value,
-                            polarity,
-                            weight,
-                            confidence,
-                            now,
-                            now,
-                        ],
-                    )
-            business_ids.append(business_user_id)
+            business_ids.append(business_user.pk)
         return business_ids
 
     def _seed_catalog(
@@ -619,78 +593,45 @@ class Command(BaseCommand):
         catalog: list[TmdbCatalogItem],
     ) -> list[int]:
         now = timezone.now()
-        genre_database_ids: dict[int, int] = {}
+        genre_objects: dict[int, Genre] = {}
         content_ids: list[int] = []
-        with connection.cursor() as cursor:
-            for tmdb_genre_id, name in sorted(genres.items()):
-                cursor.execute(
-                    """
-                    INSERT INTO genre (tmdb_genre_id, name)
-                    VALUES (%s, %s)
-                    ON CONFLICT (tmdb_genre_id) DO UPDATE SET name = EXCLUDED.name
-                    RETURNING id
-                    """,
-                    [tmdb_genre_id, name[:100]],
-                )
-                genre_database_ids[tmdb_genre_id] = cursor.fetchone()[0]
+        for tmdb_genre_id, name in sorted(genres.items()):
+            genre, _ = Genre.objects.update_or_create(
+                tmdb_genre_id=tmdb_genre_id,
+                defaults={"name": name[:100]},
+            )
+            genre_objects[tmdb_genre_id] = genre
 
-            for item in catalog:
-                cursor.execute(
-                    """
-                    INSERT INTO content (
-                        tmdb_id, media_type, title, original_title, overview,
-                        release_date, original_language, poster_path, vote_average,
-                        popularity, metadata, tmdb_refreshed_at
+        for item in catalog:
+            content, _ = Content.objects.update_or_create(
+                tmdb_id=item.tmdb_id,
+                media_type=item.media_type,
+                defaults={
+                    "title": item.title,
+                    "original_title": item.original_title,
+                    "overview": item.overview,
+                    "release_date": item.release_date,
+                    "original_language": item.original_language,
+                    "poster_path": item.poster_path,
+                    "vote_average": item.vote_average,
+                    "popularity": item.popularity,
+                    "metadata": item.metadata,
+                    "tmdb_refreshed_at": now,
+                },
+            )
+            content_ids.append(content.pk)
+            ContentGenre.objects.filter(content=content).delete()
+            ContentGenre.objects.bulk_create(
+                [
+                    ContentGenre(
+                        content=content,
+                        genre=genre_objects[tmdb_genre_id],
                     )
-                    VALUES (
-                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
-                    )
-                    ON CONFLICT (tmdb_id, media_type) DO UPDATE SET
-                        title = EXCLUDED.title,
-                        original_title = EXCLUDED.original_title,
-                        overview = EXCLUDED.overview,
-                        release_date = EXCLUDED.release_date,
-                        original_language = EXCLUDED.original_language,
-                        poster_path = EXCLUDED.poster_path,
-                        vote_average = EXCLUDED.vote_average,
-                        popularity = EXCLUDED.popularity,
-                        metadata = EXCLUDED.metadata,
-                        tmdb_refreshed_at = EXCLUDED.tmdb_refreshed_at
-                    RETURNING id
-                    """,
-                    [
-                        item.tmdb_id,
-                        item.media_type,
-                        item.title,
-                        item.original_title,
-                        item.overview,
-                        item.release_date,
-                        item.original_language,
-                        item.poster_path,
-                        item.vote_average,
-                        item.popularity,
-                        Jsonb(item.metadata),
-                        now,
-                    ],
-                )
-                content_id = cursor.fetchone()[0]
-                content_ids.append(content_id)
-                cursor.execute(
-                    "DELETE FROM content_genre WHERE content_id = %s",
-                    [content_id],
-                )
-                for tmdb_genre_id in item.genre_ids:
-                    genre_id = genre_database_ids.get(tmdb_genre_id)
-                    if genre_id is None:
-                        continue
-                    cursor.execute(
-                        """
-                        INSERT INTO content_genre (content_id, genre_id)
-                        VALUES (%s, %s)
-                        ON CONFLICT DO NOTHING
-                        """,
-                        [content_id, genre_id],
-                    )
+                    for tmdb_genre_id in item.genre_ids
+                    if tmdb_genre_id in genre_objects
+                ],
+                ignore_conflicts=True,
+            )
         return content_ids
 
     def _seed_recommendation_history(
@@ -791,32 +732,20 @@ class Command(BaseCommand):
         return conversation_ids, candidates
 
     def _upsert_conversation(self, *, user_id: int, title: str, created_at) -> int:
-        with connection.cursor() as cursor:
-            cursor.execute(
-                """
-                SELECT id FROM conversation
-                WHERE user_id = %s AND title = %s
-                ORDER BY id
-                LIMIT 1
-                """,
-                [user_id, title],
+        conversation = (
+            Conversation.objects.filter(user_id=user_id, title=title)
+            .order_by("id")
+            .first()
+        )
+        if conversation is None:
+            conversation = Conversation(
+                user_id=user_id,
+                title=title,
+                created_at=created_at,
             )
-            row = cursor.fetchone()
-            if row:
-                cursor.execute(
-                    "UPDATE conversation SET updated_at = %s WHERE id = %s",
-                    [created_at + timedelta(minutes=2), row[0]],
-                )
-                return row[0]
-            cursor.execute(
-                """
-                INSERT INTO conversation (user_id, title, created_at, updated_at)
-                VALUES (%s, %s, %s, %s)
-                RETURNING id
-                """,
-                [user_id, title, created_at, created_at + timedelta(minutes=2)],
-            )
-            return cursor.fetchone()[0]
+        conversation.updated_at = created_at + timedelta(minutes=2)
+        conversation.save()
+        return conversation.pk
 
     def _upsert_message(
         self,
@@ -826,22 +755,16 @@ class Command(BaseCommand):
         content: str,
         created_at,
     ) -> int:
-        with connection.cursor() as cursor:
-            cursor.execute(
-                """
-                INSERT INTO message (
-                    conversation_id, role, content, sequence_no, created_at
-                )
-                VALUES (%s, %s, %s, %s, %s)
-                ON CONFLICT (conversation_id, sequence_no) DO UPDATE SET
-                    role = EXCLUDED.role,
-                    content = EXCLUDED.content,
-                    created_at = EXCLUDED.created_at
-                RETURNING id
-                """,
-                [conversation_id, role, content, sequence_no, created_at],
-            )
-            return cursor.fetchone()[0]
+        message, _ = Message.objects.update_or_create(
+            conversation_id=conversation_id,
+            sequence_no=sequence_no,
+            defaults={
+                "role": role,
+                "content": content,
+                "created_at": created_at,
+            },
+        )
+        return message.pk
 
     def _upsert_request(
         self,
@@ -850,84 +773,40 @@ class Command(BaseCommand):
         scenario: dict[str, Any],
         created_at,
     ) -> int:
-        with connection.cursor() as cursor:
-            cursor.execute(
-                """
-                SELECT id FROM recommendation_request
-                WHERE conversation_id = %s AND trigger_message_id = %s
-                ORDER BY id
-                LIMIT 1
-                """,
-                [conversation_id, trigger_message_id],
+        request = (
+            RecommendationRequest.objects.filter(
+                conversation_id=conversation_id,
+                trigger_message_id=trigger_message_id,
             )
-            row = cursor.fetchone()
-            values = [
-                scenario["mood"],
-                Jsonb(scenario["context"]),
-                Jsonb(scenario["constraints"]),
-                created_at,
-            ]
-            if row:
-                cursor.execute(
-                    """
-                    UPDATE recommendation_request
-                    SET mood = %s, extracted_context = %s, constraints = %s,
-                        created_at = %s
-                    WHERE id = %s
-                    """,
-                    [*values, row[0]],
-                )
-                return row[0]
-            cursor.execute(
-                """
-                INSERT INTO recommendation_request (
-                    conversation_id, trigger_message_id, mood, extracted_context,
-                    constraints, created_at
-                )
-                VALUES (%s, %s, %s, %s, %s, %s)
-                RETURNING id
-                """,
-                [conversation_id, trigger_message_id, *values],
+            .order_by("id")
+            .first()
+        )
+        if request is None:
+            request = RecommendationRequest(
+                conversation_id=conversation_id,
+                trigger_message_id=trigger_message_id,
             )
-            return cursor.fetchone()[0]
+        request.mood = scenario["mood"]
+        request.extracted_context = scenario["context"]
+        request.constraints = scenario["constraints"]
+        request.created_at = created_at
+        request.save()
+        return request.pk
 
     def _upsert_run(self, request_id: int, started_at) -> int:
         finished_at = started_at + timedelta(seconds=3)
-        with connection.cursor() as cursor:
-            cursor.execute(
-                """
-                SELECT id FROM recommendation_run
-                WHERE request_id = %s
-                ORDER BY id
-                LIMIT 1
-                """,
-                [request_id],
-            )
-            row = cursor.fetchone()
-            if row:
-                cursor.execute(
-                    """
-                    UPDATE recommendation_run
-                    SET status = 'completed', graph_version = 'seed-v1',
-                        model_name = 'demo-agent-pipeline', started_at = %s,
-                        finished_at = %s
-                    WHERE id = %s
-                    """,
-                    [started_at, finished_at, row[0]],
-                )
-                return row[0]
-            cursor.execute(
-                """
-                INSERT INTO recommendation_run (
-                    request_id, status, graph_version, model_name,
-                    started_at, finished_at
-                )
-                VALUES (%s, 'completed', 'seed-v1', 'demo-agent-pipeline', %s, %s)
-                RETURNING id
-                """,
-                [request_id, started_at, finished_at],
-            )
-            return cursor.fetchone()[0]
+        run = RecommendationRun.objects.filter(request_id=request_id).order_by(
+            "id"
+        ).first()
+        if run is None:
+            run = RecommendationRun(request_id=request_id)
+        run.status = RunStatus.COMPLETED
+        run.graph_version = "seed-v1"
+        run.model_name = "demo-agent-pipeline"
+        run.started_at = started_at
+        run.finished_at = finished_at
+        run.save()
+        return run.pk
 
     def _upsert_candidate(
         self,
@@ -939,48 +818,28 @@ class Command(BaseCommand):
         final_score = 0.97 - rank * 0.035
         relevance_score = min(0.99, final_score + 0.02)
         critic_score = max(0.70, final_score - 0.01)
-        with connection.cursor() as cursor:
-            cursor.execute(
-                """
-                INSERT INTO run_candidate (
-                    run_id, content_id, source_rank, relevance_score,
-                    critic_score, final_score, status, final_rank,
-                    decision_reason, explanation, metadata_snapshot, created_at
-                )
-                VALUES (
-                    %s, %s, %s, %s, %s, %s, 'selected', %s, %s, %s, %s, %s
-                )
-                ON CONFLICT (run_id, content_id) DO UPDATE SET
-                    source_rank = EXCLUDED.source_rank,
-                    relevance_score = EXCLUDED.relevance_score,
-                    critic_score = EXCLUDED.critic_score,
-                    final_score = EXCLUDED.final_score,
-                    status = EXCLUDED.status,
-                    final_rank = EXCLUDED.final_rank,
-                    decision_reason = EXCLUDED.decision_reason,
-                    explanation = EXCLUDED.explanation,
-                    metadata_snapshot = EXCLUDED.metadata_snapshot,
-                    created_at = EXCLUDED.created_at
-                RETURNING id
-                """,
-                [
-                    run_id,
-                    content_id,
-                    rank + 1,
-                    relevance_score,
-                    critic_score,
-                    final_score,
-                    rank,
-                    "Wysoka zgodność z nastrojem, ograniczeniami i profilem użytkownika.",
-                    (
-                        "Tytuł łączy oczekiwany klimat z preferowanym tempem narracji "
-                        "i uzyskał wysoką ocenę w rankingu demonstracyjnym."
-                    ),
-                    Jsonb({"seeded": True, "rank": rank}),
-                    created_at,
-                ],
-            )
-            return cursor.fetchone()[0]
+        candidate, _ = RunCandidate.objects.update_or_create(
+            run_id=run_id,
+            content_id=content_id,
+            defaults={
+                "source_rank": rank + 1,
+                "relevance_score": relevance_score,
+                "critic_score": critic_score,
+                "final_score": final_score,
+                "status": CandidateStatus.SELECTED,
+                "final_rank": rank,
+                "decision_reason": (
+                    "Wysoka zgodność z nastrojem, ograniczeniami i profilem użytkownika."
+                ),
+                "explanation": (
+                    "Tytuł łączy oczekiwany klimat z preferowanym tempem narracji "
+                    "i uzyskał wysoką ocenę w rankingu demonstracyjnym."
+                ),
+                "metadata_snapshot": {"seeded": True, "rank": rank},
+                "created_at": created_at,
+            },
+        )
+        return candidate.pk
 
     def _upsert_agent_executions(
         self,
@@ -989,47 +848,31 @@ class Command(BaseCommand):
         content_ids: list[int],
         started_at,
     ):
-        with connection.cursor() as cursor:
-            for sequence_no, (agent_type, activity) in enumerate(AGENTS, start=1):
-                agent_started_at = started_at + timedelta(milliseconds=(sequence_no - 1) * 650)
-                duration_ms = 420 + sequence_no * 95
-                cursor.execute(
-                    """
-                    INSERT INTO agent_execution (
-                        run_id, agent_type, sequence_no, status, input_snapshot,
-                        output_snapshot, duration_ms, started_at, finished_at
-                    )
-                    VALUES (%s, %s, %s, 'success', %s, %s, %s, %s, %s)
-                    ON CONFLICT (run_id, sequence_no) DO UPDATE SET
-                        agent_type = EXCLUDED.agent_type,
-                        status = EXCLUDED.status,
-                        input_snapshot = EXCLUDED.input_snapshot,
-                        output_snapshot = EXCLUDED.output_snapshot,
-                        duration_ms = EXCLUDED.duration_ms,
-                        started_at = EXCLUDED.started_at,
-                        finished_at = EXCLUDED.finished_at
-                    """,
-                    [
-                        run_id,
-                        agent_type,
-                        sequence_no,
-                        Jsonb(
-                            {
-                                "mood": scenario["mood"],
-                                "constraints": scenario["constraints"],
-                            }
-                        ),
-                        Jsonb(
-                            {
-                                "activity": activity,
-                                "candidateContentIds": content_ids,
-                            }
-                        ),
-                        duration_ms,
-                        agent_started_at,
-                        agent_started_at + timedelta(milliseconds=duration_ms),
-                    ],
-                )
+        for sequence_no, (agent_type, activity) in enumerate(AGENTS, start=1):
+            agent_started_at = started_at + timedelta(
+                milliseconds=(sequence_no - 1) * 650
+            )
+            duration_ms = 420 + sequence_no * 95
+            AgentExecution.objects.update_or_create(
+                run_id=run_id,
+                sequence_no=sequence_no,
+                defaults={
+                    "agent_type": agent_type,
+                    "status": AgentStatus.SUCCESS,
+                    "input_snapshot": {
+                        "mood": scenario["mood"],
+                        "constraints": scenario["constraints"],
+                    },
+                    "output_snapshot": {
+                        "activity": activity,
+                        "candidateContentIds": content_ids,
+                    },
+                    "duration_ms": duration_ms,
+                    "started_at": agent_started_at,
+                    "finished_at": agent_started_at
+                    + timedelta(milliseconds=duration_ms),
+                },
+            )
 
     def _seed_interactions(
         self,
@@ -1047,75 +890,51 @@ class Command(BaseCommand):
             "rated",
             "disliked",
         )
-        with connection.cursor() as cursor:
-            for user_index, user_id in enumerate(user_ids):
-                for interaction_index in range(30):
-                    seed_key = f"demo-u{user_index + 1}-i{interaction_index + 1}"
-                    interaction_type = interaction_types[interaction_index % len(interaction_types)]
-                    if interaction_index < 12:
-                        source_candidate_id, content_id = candidates[
-                            (user_index * 11 + interaction_index) % len(candidates)
-                        ]
-                    else:
-                        source_candidate_id = None
-                        content_id = content_ids[
-                            (user_index * 37 + interaction_index * 7) % len(content_ids)
-                        ]
-                    rating = (
-                        round(random_generator.uniform(6.5, 9.5), 1)
-                        if interaction_type == "rated"
-                        else None
-                    )
-                    created_at = now - timedelta(
-                        days=user_index * 4 + interaction_index,
-                        hours=interaction_index % 8,
-                    )
-                    metadata = Jsonb(
-                        {
-                            "seed_key": seed_key,
-                            "source": "demo-seeder",
-                        }
-                    )
-                    cursor.execute(
-                        """
-                        SELECT id FROM interaction
-                        WHERE user_id = %s AND metadata ->> 'seed_key' = %s
-                        ORDER BY id
-                        LIMIT 1
-                        """,
-                        [user_id, seed_key],
-                    )
-                    row = cursor.fetchone()
-                    values = [
-                        content_id,
-                        source_candidate_id,
-                        interaction_type,
-                        rating,
-                        metadata,
-                        created_at,
+        for user_index, user_id in enumerate(user_ids):
+            for interaction_index in range(30):
+                seed_key = f"demo-u{user_index + 1}-i{interaction_index + 1}"
+                interaction_type = interaction_types[
+                    interaction_index % len(interaction_types)
+                ]
+                if interaction_index < 12:
+                    source_candidate_id, content_id = candidates[
+                        (user_index * 11 + interaction_index) % len(candidates)
                     ]
-                    if row:
-                        cursor.execute(
-                            """
-                            UPDATE interaction
-                            SET content_id = %s, source_candidate_id = %s,
-                                interaction_type = %s, rating = %s, metadata = %s,
-                                created_at = %s
-                            WHERE id = %s
-                            """,
-                            [*values, row[0]],
-                        )
-                    else:
-                        cursor.execute(
-                            """
-                            INSERT INTO interaction (
-                                user_id, content_id, source_candidate_id,
-                                interaction_type, rating, metadata, created_at
-                            )
-                            VALUES (%s, %s, %s, %s, %s, %s, %s)
-                            """,
-                            [user_id, *values],
-                        )
+                else:
+                    source_candidate_id = None
+                    content_id = content_ids[
+                        (user_index * 37 + interaction_index * 7) % len(content_ids)
+                    ]
+                rating = (
+                    round(random_generator.uniform(6.5, 9.5), 1)
+                    if interaction_type == "rated"
+                    else None
+                )
+                created_at = now - timedelta(
+                    days=user_index * 4 + interaction_index,
+                    hours=interaction_index % 8,
+                )
+                metadata = {
+                    "seed_key": seed_key,
+                    "source": "demo-seeder",
+                }
+                interaction = (
+                    Interaction.objects.filter(
+                        user_id=user_id,
+                        metadata__seed_key=seed_key,
+                    )
+                    .order_by("id")
+                    .first()
+                )
+                if interaction is None:
+                    interaction = Interaction(user_id=user_id)
+                interaction.content_id = content_id
+                interaction.source_candidate_id = source_candidate_id
+                interaction.interaction_type = interaction_type
+                interaction.rating = rating
+                interaction.metadata = metadata
+                interaction.created_at = created_at
+                interaction.save()
 
     def _seeded_counts(self) -> dict[str, int]:
         tables = (
@@ -1134,9 +953,20 @@ class Command(BaseCommand):
             "agent_execution",
             "content_embedding",
         )
-        counts: dict[str, int] = {}
-        with connection.cursor() as cursor:
-            for table in tables:
-                cursor.execute(f'SELECT COUNT(*) FROM "{table}"')
-                counts[table] = cursor.fetchone()[0]
-        return counts
+        model_by_table = {
+            "app_user": BusinessUser,
+            "user_profile": UserProfile,
+            "user_preference": UserPreference,
+            "conversation": Conversation,
+            "message": Message,
+            "recommendation_request": RecommendationRequest,
+            "recommendation_run": RecommendationRun,
+            "content": Content,
+            "genre": Genre,
+            "content_genre": ContentGenre,
+            "run_candidate": RunCandidate,
+            "interaction": Interaction,
+            "agent_execution": AgentExecution,
+            "content_embedding": ContentEmbedding,
+        }
+        return {table: model_by_table[table].objects.count() for table in tables}

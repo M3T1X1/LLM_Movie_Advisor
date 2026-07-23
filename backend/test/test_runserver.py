@@ -104,22 +104,20 @@ class RunserverBootstrapTests(SimpleTestCase):
         with self.assertRaisesMessage(CommandError, "business database schema is missing"):
             self.command._database_needs_seed()
 
+    @patch("backend.accounts.management.commands.runserver.Content.objects.exists")
     @patch("backend.accounts.management.commands.runserver.connection")
-    def test_empty_content_table_requires_seed(self, mocked_connection):
+    def test_empty_content_table_requires_seed(self, mocked_connection, mocked_exists):
         mocked_connection.introspection.table_names.return_value = ["content"]
-        cursor = mocked_connection.cursor.return_value.__enter__.return_value
-        cursor.fetchone.return_value = (False,)
+        mocked_exists.return_value = False
 
         self.assertTrue(self.command._database_needs_seed())
-        cursor.execute.assert_called_once_with(
-            "SELECT EXISTS (SELECT 1 FROM content LIMIT 1)"
-        )
+        mocked_exists.assert_called_once_with()
 
+    @patch("backend.accounts.management.commands.runserver.Content.objects.exists")
     @patch("backend.accounts.management.commands.runserver.connection")
-    def test_non_empty_content_table_skips_seed(self, mocked_connection):
+    def test_non_empty_content_table_skips_seed(self, mocked_connection, mocked_exists):
         mocked_connection.introspection.table_names.return_value = ["content"]
-        cursor = mocked_connection.cursor.return_value.__enter__.return_value
-        cursor.fetchone.return_value = (True,)
+        mocked_exists.return_value = True
 
         self.assertFalse(self.command._database_needs_seed())
 

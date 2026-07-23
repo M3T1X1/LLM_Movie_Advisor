@@ -10,6 +10,8 @@ from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.db import connection
 
+from backend.api.models import Content
+
 
 class Command(DjangoRunserverCommand):
     help = (
@@ -69,6 +71,4 @@ class Command(DjangoRunserverCommand):
                 "`przydatne/postgresql_recommendation_platform_schema.sql` first."
             )
 
-        with connection.cursor() as cursor:
-            cursor.execute("SELECT EXISTS (SELECT 1 FROM content LIMIT 1)")
-            return not cursor.fetchone()[0]
+        return not Content.objects.exists()
