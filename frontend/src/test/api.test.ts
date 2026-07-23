@@ -6,6 +6,7 @@ import {
   deleteConversation,
   getBootstrap,
   getCatalogContent,
+  getContentByIds,
   getRecommendationTrends,
   getUpcomingReleases,
   login,
@@ -25,7 +26,14 @@ describe('backend API service', () => {
   });
 
   it('loads catalog, upcoming releases and trend periods from backend', async () => {
-    await expect(getCatalogContent()).resolves.toHaveLength(demoCatalogContent.length);
+    await expect(getCatalogContent()).resolves.toMatchObject({
+      items: demoCatalogContent,
+      pagination: {
+        page: 1,
+        pageSize: 20,
+        totalItems: demoCatalogContent.length,
+      },
+    });
     await expect(getUpcomingReleases()).resolves.toHaveLength(demoUpcomingReleases.length);
     await expect(getRecommendationTrends('week')).resolves.toMatchObject({ period: 'week' });
   });
@@ -111,5 +119,49 @@ describe('backend API service', () => {
     expect(String(fetchMock.mock.calls[fetchMock.mock.calls.length - 1]?.[0])).toBe(
       '/api/contents/upcoming/?language=pl-PL&region=PL',
     );
+  });
+
+  it('maps catalog pagination, filters and sorting to query parameters', async () => {
+    const fetchMock = vi.mocked(fetch);
+
+    await getCatalogContent({
+      page: 3,
+      pageSize: 20,
+      search: 'diuna',
+      mediaType: 'movie',
+      genre: 'Science Fiction',
+      minimumRating: 8,
+      yearFrom: 2020,
+      sortBy: 'rating',
+    });
+
+    const requestedUrl = new URL(
+      String(fetchMock.mock.calls[fetchMock.mock.calls.length - 1]?.[0]),
+      'http://localhost',
+    );
+    expect(requestedUrl.pathname).toBe('/api/contents/');
+    expect(Object.fromEntries(requestedUrl.searchParams)).toEqual({
+      page: '3',
+      page_size: '20',
+      sort: 'rating',
+      q: 'diuna',
+      media_type: 'movie',
+      genre: 'Science Fiction',
+      min_rating: '8',
+      year_from: '2020',
+    });
+  });
+
+  it('loads only selected content records for saved and analytics views', async () => {
+    const selected = await getContentByIds([
+      demoCatalogContent[0].id,
+      demoCatalogContent[2].id,
+      demoCatalogContent[0].id,
+    ]);
+
+    expect(selected.map((item) => item.id)).toEqual([
+      demoCatalogContent[0].id,
+      demoCatalogContent[2].id,
+    ]);
   });
 });

@@ -1,5 +1,4 @@
 import json
-import math
 import os
 import random
 import time
@@ -22,6 +21,7 @@ from psycopg.types.json import Jsonb
 
 TMDB_API_URL = "https://api.themoviedb.org/3"
 TMDB_PAGE_SIZE = 20
+TMDB_MAX_PAGES = 500
 REQUIRED_TABLES = {
     "agent_execution",
     "app_user",
@@ -266,19 +266,32 @@ class TmdbClient:
 
         items: list[TmdbCatalogItem] = []
         seen_ids: set[int] = set()
-        pages = math.ceil(target_count / TMDB_PAGE_SIZE)
-        for page in range(1, pages + 1):
+        page = 1
+        available_pages = TMDB_MAX_PAGES
+        pages_checked = 0
+        pages_without_new_items = 0
+        while len(items) < target_count and page <= available_pages:
             payload = self.get(
                 f"/{media_type}/popular",
                 language="pl-PL",
                 page=page,
                 region="PL" if media_type == "movie" else None,
             )
+            pages_checked += 1
             results = payload.get("results")
             if not isinstance(results, list):
                 raise CommandError(
                     f"TMDB returned an invalid popular {media_type} response."
                 )
+            reported_total_pages = payload.get("total_pages")
+            if (
+                isinstance(reported_total_pages, int)
+                and not isinstance(reported_total_pages, bool)
+                and reported_total_pages > 0
+            ):
+                available_pages = min(reported_total_pages, TMDB_MAX_PAGES)
+
+            item_count_before_page = len(items)
             for raw_item in results:
                 item = normalize_tmdb_item(raw_item, media_type)
                 if item is None or item.tmdb_id in seen_ids:
@@ -288,10 +301,20 @@ class TmdbClient:
                 if len(items) >= target_count:
                     return items
 
+            if not results:
+                break
+            if len(items) == item_count_before_page:
+                pages_without_new_items += 1
+                if pages_without_new_items >= 3:
+                    break
+            else:
+                pages_without_new_items = 0
+            page += 1
+
         if len(items) < target_count:
             raise CommandError(
                 f"TMDB returned only {len(items)} unique {media_type} items; "
-                f"{target_count} requested."
+                f"{target_count} requested after checking {pages_checked} page(s)."
             )
         return items
 
@@ -388,14 +411,14 @@ class Command(BaseCommand):
         parser.add_argument(
             "--movies",
             type=int,
-            default=200,
-            help="Number of popular movies fetched from TMDB (default: 200).",
+            default=1500,
+            help="Number of popular movies fetched from TMDB (default: 1500).",
         )
         parser.add_argument(
             "--tv-shows",
             type=int,
-            default=100,
-            help="Number of popular TV shows fetched from TMDB (default: 100).",
+            default=1500,
+            help="Number of popular TV shows fetched from TMDB (default: 1500).",
         )
         parser.add_argument(
             "--users",

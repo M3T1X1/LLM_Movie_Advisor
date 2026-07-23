@@ -48,7 +48,38 @@ export function installApiMock() {
         interactions,
       });
     }
-    if (path === '/api/contents/') return json(demoCatalogContent);
+    if (path === '/api/contents/') {
+      const params = new URL(url, 'http://localhost').searchParams;
+      const page = Number(params.get('page') ?? 1);
+      const pageSize = Number(params.get('page_size') ?? 20);
+      const start = (page - 1) * pageSize;
+      const selectedIds = new Set(
+        (params.get('ids') ?? '').split(',').filter(Boolean),
+      );
+      const matchingContent = selectedIds.size
+        ? demoCatalogContent.filter((item) => selectedIds.has(item.id))
+        : demoCatalogContent;
+      return json({
+        items: matchingContent.slice(start, start + pageSize),
+        pagination: {
+          page,
+          pageSize,
+          totalItems: matchingContent.length,
+          totalPages: Math.ceil(matchingContent.length / pageSize),
+          hasPrevious: page > 1,
+          hasNext: start + pageSize < matchingContent.length,
+        },
+        filters: {
+          genres: Array.from(
+            new Set(
+              demoCatalogContent.flatMap((item) =>
+                item.genres.map((genre) => genre.name),
+              ),
+            ),
+          ).sort(),
+        },
+      });
+    }
     if (path === '/api/contents/upcoming/') return json(demoUpcomingReleases);
     if (path === '/api/recommendation-trends/') {
       const period = new URL(url, 'http://localhost').searchParams.get('period') ?? 'day';

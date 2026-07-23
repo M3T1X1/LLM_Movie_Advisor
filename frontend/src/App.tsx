@@ -13,8 +13,8 @@ import { RegisterView } from './components/RegisterView';
 import { TrendsView } from './components/TrendsView';
 import { UpcomingReleasesView } from './components/UpcomingReleasesView';
 import { useSession } from './context/SessionContext';
-import { getCatalogContent } from './services/api';
-import type { AgentStep, AppView, Content } from './types';
+import { getCatalogContent, getContentByIds } from './services/api';
+import type { AgentStep, AppView, CatalogPage, CatalogQuery, Content } from './types';
 
 const inactiveAgentSteps: AgentStep[] = [
   { key: 'profiling', name: 'Agent Profilowania', activity: 'Integracja oczekuje na uruchomienie systemu rekomendacji', status: 'pending' },
@@ -22,6 +22,30 @@ const inactiveAgentSteps: AgentStep[] = [
   { key: 'ranking', name: 'Agent Rankingu', activity: 'Integracja oczekuje na uruchomienie systemu rekomendacji', status: 'pending' },
   { key: 'explanation', name: 'Agent Wyjaśnień', activity: 'Integracja oczekuje na uruchomienie systemu rekomendacji', status: 'pending' },
 ];
+
+const initialCatalogQuery: CatalogQuery = {
+  page: 1,
+  pageSize: 20,
+  search: '',
+  mediaType: 'all',
+  genre: 'all',
+  minimumRating: 0,
+  yearFrom: null,
+  sortBy: 'popularity',
+};
+
+const emptyCatalogPage: CatalogPage = {
+  items: [],
+  pagination: {
+    page: 1,
+    pageSize: 20,
+    totalItems: 0,
+    totalPages: 0,
+    hasPrevious: false,
+    hasNext: false,
+  },
+  filters: { genres: [] },
+};
 
 const viewPaths: Record<AppView, string> = {
   login: '/login',
@@ -69,18 +93,69 @@ export default function App() {
     removeInteraction: removeStoredInteraction,
   } = useSession();
   const [activeView, setActiveView] = useState<AppView>(getViewFromPath);
-  const [catalogContent, setCatalogContent] = useState<Content[]>([]);
+  const [catalogQuery, setCatalogQuery] = useState<CatalogQuery>(initialCatalogQuery);
+  const [catalogPage, setCatalogPage] = useState<CatalogPage>(emptyCatalogPage);
+  const [knownCatalogContent, setKnownCatalogContent] = useState<Content[]>([]);
+  const [isCatalogLoading, setIsCatalogLoading] = useState(false);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
   const [upcomingContent, setUpcomingContent] = useState<Content[]>([]);
   const [selectedCatalogContent, setSelectedCatalogContent] = useState<Content | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
 
   useEffect(() => {
     if (!user) {
-      setCatalogContent([]);
+      setCatalogPage(emptyCatalogPage);
+      setKnownCatalogContent([]);
+      setCatalogError(null);
       return;
     }
-    void getCatalogContent().then(setCatalogContent).catch(() => setCatalogContent([]));
-  }, [user]);
+    let isCurrentRequest = true;
+    setIsCatalogLoading(true);
+    setCatalogError(null);
+    void getCatalogContent(catalogQuery)
+      .then((response) => {
+        if (!isCurrentRequest) return;
+        setCatalogPage(response);
+        setKnownCatalogContent((current) => {
+          const byId = new Map(current.map((item) => [item.id, item]));
+          response.items.forEach((item) => byId.set(item.id, item));
+          return Array.from(byId.values());
+        });
+      })
+      .catch(() => {
+        if (!isCurrentRequest) return;
+        setCatalogPage((current) => ({ ...current, items: [] }));
+        setCatalogError('Nie udało się pobrać katalogu. Spróbuj ponownie.');
+      })
+      .finally(() => {
+        if (isCurrentRequest) setIsCatalogLoading(false);
+      });
+    return () => {
+      isCurrentRequest = false;
+    };
+  }, [catalogQuery, user]);
+
+  useEffect(() => {
+    if (!user) return;
+    const interactedContentIds = interactions.map(
+      (interaction) => interaction.contentId,
+    );
+    if (!interactedContentIds.length) return;
+    let isCurrentRequest = true;
+    void getContentByIds(interactedContentIds)
+      .then((items) => {
+        if (!isCurrentRequest) return;
+        setKnownCatalogContent((current) => {
+          const byId = new Map(current.map((item) => [item.id, item]));
+          items.forEach((item) => byId.set(item.id, item));
+          return Array.from(byId.values());
+        });
+      })
+      .catch(() => undefined);
+    return () => {
+      isCurrentRequest = false;
+    };
+  }, [interactions, user]);
 
   useEffect(() => {
     const handlePopState = () => setActiveView(getViewFromPath());
@@ -171,9 +246,9 @@ export default function App() {
   };
 
   const availableContent = [
-    ...catalogContent,
+    ...knownCatalogContent,
     ...upcomingContent.filter(
-      (upcomingItem) => !catalogContent.some((catalogItem) => catalogItem.id === upcomingItem.id),
+      (upcomingItem) => !knownCatalogContent.some((catalogItem) => catalogItem.id === upcomingItem.id),
     ),
   ];
   const savedContent = availableContent.filter((content) =>
@@ -242,13 +317,19 @@ export default function App() {
             />
           ) : effectiveView === 'analytics' ? (
             <AnalyticsView
-              content={catalogContent}
+              content={knownCatalogContent}
               interactions={interactions}
               preferences={preferences}
             />
           ) : effectiveView === 'catalog' ? (
             <CatalogView
-              content={catalogContent}
+              content={catalogPage.items}
+              genres={catalogPage.filters.genres}
+              pagination={catalogPage.pagination}
+              query={catalogQuery}
+              isLoading={isCatalogLoading}
+              error={catalogError}
+              onQueryChange={setCatalogQuery}
               watchlistedContentIds={watchlistedContentIds}
               watchedContentIds={watchedContentIds}
               onOpen={handleOpenCatalogContent}

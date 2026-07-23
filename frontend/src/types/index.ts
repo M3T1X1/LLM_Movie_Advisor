@@ -109,6 +109,35 @@ export interface Content {
   genres: Genre[];
 }
 
+export type CatalogMediaFilter = 'all' | MediaType;
+export type CatalogSort = 'popularity' | 'rating' | 'newest' | 'title';
+
+export interface CatalogQuery {
+  page: number;
+  pageSize: number;
+  search: string;
+  mediaType: CatalogMediaFilter;
+  genre: string;
+  minimumRating: number;
+  yearFrom: number | null;
+  sortBy: CatalogSort;
+}
+
+export interface CatalogPage {
+  items: Content[];
+  pagination: {
+    page: number;
+    pageSize: number;
+    totalItems: number;
+    totalPages: number;
+    hasPrevious: boolean;
+    hasNext: boolean;
+  };
+  filters: {
+    genres: string[];
+  };
+}
+
 export interface RunCandidate {
   id: DatabaseId;
   runId: DatabaseId;

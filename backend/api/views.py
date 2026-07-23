@@ -1,8 +1,9 @@
 import json
 import logging
 import os
-from datetime import timedelta
+from datetime import date, timedelta
 from functools import wraps
+from math import ceil
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
@@ -25,6 +26,14 @@ from backend.accounts.services import get_business_user_id, sync_business_user
 
 logger = logging.getLogger(__name__)
 MAX_CHAT_MESSAGE_LENGTH = 800
+CATALOG_DEFAULT_PAGE_SIZE = 20
+CATALOG_MAX_PAGE_SIZE = 50
+CATALOG_SORTS = {
+    "popularity": "c.popularity DESC NULLS LAST, c.id",
+    "rating": "c.vote_average DESC NULLS LAST, c.id",
+    "newest": "c.release_date DESC NULLS LAST, c.id",
+    "title": "LOWER(c.title), c.id",
+}
 
 
 def authenticated(view):
@@ -117,7 +126,19 @@ CONTENT_SELECT = """
 """
 
 
-def fetch_content(where_sql="", params=None, order_sql="c.popularity DESC NULLS LAST"):
+def fetch_content(
+    where_sql="",
+    params=None,
+    order_sql="c.popularity DESC NULLS LAST, c.id",
+    *,
+    limit: int | None = None,
+    offset: int = 0,
+):
+    query_params = list(params or [])
+    pagination_sql = ""
+    if limit is not None:
+        pagination_sql = "LIMIT %s OFFSET %s"
+        query_params.extend([limit, offset])
     with connection.cursor() as cursor:
         cursor.execute(
             f"""
@@ -125,8 +146,9 @@ def fetch_content(where_sql="", params=None, order_sql="c.popularity DESC NULLS 
             {where_sql}
             GROUP BY c.id
             ORDER BY {order_sql}
+            {pagination_sql}
             """,
-            params or [],
+            query_params,
         )
         return serialize_content_rows(cursor.fetchall())
 
@@ -277,7 +299,167 @@ def bootstrap(request: HttpRequest) -> JsonResponse:
 @require_http_methods(["GET"])
 @authenticated
 def contents(request: HttpRequest) -> JsonResponse:
-    return JsonResponse(fetch_content(), safe=False)
+    try:
+        page = int(request.GET.get("page", "1"))
+        page_size = int(
+            request.GET.get("page_size", str(CATALOG_DEFAULT_PAGE_SIZE))
+        )
+    except ValueError:
+        return JsonResponse(
+            {"detail": "Page and page_size must be integers."},
+            status=400,
+        )
+    if page < 1:
+        return JsonResponse({"detail": "Page must be at least 1."}, status=400)
+    if not 1 <= page_size <= CATALOG_MAX_PAGE_SIZE:
+        return JsonResponse(
+            {
+                "detail": (
+                    f"Page size must be between 1 and "
+                    f"{CATALOG_MAX_PAGE_SIZE}."
+                )
+            },
+            status=400,
+        )
+
+    query = request.GET.get("q", "").strip()
+    media_type = request.GET.get("media_type", "all")
+    genre = request.GET.get("genre", "").strip()
+    sort = request.GET.get("sort", "popularity")
+    if len(query) > 200:
+        return JsonResponse(
+            {"detail": "Search query cannot exceed 200 characters."},
+            status=400,
+        )
+    if len(genre) > 100:
+        return JsonResponse(
+            {"detail": "Genre cannot exceed 100 characters."},
+            status=400,
+        )
+    if media_type not in {"all", "movie", "tv"}:
+        return JsonResponse({"detail": "Invalid media_type."}, status=400)
+    if sort not in CATALOG_SORTS:
+        return JsonResponse({"detail": "Invalid sort option."}, status=400)
+
+    conditions = []
+    params = []
+    ids_value = request.GET.get("ids", "").strip()
+    if ids_value:
+        try:
+            content_ids = [
+                int(value)
+                for value in ids_value.split(",")
+                if value.strip()
+            ]
+        except ValueError:
+            return JsonResponse(
+                {"detail": "ids must be comma-separated integers."},
+                status=400,
+            )
+        if (
+            not content_ids
+            or len(content_ids) > CATALOG_MAX_PAGE_SIZE
+            or any(content_id < 1 for content_id in content_ids)
+        ):
+            return JsonResponse(
+                {
+                    "detail": (
+                        f"ids must contain between 1 and "
+                        f"{CATALOG_MAX_PAGE_SIZE} positive identifiers."
+                    )
+                },
+                status=400,
+            )
+        conditions.append("c.id = ANY(%s)")
+        params.append(list(dict.fromkeys(content_ids)))
+    if query:
+        conditions.append("(c.title ILIKE %s OR c.original_title ILIKE %s)")
+        search_pattern = f"%{query}%"
+        params.extend([search_pattern, search_pattern])
+    if media_type != "all":
+        conditions.append("c.media_type = %s")
+        params.append(media_type)
+    if genre:
+        conditions.append(
+            """
+            EXISTS (
+                SELECT 1
+                FROM content_genre selected_content_genre
+                JOIN genre selected_genre
+                  ON selected_genre.id = selected_content_genre.genre_id
+                WHERE selected_content_genre.content_id = c.id
+                  AND LOWER(selected_genre.name) = LOWER(%s)
+            )
+            """
+        )
+        params.append(genre)
+
+    minimum_rating_value = request.GET.get("min_rating")
+    if minimum_rating_value not in {None, ""}:
+        try:
+            minimum_rating = float(minimum_rating_value)
+        except ValueError:
+            return JsonResponse(
+                {"detail": "min_rating must be a number."},
+                status=400,
+            )
+        if not 0 <= minimum_rating <= 10:
+            return JsonResponse(
+                {"detail": "min_rating must be between 0 and 10."},
+                status=400,
+            )
+        conditions.append("c.vote_average >= %s")
+        params.append(minimum_rating)
+
+    year_from_value = request.GET.get("year_from")
+    if year_from_value not in {None, ""}:
+        try:
+            year_from = int(year_from_value)
+        except ValueError:
+            return JsonResponse(
+                {"detail": "year_from must be an integer."},
+                status=400,
+            )
+        if not 1888 <= year_from <= date.today().year + 10:
+            return JsonResponse(
+                {"detail": "year_from is outside the supported range."},
+                status=400,
+            )
+        conditions.append("c.release_date >= %s")
+        params.append(date(year_from, 1, 1))
+
+    where_sql = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            f"SELECT COUNT(*) FROM content c {where_sql}",
+            params,
+        )
+        total_items = cursor.fetchone()[0]
+        cursor.execute("SELECT name FROM genre ORDER BY name")
+        genres = [row[0] for row in cursor.fetchall()]
+
+    total_pages = ceil(total_items / page_size) if total_items else 0
+    items = fetch_content(
+        where_sql,
+        params,
+        CATALOG_SORTS[sort],
+        limit=page_size,
+        offset=(page - 1) * page_size,
+    )
+    return JsonResponse(
+        {
+            "items": items,
+            "pagination": {
+                "page": page,
+                "pageSize": page_size,
+                "totalItems": total_items,
+                "totalPages": total_pages,
+                "hasPrevious": page > 1,
+                "hasNext": page < total_pages,
+            },
+            "filters": {"genres": genres},
+        }
+    )
 
 
 def sync_upcoming_from_tmdb():

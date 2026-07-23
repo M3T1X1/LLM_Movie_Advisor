@@ -2,6 +2,8 @@ import {
   ArrowUpDown,
   Bookmark,
   Check,
+  ChevronLeft,
+  ChevronRight,
   Eye,
   Film,
   Library,
@@ -11,15 +13,23 @@ import {
   Tv,
   X,
 } from 'lucide-react';
-import { useMemo, useState, type ReactNode } from 'react';
-import type { Content, DatabaseId, MediaType } from '../types';
+import { useEffect, useState, type ReactNode } from 'react';
+import type {
+  CatalogPage,
+  CatalogQuery,
+  Content,
+  DatabaseId,
+} from '../types';
 import { getPosterUrl, getReleaseYear } from '../utils/content';
-
-type MediaFilter = 'all' | MediaType;
-type SortOption = 'popularity' | 'rating' | 'newest' | 'title';
 
 interface CatalogViewProps {
   content: Content[];
+  genres: string[];
+  pagination: CatalogPage['pagination'];
+  query: CatalogQuery;
+  isLoading: boolean;
+  error: string | null;
+  onQueryChange: (query: CatalogQuery) => void;
   watchlistedContentIds: DatabaseId[];
   watchedContentIds: DatabaseId[];
   onOpen: (content: Content) => void;
@@ -29,59 +39,62 @@ interface CatalogViewProps {
 
 export function CatalogView({
   content,
+  genres,
+  pagination,
+  query,
+  isLoading,
+  error,
+  onQueryChange,
   watchlistedContentIds,
   watchedContentIds,
   onOpen,
   onWatchlist,
   onMarkWatched,
 }: CatalogViewProps) {
-  const [query, setQuery] = useState('');
-  const [mediaType, setMediaType] = useState<MediaFilter>('all');
-  const [genre, setGenre] = useState('all');
-  const [minimumRating, setMinimumRating] = useState('0');
-  const [yearFrom, setYearFrom] = useState('');
-  const [sortBy, setSortBy] = useState<SortOption>('popularity');
-
-  const genres = useMemo(
-    () => Array.from(new Set(content.flatMap((item) => item.genres.map((itemGenre) => itemGenre.name)))).sort(),
-    [content],
+  const [searchInput, setSearchInput] = useState(query.search);
+  const [yearInput, setYearInput] = useState(
+    query.yearFrom === null ? '' : String(query.yearFrom),
   );
 
-  const filteredContent = useMemo(() => {
-    const normalizedQuery = query.trim().toLocaleLowerCase('pl-PL');
-    const minimumYear = Number(yearFrom) || 0;
-    const rating = Number(minimumRating);
+  useEffect(() => {
+    setSearchInput(query.search);
+  }, [query.search]);
 
-    return content
-      .filter((item) => {
-        const releaseYear = getReleaseYear(item) ?? 0;
-        const matchesQuery =
-          !normalizedQuery ||
-          item.title.toLocaleLowerCase('pl-PL').includes(normalizedQuery) ||
-          item.originalTitle?.toLocaleLowerCase('pl-PL').includes(normalizedQuery);
-        const matchesType = mediaType === 'all' || item.mediaType === mediaType;
-        const matchesGenre = genre === 'all' || item.genres.some((itemGenre) => itemGenre.name === genre);
-        const matchesRating = (item.voteAverage ?? 0) >= rating;
-        const matchesYear = releaseYear >= minimumYear;
-        return matchesQuery && matchesType && matchesGenre && matchesRating && matchesYear;
-      })
-      .sort((first, second) => {
-        if (sortBy === 'rating') return (second.voteAverage ?? 0) - (first.voteAverage ?? 0);
-        if (sortBy === 'newest') return (getReleaseYear(second) ?? 0) - (getReleaseYear(first) ?? 0);
-        if (sortBy === 'title') return first.title.localeCompare(second.title, 'pl');
-        return (second.popularity ?? 0) - (first.popularity ?? 0);
-      });
-  }, [content, genre, mediaType, minimumRating, query, sortBy, yearFrom]);
+  useEffect(() => {
+    setYearInput(query.yearFrom === null ? '' : String(query.yearFrom));
+  }, [query.yearFrom]);
+
+  useEffect(() => {
+    if (searchInput === query.search) return undefined;
+    const timeout = window.setTimeout(() => {
+      onQueryChange({ ...query, page: 1, search: searchInput });
+    }, 300);
+    return () => window.clearTimeout(timeout);
+  }, [onQueryChange, query, searchInput]);
 
   const hasActiveFilters =
-    Boolean(query) || mediaType !== 'all' || genre !== 'all' || minimumRating !== '0' || Boolean(yearFrom);
+    Boolean(query.search) ||
+    query.mediaType !== 'all' ||
+    query.genre !== 'all' ||
+    query.minimumRating !== 0 ||
+    query.yearFrom !== null;
 
   const clearFilters = () => {
-    setQuery('');
-    setMediaType('all');
-    setGenre('all');
-    setMinimumRating('0');
-    setYearFrom('');
+    setSearchInput('');
+    setYearInput('');
+    onQueryChange({
+      ...query,
+      page: 1,
+      search: '',
+      mediaType: 'all',
+      genre: 'all',
+      minimumRating: 0,
+      yearFrom: null,
+    });
+  };
+
+  const updateQuery = (changes: Partial<CatalogQuery>) => {
+    onQueryChange({ ...query, ...changes, page: changes.page ?? 1 });
   };
 
   return (
@@ -105,24 +118,25 @@ export function CatalogView({
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-600" />
             <input
               type="search"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
+              value={searchInput}
+              maxLength={200}
+              onChange={(event) => setSearchInput(event.target.value)}
               placeholder="Szukaj po tytule..."
               className="h-10 w-full rounded-md border border-white/[0.08] bg-white/[0.025] pl-10 pr-3 text-xs text-white outline-none transition placeholder:text-slate-700 focus:border-violet-500/60"
             />
           </label>
 
           <div className="grid grid-cols-3 rounded-md border border-white/[0.08] p-1">
-            <MediaTypeButton active={mediaType === 'all'} onClick={() => setMediaType('all')} label="Wszystko" />
+            <MediaTypeButton active={query.mediaType === 'all'} onClick={() => updateQuery({ mediaType: 'all' })} label="Wszystko" />
             <MediaTypeButton
-              active={mediaType === 'movie'}
-              onClick={() => setMediaType('movie')}
+              active={query.mediaType === 'movie'}
+              onClick={() => updateQuery({ mediaType: 'movie' })}
               label="Filmy"
               icon={<Film className="h-3.5 w-3.5" />}
             />
             <MediaTypeButton
-              active={mediaType === 'tv'}
-              onClick={() => setMediaType('tv')}
+              active={query.mediaType === 'tv'}
+              onClick={() => updateQuery({ mediaType: 'tv' })}
               label="Seriale"
               icon={<Tv className="h-3.5 w-3.5" />}
             />
@@ -130,14 +144,14 @@ export function CatalogView({
         </div>
 
         <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <FilterSelect label="Gatunek" value={genre} onChange={setGenre}>
+          <FilterSelect label="Gatunek" value={query.genre} onChange={(genre) => updateQuery({ genre })}>
             <option value="all">Wszystkie gatunki</option>
             {genres.map((itemGenre) => (
               <option key={itemGenre} value={itemGenre}>{itemGenre}</option>
             ))}
           </FilterSelect>
 
-          <FilterSelect label="Minimalna ocena" value={minimumRating} onChange={setMinimumRating}>
+          <FilterSelect label="Minimalna ocena" value={String(query.minimumRating)} onChange={(value) => updateQuery({ minimumRating: Number(value) })}>
             <option value="0">Dowolna ocena</option>
             <option value="6">Od 6.0</option>
             <option value="7">Od 7.0</option>
@@ -151,15 +165,30 @@ export function CatalogView({
             <input
               type="number"
               min="1900"
-              max={new Date().getFullYear()}
-              value={yearFrom}
-              onChange={(event) => setYearFrom(event.target.value)}
+              max={new Date().getFullYear() + 10}
+              value={yearInput}
+              onChange={(event) => {
+                const value = event.target.value;
+                setYearInput(value);
+                if (!value) {
+                  updateQuery({ yearFrom: null });
+                  return;
+                }
+                const year = Number(value);
+                if (
+                  Number.isInteger(year) &&
+                  year >= 1888 &&
+                  year <= new Date().getFullYear() + 10
+                ) {
+                  updateQuery({ yearFrom: year });
+                }
+              }}
               placeholder="np. 2015"
               className="h-9 w-full rounded-md border border-white/[0.08] bg-white/[0.025] px-3 text-xs text-white outline-none transition placeholder:text-slate-700 focus:border-violet-500/60"
             />
           </label>
 
-          <FilterSelect label="Sortowanie" value={sortBy} onChange={(value) => setSortBy(value as SortOption)}>
+          <FilterSelect label="Sortowanie" value={query.sortBy} onChange={(value) => updateQuery({ sortBy: value as CatalogQuery['sortBy'] })}>
             <option value="popularity">Najpopularniejsze</option>
             <option value="rating">Najwyżej oceniane</option>
             <option value="newest">Najnowsze</option>
@@ -171,12 +200,15 @@ export function CatalogView({
       <div className="mb-4 flex items-center justify-between border-b border-white/[0.07] pb-3">
         <div className="flex items-center gap-2 text-xs text-slate-500">
           <SlidersHorizontal className="h-3.5 w-3.5" />
-          <span>{filteredContent.length} {filteredContent.length === 1 ? 'wynik' : 'wyników'}</span>
+          <span>
+            {pagination.totalItems}{' '}
+            {pagination.totalItems === 1 ? 'wynik' : 'wyników'}
+          </span>
         </div>
         <div className="flex items-center gap-3">
           <span className="hidden items-center gap-1.5 text-[10px] text-slate-700 sm:flex">
             <ArrowUpDown className="h-3 w-3" />
-            {sortBy === 'popularity' ? 'Popularność' : sortBy === 'rating' ? 'Ocena' : sortBy === 'newest' ? 'Data premiery' : 'Tytuł'}
+            {query.sortBy === 'popularity' ? 'Popularność' : query.sortBy === 'rating' ? 'Ocena' : query.sortBy === 'newest' ? 'Data premiery' : 'Tytuł'}
           </span>
           {hasActiveFilters && (
             <button
@@ -191,9 +223,20 @@ export function CatalogView({
         </div>
       </div>
 
-      {filteredContent.length ? (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
-          {filteredContent.map((item) => (
+      {error ? (
+        <div role="alert" className="mb-5 rounded-lg border border-red-400/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+          {error}
+        </div>
+      ) : null}
+
+      {content.length ? (
+        <div
+          className={`grid gap-4 transition-opacity sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 ${
+            isLoading ? 'opacity-50' : ''
+          }`}
+          aria-busy={isLoading}
+        >
+          {content.map((item) => (
             <CatalogCard
               key={item.id}
               content={item}
@@ -205,7 +248,7 @@ export function CatalogView({
             />
           ))}
         </div>
-      ) : (
+      ) : !isLoading && !error ? (
         <div className="flex min-h-64 flex-col items-center justify-center rounded-xl border border-dashed border-white/[0.08] text-center">
           <Search className="mb-3 h-5 w-5 text-slate-700" />
           <p className="text-sm font-medium text-slate-400">Brak pasujących tytułów</p>
@@ -213,8 +256,91 @@ export function CatalogView({
             Wyczyść filtry
           </button>
         </div>
+      ) : isLoading ? (
+        <div className="flex min-h-64 items-center justify-center text-sm text-slate-500" role="status">
+          Ładowanie katalogu…
+        </div>
+      ) : null}
+
+      {pagination.totalPages > 1 && (
+        <CatalogPagination
+          page={pagination.page}
+          totalPages={pagination.totalPages}
+          hasPrevious={pagination.hasPrevious}
+          hasNext={pagination.hasNext}
+          disabled={isLoading}
+          onPageChange={(page) => {
+            updateQuery({ page });
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          }}
+        />
       )}
     </div>
+  );
+}
+
+function CatalogPagination({
+  page,
+  totalPages,
+  hasPrevious,
+  hasNext,
+  disabled,
+  onPageChange,
+}: {
+  page: number;
+  totalPages: number;
+  hasPrevious: boolean;
+  hasNext: boolean;
+  disabled: boolean;
+  onPageChange: (page: number) => void;
+}) {
+  const firstPage = Math.max(1, Math.min(page - 2, totalPages - 4));
+  const visiblePages = Array.from(
+    { length: Math.min(5, totalPages) },
+    (_, index) => firstPage + index,
+  );
+
+  return (
+    <nav className="mt-8 flex flex-wrap items-center justify-center gap-2 border-t border-white/[0.07] pt-6" aria-label="Paginacja katalogu">
+      <button
+        type="button"
+        disabled={disabled || !hasPrevious}
+        onClick={() => onPageChange(page - 1)}
+        className="flex h-9 items-center gap-1 rounded-md border border-white/[0.08] px-3 text-xs text-slate-400 transition hover:border-white/[0.16] hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
+      >
+        <ChevronLeft className="h-3.5 w-3.5" />
+        Poprzednia
+      </button>
+      {visiblePages.map((pageNumber) => (
+        <button
+          key={pageNumber}
+          type="button"
+          disabled={disabled}
+          aria-current={pageNumber === page ? 'page' : undefined}
+          aria-label={`Strona ${pageNumber}`}
+          onClick={() => onPageChange(pageNumber)}
+          className={`h-9 min-w-9 rounded-md border px-2 text-xs transition ${
+            pageNumber === page
+              ? 'border-violet-400/50 bg-violet-500/15 text-violet-200'
+              : 'border-white/[0.08] text-slate-500 hover:border-white/[0.16] hover:text-white'
+          } disabled:cursor-not-allowed disabled:opacity-50`}
+        >
+          {pageNumber}
+        </button>
+      ))}
+      <button
+        type="button"
+        disabled={disabled || !hasNext}
+        onClick={() => onPageChange(page + 1)}
+        className="flex h-9 items-center gap-1 rounded-md border border-white/[0.08] px-3 text-xs text-slate-400 transition hover:border-white/[0.16] hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
+      >
+        Następna
+        <ChevronRight className="h-3.5 w-3.5" />
+      </button>
+      <span className="ml-1 text-[10px] text-slate-600">
+        Strona {page} z {totalPages}
+      </span>
+    </nav>
   );
 }
 

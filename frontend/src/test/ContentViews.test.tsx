@@ -1,14 +1,39 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { demoCandidates, demoCatalogContent } from './fixtures/mockData';
 import { CatalogView } from '../components/CatalogView';
 import { MovieDetailModal } from '../components/MovieDetailModal';
 import { RecommendationCard } from '../components/RecommendationCard';
+import type { CatalogQuery } from '../types';
 
 describe('content views', () => {
+  const initialQuery: CatalogQuery = {
+    page: 1,
+    pageSize: 20,
+    search: '',
+    mediaType: 'all',
+    genre: 'all',
+    minimumRating: 0,
+    yearFrom: null,
+    sortBy: 'popularity',
+  };
   const catalogProps = {
     content: demoCatalogContent,
+    genres: ['Dramat', 'Science Fiction', 'Thriller'],
+    pagination: {
+      page: 1,
+      pageSize: 20,
+      totalItems: demoCatalogContent.length,
+      totalPages: 1,
+      hasPrevious: false,
+      hasNext: false,
+    },
+    query: initialQuery,
+    isLoading: false,
+    error: null,
+    onQueryChange: vi.fn(),
     watchlistedContentIds: [],
     watchedContentIds: [],
     onOpen: vi.fn(),
@@ -16,63 +41,92 @@ describe('content views', () => {
     onMarkWatched: vi.fn(),
   };
 
-  it('filters catalog by title and media type', async () => {
+  function CatalogHarness({
+    totalPages = 1,
+  }: {
+    totalPages?: number;
+  }) {
+    const [query, setQuery] = useState(initialQuery);
+    return (
+      <CatalogView
+        {...catalogProps}
+        query={query}
+        onQueryChange={setQuery}
+        pagination={{
+          ...catalogProps.pagination,
+          page: query.page,
+          totalPages,
+          hasPrevious: query.page > 1,
+          hasNext: query.page < totalPages,
+        }}
+      />
+    );
+  }
+
+  it('maps search and media filters to the server query', async () => {
     const user = userEvent.setup();
-    render(<CatalogView content={demoCatalogContent} watchlistedContentIds={[]} watchedContentIds={[]} onOpen={vi.fn()} onWatchlist={vi.fn()} onMarkWatched={vi.fn()} />);
+    render(<CatalogHarness />);
+
     await user.type(screen.getByPlaceholderText('Szukaj po tytule...'), 'Zaginiona dziewczyna');
-    expect(screen.getByText('1 wynik')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Zaginiona dziewczyna' })).toBeInTheDocument();
+    await new Promise((resolve) => window.setTimeout(resolve, 350));
     await user.click(screen.getByRole('button', { name: 'Seriale' }));
-    expect(screen.getByText('Brak pasujących tytułów')).toBeInTheDocument();
+
+    expect(screen.getByPlaceholderText('Szukaj po tytule...')).toHaveValue(
+      'Zaginiona dziewczyna',
+    );
+    expect(screen.getByRole('button', { name: 'Seriale' })).toHaveClass('text-white');
   });
 
   it('calls catalog card actions', async () => {
     const user = userEvent.setup();
     const onWatchlist = vi.fn();
     const onMarkWatched = vi.fn();
-    render(<CatalogView content={[demoCatalogContent[0]]} watchlistedContentIds={[]} watchedContentIds={[]} onOpen={vi.fn()} onWatchlist={onWatchlist} onMarkWatched={onMarkWatched} />);
+    render(
+      <CatalogView
+        {...catalogProps}
+        content={[demoCatalogContent[0]]}
+        onWatchlist={onWatchlist}
+        onMarkWatched={onMarkWatched}
+      />,
+    );
     await user.click(screen.getByRole('button', { name: 'Zapisz' }));
     await user.click(screen.getByRole('button', { name: 'Obejrzyj' }));
     expect(onWatchlist).toHaveBeenCalledWith(demoCatalogContent[0]);
     expect(onMarkWatched).toHaveBeenCalledWith(demoCatalogContent[0]);
   });
 
-  it('combines catalog filters and restores the full catalog', async () => {
+  it('combines catalog filters and clears them', async () => {
     const user = userEvent.setup();
-    render(<CatalogView {...catalogProps} />);
+    render(<CatalogHarness />);
 
     await user.click(screen.getByRole('button', { name: 'Filmy' }));
     await user.selectOptions(screen.getByLabelText('Gatunek'), 'Dramat');
     await user.selectOptions(screen.getByLabelText('Minimalna ocena'), '8');
     await user.type(screen.getByPlaceholderText('np. 2015'), '2014');
 
-    expect(screen.getByText('2 wyników')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Zaginiona dziewczyna' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Diuna: Część druga' })).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: 'Labirynt' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Filmy' })).toHaveClass('text-white');
+    expect(screen.getByLabelText('Gatunek')).toHaveValue('Dramat');
+    expect(screen.getByLabelText('Minimalna ocena')).toHaveValue('8');
+    expect(screen.getByPlaceholderText('np. 2015')).toHaveValue(2014);
 
     await user.click(screen.getByRole('button', { name: 'Wyczyść filtry' }));
-    expect(screen.getByText('6 wyników')).toBeInTheDocument();
     expect(screen.getByPlaceholderText('np. 2015')).toHaveValue(null);
     expect(screen.getByLabelText('Gatunek')).toHaveValue('all');
   });
 
-  it('sorts catalog content by rating and release date', async () => {
+  it('changes server-side sorting and navigates between pages', async () => {
     const user = userEvent.setup();
-    render(<CatalogView {...catalogProps} />);
+    render(<CatalogHarness totalPages={3} />);
 
     await user.selectOptions(screen.getByLabelText('Sortowanie'), 'rating');
-    expect(screen.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent)).toEqual([
-      'Dark',
-      'Labirynt',
-      'The Bear',
-      'Zaginiona dziewczyna',
-      'Diuna: Część druga',
-      'To nie jest kraj dla starych ludzi',
-    ]);
+    expect(screen.getByLabelText('Sortowanie')).toHaveValue('rating');
 
-    await user.selectOptions(screen.getByLabelText('Sortowanie'), 'newest');
-    expect(screen.getAllByRole('heading', { level: 2 })[0]).toHaveTextContent('Diuna: Część druga');
+    await user.click(screen.getByRole('button', { name: 'Następna' }));
+    expect(screen.getByRole('button', { name: 'Strona 2' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+    expect(screen.getByText('Strona 2 z 3')).toBeInTheDocument();
   });
 
   it('opens a catalog item and renders active card states', async () => {
@@ -80,12 +134,11 @@ describe('content views', () => {
     const onOpen = vi.fn();
     render(
       <CatalogView
+        {...catalogProps}
         content={[demoCatalogContent[0]]}
+        onOpen={onOpen}
         watchlistedContentIds={[demoCatalogContent[0].id]}
         watchedContentIds={[demoCatalogContent[0].id]}
-        onOpen={onOpen}
-        onWatchlist={vi.fn()}
-        onMarkWatched={vi.fn()}
       />,
     );
 

@@ -254,11 +254,101 @@ class ApplicationApiIntegrationTests(TransactionTestCase):
         response = self.client.get(reverse("api:contents"))
 
         self.assertEqual(response.status_code, 200)
-        content = response.json()[0]
+        payload = response.json()
+        content = payload["items"][0]
         self.assertEqual(content["tmdbId"], 1001)
         self.assertEqual(content["mediaType"], "movie")
         self.assertEqual(content["metadata"], {"source": "test"})
         self.assertEqual(content["genres"][0]["name"], "Thriller")
+        self.assertEqual(
+            payload["pagination"],
+            {
+                "page": 1,
+                "pageSize": 20,
+                "totalItems": 1,
+                "totalPages": 1,
+                "hasPrevious": False,
+                "hasNext": False,
+            },
+        )
+        self.assertEqual(payload["filters"]["genres"], ["Thriller"])
+
+    def test_catalog_paginates_and_filters_the_full_database_query(self):
+        content_ids = []
+        for index in range(25):
+            content_ids.append(
+                self.insert_content(
+                    tmdb_id=2000 + index,
+                    title=f"Tytuł {index:02d}",
+                )
+            )
+
+        page_response = self.client.get(
+            reverse("api:contents"),
+            {
+                "page": 2,
+                "page_size": 10,
+                "sort": "title",
+            },
+        )
+        filtered_response = self.client.get(
+            reverse("api:contents"),
+            {
+                "q": "Tytuł 1",
+                "media_type": "movie",
+                "min_rating": "8",
+                "year_from": str(timezone.now().year),
+                "sort": "title",
+            },
+        )
+        selected_response = self.client.get(
+            reverse("api:contents"),
+            {
+                "ids": f"{content_ids[2]},{content_ids[20]}",
+                "page_size": 50,
+            },
+        )
+
+        self.assertEqual(page_response.status_code, 200)
+        page_payload = page_response.json()
+        self.assertEqual(page_payload["pagination"]["totalItems"], 25)
+        self.assertEqual(page_payload["pagination"]["totalPages"], 3)
+        self.assertTrue(page_payload["pagination"]["hasPrevious"])
+        self.assertTrue(page_payload["pagination"]["hasNext"])
+        self.assertEqual(len(page_payload["items"]), 10)
+        self.assertEqual(page_payload["items"][0]["title"], "Tytuł 10")
+        self.assertEqual(page_payload["items"][-1]["title"], "Tytuł 19")
+
+        self.assertEqual(filtered_response.status_code, 200)
+        filtered_payload = filtered_response.json()
+        self.assertEqual(filtered_payload["pagination"]["totalItems"], 10)
+        self.assertEqual(
+            [item["title"] for item in filtered_payload["items"]],
+            [f"Tytuł {index:02d}" for index in range(10, 20)],
+        )
+        self.assertEqual(selected_response.status_code, 200)
+        self.assertEqual(
+            {item["id"] for item in selected_response.json()["items"]},
+            {str(content_ids[2]), str(content_ids[20])},
+        )
+
+    def test_catalog_rejects_invalid_pagination_and_filter_values(self):
+        invalid_queries = (
+            {"page": "0"},
+            {"page": "abc"},
+            {"page_size": "51"},
+            {"sort": "random"},
+            {"media_type": "documentary"},
+            {"min_rating": "11"},
+            {"year_from": "1800"},
+            {"ids": "1,nie-liczba"},
+        )
+
+        for query in invalid_queries:
+            with self.subTest(query=query):
+                response = self.client.get(reverse("api:contents"), query)
+                self.assertEqual(response.status_code, 400)
+                self.assertIn("detail", response.json())
 
     def test_conversation_and_message_lifecycle_is_persistent(self):
         create_response = self.client.post(

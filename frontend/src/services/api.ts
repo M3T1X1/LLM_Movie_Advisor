@@ -1,6 +1,8 @@
 import type {
   AppBootstrap,
   AppUser,
+  CatalogPage,
+  CatalogQuery,
   ChatMessage,
   Content,
   Conversation,
@@ -110,8 +112,48 @@ export async function getBootstrap(): Promise<AppBootstrap> {
   return request('/bootstrap/');
 }
 
-export async function getCatalogContent(): Promise<Content[]> {
-  return request('/contents/');
+export async function getCatalogContent(
+  query: Partial<CatalogQuery> = {},
+): Promise<CatalogPage> {
+  const params = new URLSearchParams({
+    page: String(query.page ?? 1),
+    page_size: String(query.pageSize ?? 20),
+    sort: query.sortBy ?? 'popularity',
+  });
+  if (query.search?.trim()) params.set('q', query.search.trim());
+  if (query.mediaType && query.mediaType !== 'all') {
+    params.set('media_type', query.mediaType);
+  }
+  if (query.genre && query.genre !== 'all') params.set('genre', query.genre);
+  if (query.minimumRating) {
+    params.set('min_rating', String(query.minimumRating));
+  }
+  if (query.yearFrom) params.set('year_from', String(query.yearFrom));
+  return request(`/contents/?${params}`);
+}
+
+export async function getContentByIds(
+  contentIds: DatabaseId[],
+): Promise<Content[]> {
+  const uniqueIds = Array.from(new Set(contentIds));
+  if (!uniqueIds.length) return [];
+
+  const chunks = Array.from(
+    { length: Math.ceil(uniqueIds.length / 50) },
+    (_, index) => uniqueIds.slice(index * 50, (index + 1) * 50),
+  );
+  const pages = await Promise.all(
+    chunks.map((ids) => {
+      const params = new URLSearchParams({
+        ids: ids.join(','),
+        page: '1',
+        page_size: '50',
+        sort: 'popularity',
+      });
+      return request<CatalogPage>(`/contents/?${params}`);
+    }),
+  );
+  return pages.flatMap((page) => page.items);
 }
 
 export async function getUpcomingReleases(): Promise<Content[]> {

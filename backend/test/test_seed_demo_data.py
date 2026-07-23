@@ -171,6 +171,58 @@ class TmdbClientTests(SimpleTestCase):
         self.assertEqual(client.get.call_count, 2)
         self.assertEqual(client.get.call_args_list[1].kwargs["page"], 2)
 
+    def test_popular_catalog_fetches_extra_pages_after_deduplication(self):
+        client = TmdbClient(api_key="key", access_token=None)
+        first_page = [
+            {
+                "id": item_id,
+                "title": f"Film {item_id}",
+                "genre_ids": [18],
+            }
+            for item_id in range(1, 21)
+        ]
+        client.get = MagicMock(
+            side_effect=[
+                {"results": first_page, "total_pages": 4},
+                {
+                    "results": [
+                        {"id": 20, "title": "Duplikat 20"},
+                        {"id": 21, "title": "Film 21"},
+                    ],
+                    "total_pages": 4,
+                },
+                {
+                    "results": [
+                        {"id": 21, "title": "Duplikat 21"},
+                        {"id": 22, "title": "Film 22"},
+                    ],
+                    "total_pages": 4,
+                },
+            ]
+        )
+
+        items = client.fetch_catalog(movies=22, tv_shows=0)
+
+        self.assertEqual([item.tmdb_id for item in items], list(range(1, 23)))
+        self.assertEqual(client.get.call_count, 3)
+        self.assertEqual(client.get.call_args_list[2].kwargs["page"], 3)
+
+    def test_popular_catalog_stops_at_reported_last_page(self):
+        client = TmdbClient(api_key="key", access_token=None)
+        client.get = MagicMock(
+            return_value={
+                "results": [
+                    {"id": 1, "title": "Jedyny film"},
+                ],
+                "total_pages": 1,
+            }
+        )
+
+        with self.assertRaisesMessage(CommandError, "after checking 1 page"):
+            client.fetch_catalog(movies=3, tv_shows=0)
+
+        self.assertEqual(client.get.call_count, 1)
+
     @patch("backend.accounts.management.commands.seed_demo_data.time.sleep")
     @patch("backend.accounts.management.commands.seed_demo_data.urlopen")
     def test_retries_rate_limited_request(self, mocked_urlopen, mocked_sleep):
