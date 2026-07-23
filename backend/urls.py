@@ -16,8 +16,23 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import include, path
+from django.views.generic import TemplateView
+
+
+frontend = TemplateView.as_view(template_name='index.html')
 
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/auth/', include('backend.accounts.urls')),
+    path('', frontend, name='frontend-home'),
+    path('login', frontend, name='frontend-login'),
+    path('register', frontend, name='frontend-register'),
+    path('forgot-password', frontend, name='frontend-forgot-password'),
+    path('recommendations', frontend, name='frontend-recommendations'),
+    path('catalog', frontend, name='frontend-catalog'),
+    path('trends', frontend, name='frontend-trends'),
+    path('upcoming', frontend, name='frontend-upcoming'),
+    path('watchlist', frontend, name='frontend-watchlist'),
+    path('analytics', frontend, name='frontend-analytics'),
+    path('profile', frontend, name='frontend-profile'),
 ]
