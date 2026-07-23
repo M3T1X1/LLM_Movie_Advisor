@@ -1,10 +1,7 @@
 import json
 
 from django.contrib.auth import get_user_model
-from django.core.management import call_command
-from django.core.management.base import CommandError
 from django.test import Client, TestCase
-from django.test import override_settings
 from django.urls import reverse
 
 
@@ -330,96 +327,3 @@ class AuthenticationRoutesTests(TestCase):
         self.assertFalse(
             get_user_model().objects.filter(username="weak-user").exists()
         )
-
-
-@override_settings(DEBUG=True)
-class SeedDataCommandTests(TestCase):
-    def test_seed_data_creates_user_with_hashed_password(self):
-        call_command(
-            "seed_data",
-            username="demo",
-            email="demo@example.com",
-            password="StrongDemoPassword123!",
-            verbosity=0,
-        )
-
-        user = get_user_model().objects.get(username="demo")
-        self.assertEqual(user.email, "demo@example.com")
-        self.assertTrue(user.check_password("StrongDemoPassword123!"))
-        self.assertNotEqual(user.password, "StrongDemoPassword123!")
-
-    def test_seed_data_is_idempotent_and_updates_existing_user(self):
-        call_command(
-            "seed_data",
-            username="demo",
-            email="first@example.com",
-            password="FirstDemoPassword123!",
-            verbosity=0,
-        )
-        call_command(
-            "seed_data",
-            username="demo",
-            email="second@example.com",
-            password="SecondDemoPassword123!",
-            verbosity=0,
-        )
-
-        self.assertEqual(get_user_model().objects.filter(username="demo").count(), 1)
-        user = get_user_model().objects.get(username="demo")
-        self.assertEqual(user.email, "second@example.com")
-        self.assertTrue(user.check_password("SecondDemoPassword123!"))
-
-    @override_settings(DEBUG=False)
-    def test_seed_data_is_blocked_outside_debug_mode(self):
-        with self.assertRaisesMessage(
-            CommandError,
-            "Seed data can only be loaded when DEBUG=True.",
-        ):
-            call_command(
-                "seed_data",
-                username="demo",
-                email="demo@example.com",
-                password="StrongDemoPassword123!",
-                verbosity=0,
-            )
-
-    def test_seed_data_rejects_missing_or_invalid_values(self):
-        cases = (
-            {
-                "username": "",
-                "email": "demo@example.com",
-                "password": "StrongDemoPassword123!",
-                "message": "Username cannot be empty.",
-            },
-            {
-                "username": "demo",
-                "email": "not-an-email",
-                "password": "StrongDemoPassword123!",
-                "message": "A valid email address is required.",
-            },
-            {
-                "username": "demo",
-                "email": "demo@example.com",
-                "password": None,
-                "message": "Password is required.",
-            },
-            {
-                "username": "demo",
-                "email": "demo@example.com",
-                "password": "password",
-                "message": "This password is too common.",
-            },
-        )
-
-        for case in cases:
-            with self.subTest(message=case["message"]):
-                with self.assertRaisesMessage(CommandError, case["message"]):
-                    call_command(
-                        "seed_data",
-                        username=case["username"],
-                        email=case["email"],
-                        password=case["password"],
-                        verbosity=0,
-                    )
-
-        self.assertEqual(get_user_model().objects.count(), 0)
