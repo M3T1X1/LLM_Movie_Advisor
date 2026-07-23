@@ -333,7 +333,12 @@ def contents(request: HttpRequest) -> JsonResponse:
 
     queryset = queryset.distinct()
     total_items = queryset.count()
-    genres = list(Genre.objects.order_by("name").values_list("name", flat=True))
+    genres = list(
+        Genre.objects.filter(contents__isnull=False)
+        .order_by("name")
+        .values_list("name", flat=True)
+        .distinct()
+    )
 
     total_pages = ceil(total_items / page_size) if total_items else 0
     start = (page - 1) * page_size

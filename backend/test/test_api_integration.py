@@ -333,6 +333,51 @@ class ApplicationApiIntegrationTests(TransactionTestCase):
         self.assertEqual(len(candidates), 12)
         self.assertEqual(Interaction.objects.count(), 30)
 
+    def test_orm_seeder_normalizes_composite_tv_genres(self):
+        item = TmdbCatalogItem(
+            tmdb_id=9100,
+            media_type="tv",
+            title="Serial ze złożonymi gatunkami",
+            original_title="Composite Genres",
+            overview="Opis",
+            release_date=date(2026, 2, 3),
+            original_language="en",
+            poster_path="/genres.jpg",
+            vote_average=7.5,
+            popularity=80.0,
+            genre_ids=(10759, 10765, 10768),
+            metadata={"source": "test"},
+        )
+
+        content_id = SeedDemoCommand()._seed_catalog(
+            {
+                10759: "Akcja i Przygoda",
+                10765: "Sci-Fi i Fantasy",
+                10768: "War & Politics",
+            },
+            [item],
+        )[0]
+
+        self.assertEqual(
+            set(
+                Content.objects.get(pk=content_id).genres.values_list(
+                    "name",
+                    flat=True,
+                )
+            ),
+            {
+                "Akcja",
+                "Przygodowy",
+                "Science Fiction",
+                "Fantasy",
+                "Wojenny",
+                "Polityczny",
+            },
+        )
+        self.assertFalse(
+            Genre.objects.filter(tmdb_genre_id__in=(10759, 10765)).exists()
+        )
+
     def test_catalog_paginates_and_filters_the_full_database_query(self):
         content_ids = []
         for index in range(25):

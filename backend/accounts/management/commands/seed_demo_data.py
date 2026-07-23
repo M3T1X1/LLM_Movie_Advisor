@@ -17,6 +17,7 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import connection, transaction
 from django.utils import timezone
 
+from backend.api.genre_normalization import canonical_genre_ids, canonical_genres
 from backend.api.models import (
     AgentExecution,
     AgentStatus,
@@ -595,7 +596,7 @@ class Command(BaseCommand):
         now = timezone.now()
         genre_objects: dict[int, Genre] = {}
         content_ids: list[int] = []
-        for tmdb_genre_id, name in sorted(genres.items()):
+        for tmdb_genre_id, name in sorted(canonical_genres(genres).items()):
             genre, _ = Genre.objects.update_or_create(
                 tmdb_genre_id=tmdb_genre_id,
                 defaults={"name": name[:100]},
@@ -627,7 +628,7 @@ class Command(BaseCommand):
                         content=content,
                         genre=genre_objects[tmdb_genre_id],
                     )
-                    for tmdb_genre_id in item.genre_ids
+                    for tmdb_genre_id in canonical_genre_ids(item.genre_ids)
                     if tmdb_genre_id in genre_objects
                 ],
                 ignore_conflicts=True,

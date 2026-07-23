@@ -14,9 +14,33 @@ from backend.accounts.management.commands.seed_demo_data import (
     normalize_tmdb_item,
     parse_date,
 )
+from backend.api.genre_normalization import canonical_genre_ids, canonical_genres
 
 
 class TmdbNormalizationTests(SimpleTestCase):
+    def test_splits_tmdb_tv_composite_genres_into_shared_categories(self):
+        self.assertEqual(
+            canonical_genres(
+                {
+                    10759: "Akcja i Przygoda",
+                    10765: "Sci-Fi i Fantasy",
+                    10768: "War & Politics",
+                }
+            ),
+            {
+                28: "Akcja",
+                12: "Przygodowy",
+                878: "Science Fiction",
+                14: "Fantasy",
+                10752: "Wojenny",
+                10768: "Polityczny",
+            },
+        )
+        self.assertEqual(
+            canonical_genre_ids((10765, 14, 10759, 10768)),
+            (878, 14, 28, 12, 10752, 10768),
+        )
+
     def test_normalizes_movie_from_tmdb(self):
         item = normalize_tmdb_item(
             {
