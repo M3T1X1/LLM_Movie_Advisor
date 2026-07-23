@@ -28,7 +28,6 @@ urlpatterns = [
     path('', frontend, name='frontend-home'),
     path('login', frontend, name='frontend-login'),
     path('register', frontend, name='frontend-register'),
-    path('forgot-password', frontend, name='frontend-forgot-password'),
     path('recommendations', frontend, name='frontend-recommendations'),
     path('catalog', frontend, name='frontend-catalog'),
     path('trends', frontend, name='frontend-trends'),

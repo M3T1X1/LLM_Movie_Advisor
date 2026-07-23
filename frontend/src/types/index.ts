@@ -201,7 +201,6 @@ export interface AppBootstrap {
 export type AppView =
   | 'login'
   | 'register'
-  | 'forgot-password'
   | 'recommendations'
   | 'catalog'
   | 'trends'

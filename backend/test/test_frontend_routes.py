@@ -7,7 +7,6 @@ class FrontendRoutesTests(SimpleTestCase):
         "frontend-home",
         "frontend-login",
         "frontend-register",
-        "frontend-forgot-password",
         "frontend-recommendations",
         "frontend-catalog",
         "frontend-trends",

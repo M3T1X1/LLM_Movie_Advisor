@@ -5,7 +5,6 @@ import { CatalogCard, CatalogView } from './components/CatalogView';
 import { ChatInterface } from './components/ChatInterface';
 import { ConversationManager } from './components/ConversationManager';
 import { EmptyState } from './components/EmptyState';
-import { ForgotPasswordView } from './components/ForgotPasswordView';
 import { LoginView } from './components/LoginView';
 import { MovieDetailModal } from './components/MovieDetailModal';
 import { Navbar } from './components/Navbar';
@@ -27,7 +26,6 @@ const inactiveAgentSteps: AgentStep[] = [
 const viewPaths: Record<AppView, string> = {
   login: '/login',
   register: '/register',
-  'forgot-password': '/forgot-password',
   recommendations: '/recommendations',
   catalog: '/catalog',
   trends: '/trends',
@@ -100,7 +98,7 @@ export default function App() {
 
   useEffect(() => {
     if (isLoading) return;
-    const isPublicView = ['login', 'register', 'forgot-password'].includes(activeView);
+    const isPublicView = ['login', 'register'].includes(activeView);
     if (!user && !isPublicView) navigateTo('login', true);
   }, [activeView, isLoading, user]);
 
@@ -199,7 +197,7 @@ export default function App() {
     return <div className="min-h-screen bg-ink-950" aria-label="Ładowanie aplikacji" />;
   }
 
-  const isPublicView = ['login', 'register', 'forgot-password'].includes(activeView);
+  const isPublicView = ['login', 'register'].includes(activeView);
   const effectiveView = !user && !isPublicView ? 'login' : activeView;
   const profile = semanticProfile ?? {
     userId: user?.id ?? '',
@@ -211,7 +209,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-ink-950 text-slate-100 selection:bg-violet-500/30">
-      {user && !['login', 'register', 'forgot-password'].includes(effectiveView) && (
+      {user && !['login', 'register'].includes(effectiveView) && (
         <Navbar
           user={user}
           activeView={effectiveView}
@@ -220,21 +218,18 @@ export default function App() {
         />
       )}
 
-      <div className={['login', 'register', 'forgot-password'].includes(effectiveView) ? '' : 'mx-auto max-w-[1480px] px-4 py-7 sm:px-6 lg:px-8'}>
+      <div className={['login', 'register'].includes(effectiveView) ? '' : 'mx-auto max-w-[1480px] px-4 py-7 sm:px-6 lg:px-8'}>
         <main className="min-w-0">
           {effectiveView === 'login' ? (
             <LoginView
               onLogin={completeLogin}
               onRegister={() => navigateTo('register')}
-              onForgotPassword={() => navigateTo('forgot-password')}
             />
           ) : effectiveView === 'register' ? (
             <RegisterView
               onBack={() => navigateTo('login')}
               onRegistered={completeRegistration}
             />
-          ) : effectiveView === 'forgot-password' ? (
-            <ForgotPasswordView onBack={() => navigateTo('login')} />
           ) : effectiveView === 'profile' && user ? (
             <ProfileView
               user={user}

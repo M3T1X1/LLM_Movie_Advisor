@@ -184,6 +184,61 @@ class ApplicationApiIntegrationTests(TransactionTestCase):
         self.assertEqual(payload["conversations"][0]["title"], "Rozmowa API")
         self.assertEqual(payload["messages"][0]["content"], "Treść wiadomości")
 
+    def test_health_check_is_public_and_checks_database(self):
+        self.client.logout()
+
+        response = self.client.get(reverse("api:health"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"status": "ok"})
+
+    def test_profile_update_preserves_business_identity_and_validates_email(self):
+        original_business_id = self.business_user_id
+
+        response = self.client.patch(
+            reverse("api:profile"),
+            data=json.dumps(
+                {
+                    "username": "renamed-user",
+                    "email": "renamed@example.com",
+                }
+            ),
+            content_type="application/json",
+        )
+        invalid_response = self.client.patch(
+            reverse("api:profile"),
+            data=json.dumps(
+                {
+                    "username": "renamed-user",
+                    "email": "not-an-email",
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(int(response.json()["user"]["id"]), original_business_id)
+        self.assertEqual(invalid_response.status_code, 400)
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT id, username, email
+                FROM app_user
+                WHERE id = %s
+                """,
+                [original_business_id],
+            )
+            self.assertEqual(
+                cursor.fetchone(),
+                (
+                    original_business_id,
+                    "renamed-user",
+                    "renamed@example.com",
+                ),
+            )
+            cursor.execute("SELECT COUNT(*) FROM app_user")
+            self.assertEqual(cursor.fetchone()[0], 1)
+
     def test_catalog_serializes_database_content_and_genres_to_camel_case(self):
         content_id = self.insert_content()
         with connection.cursor() as cursor:
@@ -248,6 +303,25 @@ class ApplicationApiIntegrationTests(TransactionTestCase):
                 [conversation_id],
             )
             self.assertEqual(cursor.fetchone()[0], 0)
+
+    def test_message_length_matches_frontend_limit(self):
+        conversation_response = self.client.post(
+            reverse("api:conversations"),
+            data="{}",
+            content_type="application/json",
+        )
+
+        response = self.client.post(
+            reverse(
+                "api:conversation-messages",
+                kwargs={"conversation_id": conversation_response.json()["id"]},
+            ),
+            data=json.dumps({"content": "x" * 801}),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("800", response.json()["detail"])
 
     def test_interaction_create_deduplicate_and_delete(self):
         content_id = self.insert_content()

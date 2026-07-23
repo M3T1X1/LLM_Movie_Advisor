@@ -108,7 +108,7 @@ describe('XSS protections', () => {
   it('keeps malicious-looking authentication input inside the input value', async () => {
     const user = userEvent.setup();
     const { container } = render(
-      <LoginView onLogin={vi.fn()} onRegister={vi.fn()} onForgotPassword={vi.fn()} />,
+      <LoginView onLogin={vi.fn()} onRegister={vi.fn()} />,
     );
     const email = screen.getByLabelText('Adres e-mail');
     await user.type(email, xssPayload);

@@ -1,10 +1,13 @@
 import json
+import logging
 import os
 from datetime import timedelta
 from functools import wraps
 
 from django.contrib.auth import get_user_model
-from django.db import IntegrityError, connection, transaction
+from django.core.exceptions import ValidationError
+from django.core.management.base import CommandError
+from django.db import DatabaseError, IntegrityError, connection, transaction
 from django.http import HttpRequest, JsonResponse
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
@@ -18,6 +21,10 @@ from backend.accounts.management.commands.seed_demo_data import (
     normalize_tmdb_item,
 )
 from backend.accounts.services import get_business_user_id, sync_business_user
+
+
+logger = logging.getLogger(__name__)
+MAX_CHAT_MESSAGE_LENGTH = 800
 
 
 def authenticated(view):
@@ -156,6 +163,18 @@ def serialize_interaction(row) -> dict:
         "metadata": json_object(row[6]),
         "createdAt": iso(row[7]),
     }
+
+
+@require_http_methods(["GET"])
+def health(request: HttpRequest) -> JsonResponse:
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1")
+            cursor.fetchone()
+    except DatabaseError:
+        logger.exception("Database health check failed.")
+        return JsonResponse({"status": "unavailable"}, status=503)
+    return JsonResponse({"status": "ok"})
 
 
 @require_http_methods(["GET"])
@@ -304,7 +323,8 @@ def upcoming_contents(request: HttpRequest) -> JsonResponse:
     if refresh or not has_fresh_data:
         try:
             sync_upcoming_from_tmdb()
-        except Exception:
+        except CommandError as error:
+            logger.warning("TMDB upcoming synchronization failed: %s", error)
             if refresh:
                 return JsonResponse(
                     {"detail": "TMDB upcoming releases are unavailable."},
@@ -404,6 +424,7 @@ def profile(request: HttpRequest) -> JsonResponse:
     email = email.strip().lower()
     if not username or not email:
         return JsonResponse({"detail": "Username and email are required."}, status=400)
+    business_user_id = get_business_user_id(request.user)
     user_model = get_user_model()
     if user_model.objects.exclude(pk=request.user.pk).filter(
         username__iexact=username
@@ -419,7 +440,12 @@ def profile(request: HttpRequest) -> JsonResponse:
             request.user.email = email
             request.user.full_clean(exclude=["password"])
             request.user.save(update_fields=["username", "email"])
-            user = sync_business_user(request.user)
+            user = sync_business_user(
+                request.user,
+                business_user_id=business_user_id,
+            )
+    except ValidationError as error:
+        return JsonResponse({"detail": " ".join(error.messages)}, status=400)
     except IntegrityError:
         return JsonResponse(
             {"detail": "Username or email is already in use."},
@@ -499,6 +525,16 @@ def conversation_messages(
     content = data.get("content") if data else None
     if not isinstance(content, str) or not content.strip():
         return JsonResponse({"detail": "Message content is required."}, status=400)
+    if len(content.strip()) > MAX_CHAT_MESSAGE_LENGTH:
+        return JsonResponse(
+            {
+                "detail": (
+                    f"Message content cannot exceed "
+                    f"{MAX_CHAT_MESSAGE_LENGTH} characters."
+                )
+            },
+            status=400,
+        )
     now = timezone.now()
     with transaction.atomic(), connection.cursor() as cursor:
         cursor.execute(

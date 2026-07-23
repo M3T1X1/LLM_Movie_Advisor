@@ -11,6 +11,7 @@ __pycache__/
 build/
 develop-eggs/
 dist/
+staticfiles/
 downloads/
 eggs/
 .eggs/
@@ -216,6 +217,8 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
-.idea
-/przydatne
-/readmes
+.idea/
+
+# Keep production-relevant database and Markdown documentation in Git while
+# leaving large research images and PDFs local.
+przydatne

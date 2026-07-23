@@ -15,7 +15,6 @@ describe('App routing', () => {
   it.each([
     ['/login', 'Zaloguj się'],
     ['/register', 'Utwórz konto'],
-    ['/forgot-password', 'Odzyskaj hasło'],
     ['/catalog', 'Baza filmów i seriali'],
     ['/trends', 'Trendy'],
     ['/upcoming', 'Przyszłe premiery'],

@@ -1,4 +1,6 @@
 # Python backend dependencies.
 # Frontend dependencies are managed separately by frontend/package-lock.json.
 Django==6.0.7
+gunicorn==26.0.0
 psycopg[binary]==3.3.4
+python-dotenv==1.2.2

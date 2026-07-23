@@ -6,7 +6,7 @@ def business_schema_available() -> bool:
     return "app_user" in connection.introspection.table_names()
 
 
-def sync_business_user(user) -> dict:
+def sync_business_user(user, *, business_user_id: int | None = None) -> dict:
     if not business_schema_available():
         return {
             "id": str(user.pk),
@@ -17,16 +17,26 @@ def sync_business_user(user) -> dict:
         }
 
     with connection.cursor() as cursor:
-        cursor.execute(
-            """
-            SELECT id, email, username, date_joined, is_active
-            FROM app_user
-            WHERE username = %s OR email = %s
-            ORDER BY (username = %s) DESC
-            LIMIT 1
-            """,
-            [user.get_username(), user.email, user.get_username()],
-        )
+        if business_user_id is not None:
+            cursor.execute(
+                """
+                SELECT id, email, username, date_joined, is_active
+                FROM app_user
+                WHERE id = %s
+                """,
+                [business_user_id],
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT id, email, username, date_joined, is_active
+                FROM app_user
+                WHERE username = %s OR email = %s
+                ORDER BY (username = %s) DESC
+                LIMIT 1
+                """,
+                [user.get_username(), user.email, user.get_username()],
+            )
         row = cursor.fetchone()
         if row:
             cursor.execute(
