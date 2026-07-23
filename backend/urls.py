@@ -24,6 +24,7 @@ frontend = TemplateView.as_view(template_name='index.html')
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/auth/', include('backend.accounts.urls')),
+    path('api/', include('backend.api.urls')),
     path('', frontend, name='frontend-home'),
     path('login', frontend, name='frontend-login'),
     path('register', frontend, name='frontend-register'),

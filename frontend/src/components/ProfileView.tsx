@@ -23,7 +23,7 @@ interface ProfileViewProps {
   conversations: Conversation[];
   savedCount: number;
   watchedCount: number;
-  onUpdateUser: (changes: Partial<Pick<AppUser, 'username' | 'email'>>) => void;
+  onUpdateUser: (changes: Partial<Pick<AppUser, 'username' | 'email'>>) => Promise<void> | void;
 }
 
 interface ProfileFormState {
@@ -58,6 +58,8 @@ export function ProfileView({
 }: ProfileViewProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [form, setForm] = useState<ProfileFormState>(() => createFormState(user));
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
   const initials = user.username.slice(0, 2).toUpperCase();
   const favoriteGenres = preferences
     .filter((preference) => preference.preferenceType === 'genre' && preference.polarity === 1)
@@ -74,13 +76,23 @@ export function ProfileView({
     setIsEditing(true);
   };
 
-  const handleSubmit = (event: FormEvent) => {
+  const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
-    onUpdateUser({
-      username: form.username.trim() || user.username,
-      email: form.email.trim() || user.email,
-    });
-    setIsEditing(false);
+    setSaveError(null);
+    setIsSaving(true);
+    try {
+      await onUpdateUser({
+        username: form.username.trim() || user.username,
+        email: form.email.trim() || user.email,
+      });
+      setIsEditing(false);
+    } catch (reason) {
+      setSaveError(
+        reason instanceof Error ? reason.message : 'Nie udało się zapisać profilu.',
+      );
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -154,6 +166,11 @@ export function ProfileView({
           </div>
 
           <div className="mt-6 flex justify-end gap-2 border-t border-white/[0.06] pt-4">
+            {saveError && (
+              <p className="mr-auto self-center text-xs text-red-300" role="alert">
+                {saveError}
+              </p>
+            )}
             <button
               type="button"
               onClick={() => setIsEditing(false)}
@@ -163,10 +180,11 @@ export function ProfileView({
             </button>
             <button
               type="submit"
-              className="flex h-9 items-center gap-2 rounded-md bg-violet-600 px-3 text-xs font-medium text-white transition hover:bg-violet-500"
+              disabled={isSaving}
+              className="flex h-9 items-center gap-2 rounded-md bg-violet-600 px-3 text-xs font-medium text-white transition hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <Check className="h-3.5 w-3.5" />
-              Zapisz zmiany
+              {isSaving ? 'Zapisywanie…' : 'Zapisz zmiany'}
             </button>
           </div>
         </form>

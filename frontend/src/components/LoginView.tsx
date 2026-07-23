@@ -2,17 +2,25 @@ import { Mail } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { AuthField, AuthPage, inputClassName, PasswordField, PrimaryButton } from './auth/AuthForm';
 
-export function LoginView({ onLogin, onRegister, onForgotPassword }: { onLogin: (email: string, password: string) => void; onRegister: () => void; onForgotPassword: () => void }) {
+export function LoginView({ onLogin, onRegister, onForgotPassword }: { onLogin: (email: string, password: string) => Promise<void>; onRegister: () => void; onForgotPassword: () => void }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const submit = (event: FormEvent<HTMLFormElement>) => {
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const normalizedEmail = email.trim().toLocaleLowerCase('pl-PL');
     if (!normalizedEmail || !password) return setError('Podaj adres e-mail i hasło.');
-    onLogin(normalizedEmail, password);
+    setIsSubmitting(true);
+    try {
+      await onLogin(normalizedEmail, password);
+    } catch {
+      setError('Nieprawidłowy adres e-mail lub hasło.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -26,7 +34,7 @@ export function LoginView({ onLogin, onRegister, onForgotPassword }: { onLogin: 
           {error ? <p className="text-xs text-red-300">{error}</p> : <span />}
           <button type="button" onClick={onForgotPassword} className="shrink-0 text-xs text-violet-400 transition hover:text-violet-300">Nie pamiętasz hasła?</button>
         </div>
-        <PrimaryButton>Zaloguj się</PrimaryButton>
+        <PrimaryButton disabled={isSubmitting}>{isSubmitting ? 'Logowanie…' : 'Zaloguj się'}</PrimaryButton>
         <p className="text-center text-xs text-slate-600">Nie masz jeszcze konta?{' '}<button type="button" onClick={onRegister} className="font-medium text-violet-400 transition hover:text-violet-300">Zarejestruj się</button></p>
       </form>
     </AuthPage>

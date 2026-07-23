@@ -1,136 +1,115 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { demoCatalogContent, demoUpcomingReleases } from '../data/mockData';
+import { describe, expect, it, vi } from 'vitest';
+import {
+  createConversation,
+  createInteraction,
+  createMessage,
+  deleteConversation,
+  getBootstrap,
+  getCatalogContent,
+  getRecommendationTrends,
+  getUpcomingReleases,
+  login,
+  register,
+  renameConversation,
+  updateProfile,
+} from '../services/api';
+import { demoCatalogContent, demoUpcomingReleases } from './fixtures/mockData';
 
-describe('mock API service', () => {
-  beforeEach(() => {
-    vi.resetModules();
-    vi.stubEnv('VITE_USE_MOCK_API', 'true');
+describe('backend API service', () => {
+  it('loads the authenticated application snapshot', async () => {
+    const snapshot = await getBootstrap();
+
+    expect(snapshot.user.username).toBe('kacper');
+    expect(snapshot.conversations.length).toBeGreaterThan(0);
+    expect(snapshot.preferences.length).toBeGreaterThan(0);
   });
 
-  afterEach(() => {
-    vi.unstubAllGlobals();
-    vi.unstubAllEnvs();
+  it('loads catalog, upcoming releases and trend periods from backend', async () => {
+    await expect(getCatalogContent()).resolves.toHaveLength(demoCatalogContent.length);
+    await expect(getUpcomingReleases()).resolves.toHaveLength(demoUpcomingReleases.length);
+    await expect(getRecommendationTrends('week')).resolves.toMatchObject({ period: 'week' });
   });
 
-  it('returns catalog content', async () => {
-    const { getCatalogContent } = await import('../services/api');
-    const content = await getCatalogContent();
-    expect(content.map((item) => item.id)).toEqual(demoCatalogContent.map((item) => item.id));
-    expect(content.map((item) => item.title)).toEqual(demoCatalogContent.map((item) => item.title));
+  it('initializes CSRF before login and registration', async () => {
+    const fetchMock = vi.mocked(fetch);
+
+    await login('user@example.com', 'StrongPassword123!');
+    await register('new-user', 'new@example.com', 'StrongPassword123!');
+
+    expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual([
+      '/api/auth/csrf/',
+      '/api/auth/login/',
+      '/api/auth/csrf/',
+      '/api/auth/register/',
+    ]);
   });
 
-  it('returns upcoming releases ordered by their release dates', async () => {
-    const { getUpcomingReleases } = await import('../services/api');
-    const content = await getUpcomingReleases();
+  it('maps profile and conversation operations to persistent endpoints', async () => {
+    const updatedUser = await updateProfile({
+      username: 'nowa-nazwa',
+      email: 'new@example.com',
+    });
+    const conversation = await createConversation();
+    const renamed = await renameConversation(conversation.id, 'Nowy tytuł');
+    const message = await createMessage(conversation.id, 'Trwała wiadomość');
+    await deleteConversation(conversation.id);
 
-    expect(content.map((item) => item.id)).toEqual(demoUpcomingReleases.map((item) => item.id));
-    expect(content.every((item) => item.mediaType === 'movie' && item.releaseDate)).toBe(true);
+    expect(updatedUser.username).toBe('nowa-nazwa');
+    expect(renamed.title).toBe('Nowy tytuł');
+    expect(message.content).toBe('Trwała wiadomość');
   });
 
-  it('returns recommendation trends for the selected period', async () => {
-    const { getRecommendationTrends } = await import('../services/api');
-    const daily = await getRecommendationTrends('day');
-    const monthly = await getRecommendationTrends('month');
+  it('validates ratings before sending a request', async () => {
+    await expect(createInteraction('101', null, 'rated')).rejects.toThrow(
+      'oceny od 0 do 10',
+    );
+    await expect(createInteraction('101', null, 'rated', 11)).rejects.toThrow(
+      'oceny od 0 do 10',
+    );
+    await expect(createInteraction('101', null, 'rated', 8)).resolves.toMatchObject({
+      rating: 8,
+    });
+  });
 
-    expect(daily.period).toBe('day');
-    expect(daily.genreTrends[0]?.genreName).toBe('Thriller');
-    expect(daily.contentTrends[0]?.content.title).toBe('Zaginiona dziewczyna');
-    expect(monthly.period).toBe('month');
-    expect(monthly.contentTrends[0]?.content.title).toBe('Diuna: Część druga');
-    expect(daily.contentTrends).toHaveLength(3);
-    expect(
-      daily.contentTrends.every(
-        (item, index, items) =>
-          index === 0 || items[index - 1].recommendationCount >= item.recommendationCount,
+  it('sends snake_case interaction DTO expected by Django', async () => {
+    const fetchMock = vi.mocked(fetch);
+
+    await createInteraction('101', '7', 'watchlisted');
+
+    const [, options] = fetchMock.mock.calls[fetchMock.mock.calls.length - 1];
+    expect(JSON.parse(String(options?.body))).toEqual({
+      content_id: '101',
+      source_candidate_id: '7',
+      interaction_type: 'watchlisted',
+      rating: null,
+      metadata: {},
+    });
+  });
+
+  it('surfaces backend detail and status through ApiError', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ detail: 'Authentication required.' }), {
+          status: 401,
+          headers: { 'Content-Type': 'application/json' },
+        }),
       ),
-    ).toBe(true);
-  });
-
-  it('validates rated interactions', async () => {
-    const { createInteraction } = await import('../services/api');
-    await expect(createInteraction('101', null, 'rated')).rejects.toThrow('oceny od 0 do 10');
-    await expect(createInteraction('101', null, 'rated', 11)).rejects.toThrow('oceny od 0 do 10');
-    await expect(createInteraction('101', null, 'rated', 8)).resolves.toBeUndefined();
-  });
-
-  it('creates a mock recommendation response from the user message', async () => {
-    vi.useFakeTimers();
-    const { requestRecommendations } = await import('../services/api');
-    const promise = requestRecommendations('7', {
-      id: '9',
-      conversationId: '7',
-      role: 'user',
-      content: 'Mroczny thriller',
-      sequenceNo: 2,
-      createdAt: new Date().toISOString(),
-    });
-    await vi.runAllTimersAsync();
-    const response = await promise;
-    expect(response.conversationId).toBe('7');
-    expect(response.request.triggerMessageId).toBe('9');
-    expect(response.candidates).toHaveLength(3);
-  });
-
-  it('uses the trends endpoint and exposes a backend error', async () => {
-    vi.stubEnv('VITE_USE_MOCK_API', 'false');
-    const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 503 });
-    vi.stubGlobal('fetch', fetchMock);
-    const { getRecommendationTrends } = await import('../services/api');
-
-    await expect(getRecommendationTrends('week')).rejects.toThrow(
-      'Nie udało się pobrać trendów (503).',
     );
-    expect(fetchMock).toHaveBeenCalledWith(
-      '/api/recommendation-trends/?period=week',
-      expect.objectContaining({ credentials: 'include' }),
-    );
+
+    await expect(getBootstrap()).rejects.toMatchObject({
+      message: 'Authentication required.',
+      status: 401,
+    });
   });
 
-  it('requests Polish upcoming releases through the backend API', async () => {
-    vi.stubEnv('VITE_USE_MOCK_API', 'false');
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: vi.fn().mockResolvedValue([]),
-    });
-    vi.stubGlobal('fetch', fetchMock);
-    const { getUpcomingReleases } = await import('../services/api');
+  it('uses Polish upcoming release query parameters', async () => {
+    const fetchMock = vi.mocked(fetch);
 
     await getUpcomingReleases();
 
-    expect(fetchMock).toHaveBeenCalledWith(
+    expect(String(fetchMock.mock.calls[fetchMock.mock.calls.length - 1]?.[0])).toBe(
       '/api/contents/upcoming/?language=pl-PL&region=PL',
-      expect.objectContaining({
-        credentials: 'include',
-        headers: { Accept: 'application/json' },
-      }),
     );
-  });
-
-  it('maps a recommendation request to the backend DTO', async () => {
-    vi.stubEnv('VITE_USE_MOCK_API', 'false');
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: vi.fn().mockResolvedValue({}) });
-    vi.stubGlobal('fetch', fetchMock);
-    const { requestRecommendations } = await import('../services/api');
-    const message = {
-      id: 'message-9',
-      conversationId: 'conversation-7',
-      role: 'user' as const,
-      content: 'Mroczny thriller',
-      sequenceNo: 4,
-      createdAt: new Date().toISOString(),
-    };
-
-    await requestRecommendations('conversation-7', message);
-    const [, options] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(options.method).toBe('POST');
-    expect(JSON.parse(options.body as string)).toEqual({
-      conversation_id: 'conversation-7',
-      message: {
-        id: 'message-9',
-        role: 'user',
-        content: 'Mroczny thriller',
-        sequence_no: 4,
-      },
-    });
   });
 });

@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import { demoCatalogContent, demoConversations, demoInteractions, demoPreferences, demoProfile, demoUser } from '../data/mockData';
+import { demoCatalogContent, demoConversations, demoInteractions, demoPreferences, demoProfile, demoUser } from './fixtures/mockData';
 import { AnalyticsView } from '../components/AnalyticsView';
 import { ProfileView } from '../components/ProfileView';
 

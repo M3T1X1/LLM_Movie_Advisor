@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import App from '../App';
@@ -31,30 +31,69 @@ describe('App routing', () => {
   it('updates URL when navigating from navbar', async () => {
     const user = userEvent.setup();
     renderApp('/recommendations');
-    await user.click(screen.getByRole('button', { name: /Baza filmów i seriali/i }));
+    await user.click(await screen.findByRole('button', { name: /Baza filmów i seriali/i }));
     await waitFor(() => expect(window.location.pathname).toBe('/catalog'));
     expect(screen.getByText('Katalog TMDB')).toBeInTheDocument();
   });
 
-  it('moves from valid mock login to recommendations', async () => {
+  it('moves from backend login to recommendations', async () => {
     const user = userEvent.setup();
     renderApp('/login');
-    await user.type(screen.getByLabelText('Adres e-mail'), 'user@example.com');
+    await user.type(await screen.findByLabelText('Adres e-mail'), 'user@example.com');
     await user.type(screen.getByLabelText('Hasło'), 'haslo123');
     await user.click(screen.getByRole('button', { name: 'Zaloguj się' }));
     expect(window.location.pathname).toBe('/recommendations');
     expect(screen.getByRole('heading', { name: 'Dzień dobry, kacper' })).toBeInTheDocument();
   });
 
-  it('does not show recommendations before the user sends a prompt', () => {
+  it('clearly reports that recommendations are not active yet', async () => {
     renderApp('/recommendations');
-    expect(screen.getByText('Brak rekomendacji w tej rozmowie')).toBeInTheDocument();
+    expect(
+      await screen.findByText('System rekomendacji nie jest jeszcze aktywny'),
+    ).toBeInTheDocument();
     expect(screen.queryByText('96%')).not.toBeInTheDocument();
   });
 
-  it('falls back to login for an unknown route', () => {
+  it('falls back to login for an unknown route', async () => {
     renderApp('/nie-istnieje');
-    expect(screen.getByRole('heading', { name: 'Zaloguj się' })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { name: 'Zaloguj się' }),
+    ).toBeInTheDocument();
+  });
+
+  it('protects application routes when backend session is anonymous', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ authenticated: false, user: null }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      ),
+    );
+
+    renderApp('/catalog');
+
+    expect(
+      await screen.findByRole('heading', { name: 'Zaloguj się' }),
+    ).toBeInTheDocument();
+    expect(window.location.pathname).toBe('/login');
+  });
+
+  it('registers an account through backend and opens the application', async () => {
+    const user = userEvent.setup();
+    renderApp('/register');
+
+    await user.type(await screen.findByLabelText('Nazwa użytkownika'), 'new-user');
+    await user.type(screen.getByLabelText('Adres e-mail'), 'new@example.com');
+    await user.type(screen.getByLabelText('Hasło'), 'StrongPassword123!');
+    await user.type(screen.getByLabelText('Powtórz hasło'), 'StrongPassword123!');
+    await user.click(screen.getByRole('button', { name: 'Utwórz konto' }));
+
+    expect(
+      await screen.findByRole('heading', { name: 'Dzień dobry, kacper' }),
+    ).toBeInTheDocument();
+    expect(window.location.pathname).toBe('/recommendations');
   });
 
   it('reacts to browser back and forward navigation', async () => {
@@ -65,37 +104,35 @@ describe('App routing', () => {
     expect(await screen.findByRole('heading', { name: 'Trendy' })).toBeInTheDocument();
   });
 
-  it('generates recommendations only after explicitly sending a prompt', async () => {
-    vi.useFakeTimers();
+  it('persists a prompt without fabricating recommendations', async () => {
+    const user = userEvent.setup();
     renderApp('/recommendations');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Lekki serial na dwa wieczory' }));
+    await user.click(
+      await screen.findByRole('button', { name: 'Lekki serial na dwa wieczory' }),
+    );
     expect(screen.queryByText('96%')).not.toBeInTheDocument();
     expect(screen.getByPlaceholderText('Opisz nastrój, tempo albo motyw...')).toHaveValue(
       'Lekki serial na dwa wieczory',
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Wyślij wiadomość' }));
-    expect(screen.getByText('Analizuję Twój prompt…')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Wyślij wiadomość' }));
+    expect(
+      (await screen.findAllByText('Lekki serial na dwa wieczory')).length,
+    ).toBeGreaterThanOrEqual(2);
+    expect(
+      screen.getByText('System rekomendacji nie jest jeszcze aktywny'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('96%')).not.toBeInTheDocument();
 
-    await act(async () => {
-      await vi.runAllTimersAsync();
-    });
-
-    expect(screen.getByText('96%')).toBeInTheDocument();
-    expect(screen.getByText('93%')).toBeInTheDocument();
-    expect(screen.getByText('89%')).toBeInTheDocument();
-    expect(screen.getByText(/Znalazłem trzy historie/)).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Nowa rozmowa' }));
-    expect(screen.getByText('Brak rekomendacji w tej rozmowie')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Nowa rozmowa' }));
     expect(screen.queryByText('96%')).not.toBeInTheDocument();
   });
 
   it('adds and removes a catalog title from the saved view', async () => {
     const user = userEvent.setup();
     renderApp('/catalog');
-    const labiryntCard = screen.getByRole('heading', { name: 'Labirynt' }).closest('article');
+    const labiryntCard = (await screen.findByRole('heading', { name: 'Labirynt' })).closest('article');
     expect(labiryntCard).not.toBeNull();
 
     await user.click(within(labiryntCard!).getByRole('button', { name: 'Zapisz' }));
@@ -128,7 +165,7 @@ describe('App routing', () => {
     const user = userEvent.setup();
     renderApp('/recommendations');
 
-    await user.click(screen.getByRole('button', { name: /Menu użytkownika:/ }));
+    await user.click(await screen.findByRole('button', { name: /Menu użytkownika:/ }));
     await user.click(screen.getByRole('menuitem', { name: 'Wyloguj się' }));
 
     expect(window.location.pathname).toBe('/login');

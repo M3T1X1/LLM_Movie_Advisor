@@ -111,9 +111,21 @@ class AuthenticationRoutesTests(TestCase):
             content_type="application/json",
         )
         logout_response = csrf_client.post(reverse("accounts:logout"))
+        register_response = csrf_client.post(
+            reverse("accounts:register"),
+            data=json.dumps(
+                {
+                    "username": "new-user",
+                    "email": "new@example.com",
+                    "password": "StrongRegistrationPassword123!",
+                }
+            ),
+            content_type="application/json",
+        )
 
         self.assertEqual(login_response.status_code, 403)
         self.assertEqual(logout_response.status_code, 403)
+        self.assertEqual(register_response.status_code, 403)
 
     def test_complete_csrf_login_session_logout_flow(self):
         csrf_client = Client(enforce_csrf_checks=True)
@@ -246,6 +258,7 @@ class AuthenticationRoutesTests(TestCase):
     def test_authentication_routes_reject_wrong_http_methods(self):
         cases = (
             ("get", reverse("accounts:login"), "POST"),
+            ("get", reverse("accounts:register"), "POST"),
             ("post", reverse("accounts:csrf"), "GET"),
             ("post", reverse("accounts:session"), "GET"),
             ("get", reverse("accounts:logout"), "POST"),
@@ -256,6 +269,67 @@ class AuthenticationRoutesTests(TestCase):
                 response = getattr(self.client, method)(url)
                 self.assertEqual(response.status_code, 405)
                 self.assertEqual(response.headers["Allow"], allowed_method)
+
+    def test_registration_creates_session_and_normalizes_account_data(self):
+        response = self.client.post(
+            reverse("accounts:register"),
+            data=json.dumps(
+                {
+                    "username": "new-user",
+                    "email": "NEW@example.com",
+                    "password": "StrongRegistrationPassword123!",
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()["user"]["email"], "new@example.com")
+        created = get_user_model().objects.get(username="new-user")
+        self.assertTrue(created.check_password("StrongRegistrationPassword123!"))
+        self.assertEqual(int(self.client.session["_auth_user_id"]), created.pk)
+
+    def test_registration_rejects_duplicates_and_weak_passwords(self):
+        duplicate_username = self.client.post(
+            reverse("accounts:register"),
+            data=json.dumps(
+                {
+                    "username": "TESTER",
+                    "email": "different@example.com",
+                    "password": "StrongRegistrationPassword123!",
+                }
+            ),
+            content_type="application/json",
+        )
+        duplicate_email = self.client.post(
+            reverse("accounts:register"),
+            data=json.dumps(
+                {
+                    "username": "different",
+                    "email": "TESTER@example.com",
+                    "password": "StrongRegistrationPassword123!",
+                }
+            ),
+            content_type="application/json",
+        )
+        weak_password = self.client.post(
+            reverse("accounts:register"),
+            data=json.dumps(
+                {
+                    "username": "weak-user",
+                    "email": "weak@example.com",
+                    "password": "password",
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(duplicate_username.status_code, 409)
+        self.assertEqual(duplicate_email.status_code, 409)
+        self.assertEqual(weak_password.status_code, 400)
+        self.assertFalse(
+            get_user_model().objects.filter(username="weak-user").exists()
+        )
 
 
 @override_settings(DEBUG=True)

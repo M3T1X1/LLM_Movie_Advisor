@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { demoCandidates } from '../data/mockData';
+import { demoCandidates } from './fixtures/mockData';
 import { formatRuntime, getBackdropUrl, getMatchPercent, getPosterUrl, getReleaseYear } from '../utils/content';
 
 describe('content utilities', () => {

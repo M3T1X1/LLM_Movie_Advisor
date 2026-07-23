@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import { demoCandidates, demoCatalogContent } from '../data/mockData';
+import { demoCandidates, demoCatalogContent } from './fixtures/mockData';
 import { CatalogView } from '../components/CatalogView';
 import { MovieDetailModal } from '../components/MovieDetailModal';
 import { RecommendationCard } from '../components/RecommendationCard';

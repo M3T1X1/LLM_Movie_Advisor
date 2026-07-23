@@ -189,6 +189,15 @@ export interface RecommendationTrends {
   generatedAt: string;
 }
 
+export interface AppBootstrap {
+  user: AppUser;
+  semanticProfile: UserSemanticProfile;
+  preferences: UserPreference[];
+  conversations: Conversation[];
+  messages: ChatMessage[];
+  interactions: Interaction[];
+}
+
 export type AppView =
   | 'login'
   | 'register'

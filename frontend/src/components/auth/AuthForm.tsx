@@ -50,6 +50,6 @@ export function PasswordField({ label, value, visible, error, autoComplete, onCh
   );
 }
 
-export function PrimaryButton({ children }: { children: ReactNode }) {
-  return <button type="submit" className="flex h-11 w-full items-center justify-center rounded-lg bg-violet-600 text-sm font-semibold text-white transition hover:bg-violet-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0d0f15]">{children}</button>;
+export function PrimaryButton({ children, disabled = false }: { children: ReactNode; disabled?: boolean }) {
+  return <button type="submit" disabled={disabled} className="flex h-11 w-full items-center justify-center rounded-lg bg-violet-600 text-sm font-semibold text-white transition hover:bg-violet-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0d0f15] disabled:cursor-not-allowed disabled:opacity-60">{children}</button>;
 }

@@ -2,21 +2,29 @@ import { Mail, UserRound } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { AuthField, AuthPage, inputClassName, PasswordField, PrimaryButton } from './auth/AuthForm';
 
-export function RegisterView({ onBack, onRegistered }: { onBack: () => void; onRegistered: (email: string) => void }) {
+export function RegisterView({ onBack, onRegistered }: { onBack: () => void; onRegistered: (username: string, email: string, password: string) => Promise<void> }) {
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmation, setConfirmation] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const submit = (event: FormEvent<HTMLFormElement>) => {
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const normalizedEmail = email.trim().toLocaleLowerCase('pl-PL');
     if (!username.trim() || !normalizedEmail || !password || !confirmation) return setError('Uzupełnij wszystkie pola.');
     if (password.length < 8) return setError('Hasło musi zawierać co najmniej 8 znaków.');
     if (password !== confirmation) return setError('Podane hasła nie są takie same.');
-    onRegistered(normalizedEmail);
+    setIsSubmitting(true);
+    try {
+      await onRegistered(username.trim(), normalizedEmail, password);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Nie udało się utworzyć konta.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -27,7 +35,7 @@ export function RegisterView({ onBack, onRegistered }: { onBack: () => void; onR
         <PasswordField label="Hasło" value={password} visible={showPassword} error={error} autoComplete="new-password" onChange={(value) => { setPassword(value); setError(null); }} onToggle={() => setShowPassword((current) => !current)} />
         <PasswordField label="Powtórz hasło" value={confirmation} visible={showPassword} error={error} autoComplete="new-password" onChange={(value) => { setConfirmation(value); setError(null); }} />
         <div className="min-h-5" aria-live="polite">{error && <p className="text-xs text-red-300">{error}</p>}</div>
-        <PrimaryButton>Utwórz konto</PrimaryButton>
+        <PrimaryButton disabled={isSubmitting}>{isSubmitting ? 'Tworzenie konta…' : 'Utwórz konto'}</PrimaryButton>
       </form>
     </AuthPage>
   );

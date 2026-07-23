@@ -13,7 +13,7 @@ import {
   demoProfile,
   demoUser,
   initialAgentSteps,
-} from '../data/mockData';
+} from './fixtures/mockData';
 
 const xssPayload = '<img src=x onerror="window.__xssTriggered=true"><script>window.__xssTriggered=true</script>';
 

@@ -2,7 +2,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { TrendsView } from '../components/TrendsView';
-import { demoCatalogContent, demoRecommendationTrends } from '../data/mockData';
+import { demoCatalogContent, demoRecommendationTrends } from './fixtures/mockData';
 import * as api from '../services/api';
 
 function getTrendingTitles() {

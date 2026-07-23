@@ -2,7 +2,7 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { UpcomingReleasesView } from '../components/UpcomingReleasesView';
-import { demoUpcomingReleases } from '../data/mockData';
+import { demoUpcomingReleases } from './fixtures/mockData';
 
 const defaultProps = {
   watchlistedContentIds: [],

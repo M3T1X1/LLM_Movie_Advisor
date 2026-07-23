@@ -82,7 +82,11 @@ describe('authentication views', () => {
     await user.type(screen.getByLabelText('Hasło'), 'haslo123');
     await user.type(screen.getByLabelText('Powtórz hasło'), 'haslo123');
     await user.click(screen.getByRole('button', { name: 'Utwórz konto' }));
-    expect(onRegistered).toHaveBeenCalledWith('test@example.com');
+    expect(onRegistered).toHaveBeenCalledWith(
+      'tester',
+      'test@example.com',
+      'haslo123',
+    );
   });
 
   it('shows a neutral password reset confirmation', async () => {

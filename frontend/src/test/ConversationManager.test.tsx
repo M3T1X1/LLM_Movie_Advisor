@@ -2,7 +2,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { ConversationManager } from '../components/ConversationManager';
-import { demoConversations } from '../data/mockData';
+import { demoConversations } from './fixtures/mockData';
 
 describe('ConversationManager', () => {
   it('creates and selects conversations without sending a prompt', async () => {

@@ -10,23 +10,19 @@ import { LoginView } from './components/LoginView';
 import { MovieDetailModal } from './components/MovieDetailModal';
 import { Navbar } from './components/Navbar';
 import { ProfileView } from './components/ProfileView';
-import { RecommendationCard } from './components/RecommendationCard';
 import { RegisterView } from './components/RegisterView';
 import { TrendsView } from './components/TrendsView';
 import { UpcomingReleasesView } from './components/UpcomingReleasesView';
 import { useSession } from './context/SessionContext';
-import { demoCatalogContent, initialAgentSteps } from './data/mockData';
-import {
-  createInteraction,
-  deleteInteraction,
-  getCatalogContent,
-  requestRecommendations,
-} from './services/api';
-import type { AgentStep, AppView, Content, RunCandidate } from './types';
+import { getCatalogContent } from './services/api';
+import type { AgentStep, AppView, Content } from './types';
 
-function wait(duration: number) {
-  return new Promise((resolve) => window.setTimeout(resolve, duration));
-}
+const inactiveAgentSteps: AgentStep[] = [
+  { key: 'profiling', name: 'Agent Profilowania', activity: 'Integracja oczekuje na uruchomienie systemu rekomendacji', status: 'pending' },
+  { key: 'retrieval', name: 'Agent Danych', activity: 'Integracja oczekuje na uruchomienie systemu rekomendacji', status: 'pending' },
+  { key: 'ranking', name: 'Agent Rankingu', activity: 'Integracja oczekuje na uruchomienie systemu rekomendacji', status: 'pending' },
+  { key: 'explanation', name: 'Agent Wyjaśnień', activity: 'Integracja oczekuje na uruchomienie systemu rekomendacji', status: 'pending' },
+];
 
 const viewPaths: Record<AppView, string> = {
   login: '/login',
@@ -61,35 +57,32 @@ export default function App() {
     currentConversationId,
     watchlistedContentIds,
     watchedContentIds,
+    isLoading,
+    login,
+    register,
+    logout,
     createConversation,
     selectConversation,
     renameConversation,
     deleteConversation: deleteStoredConversation,
     addMessage,
-    appendMessage,
     updateUser,
-    addDetectedPreferences,
-    updateConversationFromQuery,
     recordInteraction: storeInteraction,
     removeInteraction: removeStoredInteraction,
   } = useSession();
   const [activeView, setActiveView] = useState<AppView>(getViewFromPath);
-  const [recommendationsByConversation, setRecommendationsByConversation] = useState<
-    Record<string, RunCandidate[]>
-  >({});
-  const [catalogContent, setCatalogContent] = useState<Content[]>(demoCatalogContent);
+  const [catalogContent, setCatalogContent] = useState<Content[]>([]);
   const [upcomingContent, setUpcomingContent] = useState<Content[]>([]);
-  const [selectedCandidate, setSelectedCandidate] = useState<RunCandidate | null>(null);
   const [selectedCatalogContent, setSelectedCatalogContent] = useState<Content | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [agentSteps, setAgentSteps] = useState<AgentStep[]>(initialAgentSteps);
-  const recommendations = currentConversationId
-    ? (recommendationsByConversation[currentConversationId] ?? [])
-    : [];
 
   useEffect(() => {
-    void getCatalogContent().then(setCatalogContent).catch(() => undefined);
-  }, []);
+    if (!user) {
+      setCatalogContent([]);
+      return;
+    }
+    void getCatalogContent().then(setCatalogContent).catch(() => setCatalogContent([]));
+  }, [user]);
 
   useEffect(() => {
     const handlePopState = () => setActiveView(getViewFromPath());
@@ -105,136 +98,78 @@ export default function App() {
     setActiveView(view);
   };
 
-  const completeLogin = () => {
+  useEffect(() => {
+    if (isLoading) return;
+    const isPublicView = ['login', 'register', 'forgot-password'].includes(activeView);
+    if (!user && !isPublicView) navigateTo('login', true);
+  }, [activeView, isLoading, user]);
+
+  const completeLogin = async (email: string, password: string) => {
+    await login(email, password);
     navigateTo('recommendations', true);
+  };
+
+  const completeRegistration = async (
+    username: string,
+    email: string,
+    password: string,
+  ) => {
+    await register(username, email, password);
+    navigateTo('recommendations', true);
+  };
+
+  const handleLogout = async () => {
+    await logout();
+    navigateTo('login', true);
   };
 
   const handlePrompt = async (query: string) => {
     if (isProcessing || !currentConversationId) return;
 
-    const conversationId = currentConversationId;
     navigateTo('recommendations');
     setIsProcessing(true);
-    const userMessage = addMessage('user', query);
-    setAgentSteps(initialAgentSteps.map((step) => ({ ...step, status: 'pending' })));
-
-    const responsePromise = requestRecommendations(conversationId, userMessage).then(
-      (response) => ({ response, error: null }),
-      (error: unknown) => ({ response: null, error }),
-    );
-
     try {
-      for (let index = 0; index < initialAgentSteps.length; index += 1) {
-        setAgentSteps((steps) =>
-          steps.map((step, stepIndex) => ({
-            ...step,
-            status: stepIndex < index ? 'success' : stepIndex === index ? 'running' : 'pending',
-          })),
-        );
-        await wait(index === 0 ? 650 : 520);
-      }
-
-      const result = await responsePromise;
-      if (result.error || !result.response) throw result.error;
-
-      setAgentSteps((steps) => steps.map((step) => ({ ...step, status: 'success' })));
-      setRecommendationsByConversation((current) => ({
-        ...current,
-        [conversationId]: result.response.candidates,
-      }));
-      addDetectedPreferences(result.response.detectedPreferences);
-      updateConversationFromQuery(query);
-      appendMessage(result.response.assistantMessage);
-      await wait(350);
+      await addMessage('user', query);
     } catch {
-      setAgentSteps((steps) =>
-        steps.map((step) => (step.status === 'running' ? { ...step, status: 'failed' } : step)),
-      );
-      addMessage(
-        'assistant',
-        'Nie udało mi się teraz pobrać rekomendacji. Sprawdź połączenie z backendem i spróbuj ponownie za chwilę.',
-      );
+      // The chat keeps the typed value in the component when persistence fails.
     } finally {
       setIsProcessing(false);
     }
   };
 
-  const handleCreateConversation = () => {
-    createConversation();
-    setSelectedCandidate(null);
+  const handleCreateConversation = async () => {
+    await createConversation();
     setSelectedCatalogContent(null);
-    setAgentSteps(initialAgentSteps.map((step) => ({ ...step, status: 'pending' })));
   };
 
   const handleSelectConversation = (conversationId: string) => {
     selectConversation(conversationId);
-    setSelectedCandidate(null);
     setSelectedCatalogContent(null);
-    setAgentSteps(initialAgentSteps.map((step) => ({ ...step, status: 'pending' })));
   };
 
-  const handleDeleteConversation = (conversationId: string) => {
-    deleteStoredConversation(conversationId);
-    setRecommendationsByConversation((current) => {
-      const next = { ...current };
-      delete next[conversationId];
-      return next;
-    });
-    setSelectedCandidate(null);
-  };
-
-  const handleWatchlist = (candidate: RunCandidate) => {
-    if (watchlistedContentIds.includes(candidate.contentId)) {
-      const interaction = removeStoredInteraction(candidate.contentId, 'watchlisted');
-      if (interaction) void deleteInteraction(interaction.id).catch(() => undefined);
-      return;
-    }
-    storeInteraction(candidate.contentId, candidate.id, 'watchlisted');
-    void createInteraction(candidate.contentId, candidate.id, 'watchlisted').catch(() => undefined);
-  };
-
-  const handleMarkWatched = (candidate: RunCandidate) => {
-    if (watchedContentIds.includes(candidate.contentId)) {
-      const interaction = removeStoredInteraction(candidate.contentId, 'watched');
-      if (interaction) void deleteInteraction(interaction.id).catch(() => undefined);
-      return;
-    }
-    storeInteraction(candidate.contentId, candidate.id, 'watched');
-    void createInteraction(candidate.contentId, candidate.id, 'watched').catch(() => undefined);
-  };
-
-  const handleOpenCandidate = (candidate: RunCandidate) => {
-    setSelectedCatalogContent(null);
-    setSelectedCandidate(candidate);
-    storeInteraction(candidate.contentId, candidate.id, 'details_opened');
-    void createInteraction(candidate.contentId, candidate.id, 'details_opened').catch(() => undefined);
+  const handleDeleteConversation = async (conversationId: string) => {
+    await deleteStoredConversation(conversationId);
   };
 
   const handleOpenCatalogContent = (content: Content) => {
-    setSelectedCandidate(null);
     setSelectedCatalogContent(content);
-    storeInteraction(content.id, null, 'details_opened');
-    void createInteraction(content.id, null, 'details_opened').catch(() => undefined);
+    void storeInteraction(content.id, null, 'details_opened').catch(() => undefined);
   };
 
   const handleCatalogWatchlist = (content: Content) => {
     if (watchlistedContentIds.includes(content.id)) {
-      const interaction = removeStoredInteraction(content.id, 'watchlisted');
-      if (interaction) void deleteInteraction(interaction.id).catch(() => undefined);
+      void removeStoredInteraction(content.id, 'watchlisted').catch(() => undefined);
       return;
     }
-    storeInteraction(content.id, null, 'watchlisted');
-    void createInteraction(content.id, null, 'watchlisted').catch(() => undefined);
+    void storeInteraction(content.id, null, 'watchlisted').catch(() => undefined);
   };
 
   const handleCatalogWatched = (content: Content) => {
     if (watchedContentIds.includes(content.id)) {
-      const interaction = removeStoredInteraction(content.id, 'watched');
-      if (interaction) void deleteInteraction(interaction.id).catch(() => undefined);
+      void removeStoredInteraction(content.id, 'watched').catch(() => undefined);
       return;
     }
-    storeInteraction(content.id, null, 'watched');
-    void createInteraction(content.id, null, 'watched').catch(() => undefined);
+    void storeInteraction(content.id, null, 'watched').catch(() => undefined);
   };
 
   const availableContent = [
@@ -246,79 +181,77 @@ export default function App() {
   const savedContent = availableContent.filter((content) =>
     watchlistedContentIds.includes(content.id),
   );
-  const selectedContent = selectedCandidate?.content ?? selectedCatalogContent;
+  const selectedContent = selectedCatalogContent;
 
   const handleCloseDetails = () => {
-    setSelectedCandidate(null);
     setSelectedCatalogContent(null);
   };
 
   const handleModalWatchlist = () => {
-    if (selectedCandidate) handleWatchlist(selectedCandidate);
-    else if (selectedCatalogContent) handleCatalogWatchlist(selectedCatalogContent);
+    if (selectedCatalogContent) handleCatalogWatchlist(selectedCatalogContent);
   };
 
   const handleModalWatched = () => {
-    if (selectedCandidate) handleMarkWatched(selectedCandidate);
-    else if (selectedCatalogContent) handleCatalogWatched(selectedCatalogContent);
+    if (selectedCatalogContent) handleCatalogWatched(selectedCatalogContent);
   };
 
-  const renderCard = (candidate: RunCandidate, index: number) => (
-    <RecommendationCard
-      key={candidate.id}
-      candidate={candidate}
-      index={index}
-      isWatchlisted={watchlistedContentIds.includes(candidate.contentId)}
-      isWatched={watchedContentIds.includes(candidate.contentId)}
-      onOpen={handleOpenCandidate}
-      onWatchlist={handleWatchlist}
-      onMarkWatched={handleMarkWatched}
-    />
-  );
+  if (isLoading) {
+    return <div className="min-h-screen bg-ink-950" aria-label="Ładowanie aplikacji" />;
+  }
+
+  const isPublicView = ['login', 'register', 'forgot-password'].includes(activeView);
+  const effectiveView = !user && !isPublicView ? 'login' : activeView;
+  const profile = semanticProfile ?? {
+    userId: user?.id ?? '',
+    semanticSummary: null,
+    version: 1,
+    lastRebuiltAt: null,
+    updatedAt: new Date().toISOString(),
+  };
 
   return (
     <div className="min-h-screen bg-ink-950 text-slate-100 selection:bg-violet-500/30">
-      {!['login', 'register', 'forgot-password'].includes(activeView) && (
+      {user && !['login', 'register', 'forgot-password'].includes(effectiveView) && (
         <Navbar
           user={user}
-          activeView={activeView}
+          activeView={effectiveView}
           onViewChange={navigateTo}
-          onLogout={() => navigateTo('login', true)}
+          onLogout={() => void handleLogout()}
         />
       )}
 
-      <div className={['login', 'register', 'forgot-password'].includes(activeView) ? '' : 'mx-auto max-w-[1480px] px-4 py-7 sm:px-6 lg:px-8'}>
+      <div className={['login', 'register', 'forgot-password'].includes(effectiveView) ? '' : 'mx-auto max-w-[1480px] px-4 py-7 sm:px-6 lg:px-8'}>
         <main className="min-w-0">
-          {activeView === 'login' ? (
+          {effectiveView === 'login' ? (
             <LoginView
               onLogin={completeLogin}
               onRegister={() => navigateTo('register')}
               onForgotPassword={() => navigateTo('forgot-password')}
             />
-          ) : activeView === 'register' ? (
+          ) : effectiveView === 'register' ? (
             <RegisterView
               onBack={() => navigateTo('login')}
-              onRegistered={() => navigateTo('login')}
+              onRegistered={completeRegistration}
             />
-          ) : activeView === 'forgot-password' ? (
+          ) : effectiveView === 'forgot-password' ? (
             <ForgotPasswordView onBack={() => navigateTo('login')} />
-          ) : activeView === 'profile' ? (
+          ) : effectiveView === 'profile' && user ? (
             <ProfileView
               user={user}
-              semanticProfile={semanticProfile}
+              semanticProfile={profile}
               preferences={preferences}
               conversations={conversations}
               savedCount={watchlistedContentIds.length}
               watchedCount={watchedContentIds.length}
               onUpdateUser={updateUser}
             />
-          ) : activeView === 'analytics' ? (
+          ) : effectiveView === 'analytics' ? (
             <AnalyticsView
               content={catalogContent}
               interactions={interactions}
               preferences={preferences}
             />
-          ) : activeView === 'catalog' ? (
+          ) : effectiveView === 'catalog' ? (
             <CatalogView
               content={catalogContent}
               watchlistedContentIds={watchlistedContentIds}
@@ -327,16 +260,16 @@ export default function App() {
               onWatchlist={handleCatalogWatchlist}
               onMarkWatched={handleCatalogWatched}
             />
-          ) : activeView === 'trends' ? (
+          ) : effectiveView === 'trends' ? (
             <TrendsView onOpen={handleOpenCatalogContent} />
-          ) : activeView === 'upcoming' ? (
+          ) : effectiveView === 'upcoming' ? (
             <UpcomingReleasesView
               watchlistedContentIds={watchlistedContentIds}
               onOpen={handleOpenCatalogContent}
               onWatchlist={handleCatalogWatchlist}
               onLoaded={setUpcomingContent}
             />
-          ) : activeView === 'saved' ? (
+          ) : effectiveView === 'saved' ? (
             <div className="mx-auto max-w-4xl">
               <div className="mb-7 flex items-end justify-between gap-4">
                 <PageHeading
@@ -376,7 +309,7 @@ export default function App() {
             <>
               <div className="mb-7 border-b border-white/[0.07] pb-7">
                 <h1 className="text-center text-4xl font-semibold tracking-[-0.045em] text-white sm:text-5xl lg:text-6xl">
-                  Dzień dobry, <span className="text-violet-400">{user.username}</span>
+                  Dzień dobry, <span className="text-violet-400">{user?.username}</span>
                 </h1>
               </div>
 
@@ -397,7 +330,7 @@ export default function App() {
                       messages={messages.filter(
                         (message) => message.conversationId === currentConversationId,
                       )}
-                      agentSteps={agentSteps}
+                      agentSteps={inactiveAgentSteps}
                       isProcessing={isProcessing}
                       onSubmit={handlePrompt}
                     />
@@ -407,25 +340,15 @@ export default function App() {
 
                   <section
                     aria-labelledby="recommendations-title"
-                    className={
-                      recommendations.length
-                        ? undefined
-                        : 'flex min-h-[680px] flex-col 2xl:h-[calc(100vh-6rem)] 2xl:min-h-[700px]'
-                    }
+                    className="flex min-h-[680px] flex-col 2xl:h-[calc(100vh-6rem)] 2xl:min-h-[700px]"
                   >
                     <div
-                      className={`transition-opacity duration-300 ${
-                        recommendations.length ? 'space-y-4' : 'min-h-0 flex-1'
-                      } ${
+                      className={`min-h-0 flex-1 transition-opacity duration-300 ${
                         isProcessing ? 'opacity-50' : 'opacity-100'
                       }`}
                       aria-live="polite"
                     >
-                      {recommendations.length ? (
-                        recommendations.map(renderCard)
-                      ) : (
-                        <RecommendationEmptyState isProcessing={isProcessing} />
-                      )}
+                      <RecommendationEmptyState isProcessing={false} />
                     </div>
                   </section>
                 </div>
@@ -437,7 +360,7 @@ export default function App() {
 
       <MovieDetailModal
         content={selectedContent}
-        recommendation={selectedCandidate}
+        recommendation={null}
         isWatchlisted={selectedContent ? watchlistedContentIds.includes(selectedContent.id) : false}
         isWatched={selectedContent ? watchedContentIds.includes(selectedContent.id) : false}
         onClose={handleCloseDetails}
@@ -476,7 +399,7 @@ function ConversationWorkspaceEmpty({ onCreate }: { onCreate: () => void }) {
       </span>
       <h2 className="text-sm font-semibold text-white">Wybierz lub rozpocznij rozmowę</h2>
       <p className="mt-2 max-w-sm text-xs leading-5 text-slate-600">
-        Rekomendacje pojawią się dopiero wtedy, gdy wyślesz własną wiadomość do LLM.
+        Wiadomości zostaną zapisane. Moduł rekomendacji zostanie podłączony w kolejnym etapie.
       </p>
       <button
         type="button"
@@ -495,12 +418,12 @@ function RecommendationEmptyState({ isProcessing }: { isProcessing: boolean }) {
     <div className="flex h-full min-h-56 flex-col items-center justify-center rounded-xl border border-dashed border-white/[0.08] bg-[#0d0f15]/60 px-6 text-center">
       <Sparkles className={`mb-3 h-5 w-5 ${isProcessing ? 'animate-pulse text-violet-400' : 'text-slate-700'}`} />
       <p className="text-xs font-medium text-slate-400">
-        {isProcessing ? 'Analizuję Twój prompt…' : 'Brak rekomendacji w tej rozmowie'}
+        {isProcessing ? 'Zapisuję wiadomość…' : 'System rekomendacji nie jest jeszcze aktywny'}
       </p>
       <p className="mt-2 max-w-xs text-[10px] leading-5 text-slate-600">
         {isProcessing
-          ? 'Wyniki pojawią się po zakończeniu pracy agentów.'
-          : 'Wyślij wiadomość w czacie, aby poprosić LLM o dopasowane filmy lub seriale.'}
+          ? 'Wiadomość jest zapisywana w PostgreSQL.'
+          : 'Rozmowy są już zapisywane w bazie. Agenci i LLM zostaną podłączeni w kolejnym etapie.'}
       </p>
     </div>
   );

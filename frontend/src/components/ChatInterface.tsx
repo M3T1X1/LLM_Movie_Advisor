@@ -1,7 +1,12 @@
 import { ArrowUp, Bot, CornerDownLeft } from 'lucide-react';
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
-import { promptSuggestions } from '../data/mockData';
 import type { AgentStep, ChatMessage } from '../types';
+
+const promptSuggestions = [
+  'Coś mrocznego z twistem, bez happy endu',
+  'Lekki serial na dwa wieczory',
+  'Ambitne sci-fi, które daje do myślenia',
+];
 import { AgentStatus } from './AgentStatus';
 
 interface ChatInterfaceProps {

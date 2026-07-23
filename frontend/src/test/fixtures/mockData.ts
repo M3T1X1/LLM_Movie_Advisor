@@ -13,7 +13,7 @@ import type {
   UserPreference,
   UserSemanticProfile,
   TrendPeriod,
-} from '../types';
+} from '../../types';
 
 const now = new Date().toISOString();
 const yesterday = new Date(Date.now() - 86_400_000).toISOString();

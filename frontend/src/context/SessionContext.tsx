@@ -1,13 +1,20 @@
-import { createContext, type ReactNode, useContext, useEffect, useState } from 'react';
+import { createContext, type ReactNode, useContext, useEffect, useMemo, useState } from 'react';
 import {
-  demoConversations,
-  demoInteractions,
-  demoPreferences,
-  demoProfile,
-  demoUser,
-  initialMessages,
-} from '../data/mockData';
+  createConversation as createConversationRequest,
+  createInteraction as createInteractionRequest,
+  createMessage,
+  deleteConversation as deleteConversationRequest,
+  deleteInteraction as deleteInteractionRequest,
+  getAuthSession,
+  getBootstrap,
+  login as loginRequest,
+  logout as logoutRequest,
+  register as registerRequest,
+  renameConversation as renameConversationRequest,
+  updateProfile,
+} from '../services/api';
 import type {
+  AppBootstrap,
   AppUser,
   ChatMessage,
   Conversation,
@@ -19,9 +26,9 @@ import type {
   UserSemanticProfile,
 } from '../types';
 
-interface StoredSession {
-  user: AppUser;
-  semanticProfile: UserSemanticProfile;
+interface SessionState {
+  user: AppUser | null;
+  semanticProfile: UserSemanticProfile | null;
   preferences: UserPreference[];
   conversations: Conversation[];
   currentConversationId: DatabaseId | null;
@@ -29,94 +36,101 @@ interface StoredSession {
   interactions: Interaction[];
 }
 
-interface PreferenceGroups {
-  favoriteGenres: string[];
-  positivePreferences: string[];
-  avoidedPreferences: string[];
-}
-
-interface SessionContextValue extends StoredSession {
+interface SessionContextValue extends SessionState {
+  isLoading: boolean;
+  isAuthenticated: boolean;
   watchlistedContentIds: DatabaseId[];
   watchedContentIds: DatabaseId[];
-  createConversation: () => Conversation;
+  login: (email: string, password: string) => Promise<void>;
+  register: (username: string, email: string, password: string) => Promise<void>;
+  logout: () => Promise<void>;
+  createConversation: () => Promise<Conversation>;
   selectConversation: (conversationId: DatabaseId) => void;
-  renameConversation: (conversationId: DatabaseId, title: string) => void;
-  deleteConversation: (conversationId: DatabaseId) => void;
-  addMessage: (role: MessageRole, content: string) => ChatMessage;
-  appendMessage: (message: ChatMessage) => void;
-  updateUser: (changes: Partial<Pick<AppUser, 'username' | 'email'>>) => void;
-  replacePreferenceGroups: (groups: PreferenceGroups) => void;
-  addDetectedPreferences: (preferences: UserPreference[]) => void;
-  updateConversationFromQuery: (query: string) => void;
+  renameConversation: (conversationId: DatabaseId, title: string) => Promise<void>;
+  deleteConversation: (conversationId: DatabaseId) => Promise<void>;
+  addMessage: (role: MessageRole, content: string) => Promise<ChatMessage>;
+  updateUser: (
+    changes: Partial<Pick<AppUser, 'username' | 'email'>>,
+  ) => Promise<void>;
   recordInteraction: (
     contentId: DatabaseId,
     sourceCandidateId: DatabaseId | null,
     interactionType: InteractionType,
     rating?: number,
-  ) => void;
+  ) => Promise<Interaction | null>;
   removeInteraction: (
     contentId: DatabaseId,
     interactionType: 'watchlisted' | 'watched',
-  ) => Interaction | null;
+  ) => Promise<void>;
 }
 
-const STORAGE_KEY = 'scene-ai-session-erd-v2';
+const emptySession: SessionState = {
+  user: null,
+  semanticProfile: null,
+  preferences: [],
+  conversations: [],
+  currentConversationId: null,
+  messages: [],
+  interactions: [],
+};
+
 const SessionContext = createContext<SessionContextValue | undefined>(undefined);
-let localIdOffset = 0;
 
-function createLocalDatabaseId() {
-  localIdOffset += 1;
-  return String(Date.now() + localIdOffset);
-}
-
-function createInitialSession(): StoredSession {
+function stateFromBootstrap(data: AppBootstrap): SessionState {
   return {
-    user: demoUser,
-    semanticProfile: demoProfile,
-    preferences: demoPreferences,
-    conversations: demoConversations,
-    currentConversationId: demoConversations[0]?.id ?? null,
-    messages: initialMessages,
-    interactions: demoInteractions,
+    ...data,
+    currentConversationId: data.conversations[0]?.id ?? null,
   };
 }
 
-function loadSession(): StoredSession {
-  try {
-    const stored = window.localStorage.getItem(STORAGE_KEY);
-    if (!stored) return createInitialSession();
-
-    const parsed = JSON.parse(stored) as Omit<StoredSession, 'currentConversationId'> & {
-      currentConversationId?: DatabaseId | null;
-    };
-    const currentConversationId = parsed.conversations.some(
-      (conversation) => conversation.id === parsed.currentConversationId,
-    )
-      ? (parsed.currentConversationId ?? null)
-      : (parsed.conversations[0]?.id ?? null);
-
-    return { ...parsed, currentConversationId };
-  } catch {
-    return createInitialSession();
-  }
-}
-
 export function SessionProvider({ children }: { children: ReactNode }) {
-  const [session, setSession] = useState<StoredSession>(loadSession);
+  const [session, setSession] = useState<SessionState>(emptySession);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
-  }, [session]);
-
-  const createConversation = () => {
-    const timestamp = new Date().toISOString();
-    const conversation: Conversation = {
-      id: createLocalDatabaseId(),
-      userId: session.user.id,
-      title: null,
-      createdAt: timestamp,
-      updatedAt: timestamp,
+    let isCurrent = true;
+    void getAuthSession()
+      .then(async (authSession) => {
+        if (!authSession.authenticated) return null;
+        return getBootstrap();
+      })
+      .then((bootstrap) => {
+        if (!isCurrent || !bootstrap) return;
+        setSession(stateFromBootstrap(bootstrap));
+      })
+      .catch(() => {
+        if (isCurrent) setSession(emptySession);
+      })
+      .finally(() => {
+        if (isCurrent) setIsLoading(false);
+      });
+    return () => {
+      isCurrent = false;
     };
+  }, []);
+
+  const loadAuthenticatedSession = async () => {
+    const bootstrap = await getBootstrap();
+    setSession(stateFromBootstrap(bootstrap));
+  };
+
+  const login = async (email: string, password: string) => {
+    await loginRequest(email, password);
+    await loadAuthenticatedSession();
+  };
+
+  const register = async (username: string, email: string, password: string) => {
+    await registerRequest(username, email, password);
+    await loadAuthenticatedSession();
+  };
+
+  const logout = async () => {
+    await logoutRequest();
+    setSession(emptySession);
+  };
+
+  const createConversation = async () => {
+    const conversation = await createConversationRequest();
     setSession((current) => ({
       ...current,
       conversations: [conversation, ...current.conversations],
@@ -133,21 +147,18 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     );
   };
 
-  const renameConversation = (conversationId: DatabaseId, title: string) => {
-    const normalizedTitle = title.trim().slice(0, 255);
-    if (!normalizedTitle) return;
-
+  const renameConversation = async (conversationId: DatabaseId, title: string) => {
+    const conversation = await renameConversationRequest(conversationId, title);
     setSession((current) => ({
       ...current,
-      conversations: current.conversations.map((conversation) =>
-        conversation.id === conversationId
-          ? { ...conversation, title: normalizedTitle, updatedAt: new Date().toISOString() }
-          : conversation,
+      conversations: current.conversations.map((item) =>
+        item.id === conversationId ? conversation : item,
       ),
     }));
   };
 
-  const deleteConversation = (conversationId: DatabaseId) => {
+  const deleteConversation = async (conversationId: DatabaseId) => {
+    await deleteConversationRequest(conversationId);
     setSession((current) => {
       const conversations = current.conversations.filter(
         (conversation) => conversation.id !== conversationId,
@@ -166,214 +177,130 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     });
   };
 
-  const addMessage = (role: MessageRole, content: string) => {
-    if (!session.currentConversationId) {
-      throw new Error('Nie wybrano aktywnej rozmowy.');
+  const addMessage = async (role: MessageRole, content: string) => {
+    if (role !== 'user') {
+      throw new Error('Backend przyjmuje obecnie wyłącznie wiadomości użytkownika.');
     }
     const conversationId = session.currentConversationId;
-    const conversationMessages = session.messages.filter(
-      (message) => message.conversationId === conversationId,
-    );
-    const sequenceNo = Math.max(0, ...conversationMessages.map((message) => message.sequenceNo)) + 1;
-    const message: ChatMessage = {
-      id: createLocalDatabaseId(),
-      conversationId,
-      role,
-      content,
-      sequenceNo,
-      createdAt: new Date().toISOString(),
-    };
+    if (!conversationId) throw new Error('Nie wybrano aktywnej rozmowy.');
+    const message = await createMessage(conversationId, content);
     setSession((current) => ({
       ...current,
+      messages: [...current.messages, message],
       conversations: current.conversations.map((conversation) =>
         conversation.id === conversationId
-          ? { ...conversation, updatedAt: message.createdAt }
-          : conversation,
-      ),
-      messages: [...current.messages, message],
-    }));
-    return message;
-  };
-
-  const appendMessage = (message: ChatMessage) => {
-    setSession((current) => ({
-      ...current,
-      conversations: current.conversations.map((conversation) =>
-        conversation.id === message.conversationId
-          ? { ...conversation, updatedAt: message.createdAt }
-          : conversation,
-      ),
-      messages: current.messages.some((item) => item.id === message.id)
-        ? current.messages
-        : [...current.messages, message],
-    }));
-  };
-
-  const updateUser = (changes: Partial<Pick<AppUser, 'username' | 'email'>>) => {
-    setSession((current) => ({
-      ...current,
-      user: { ...current.user, ...changes },
-    }));
-  };
-
-  const replacePreferenceGroups = (groups: PreferenceGroups) => {
-    const favoriteGenres = Array.from(new Set(groups.favoriteGenres));
-    const positivePreferences = Array.from(new Set(groups.positivePreferences));
-    const positiveValues = new Set(positivePreferences);
-    const avoidedPreferences = Array.from(new Set(groups.avoidedPreferences)).filter(
-      (value) => !positiveValues.has(value),
-    );
-
-    setSession((current) => {
-      const timestamp = new Date().toISOString();
-      const mapPreference = (
-        preferenceValue: string,
-        polarity: -1 | 1,
-        requiredType?: string,
-      ): UserPreference => {
-        const existing = current.preferences.find(
-          (preference) =>
-            preference.preferenceValue === preferenceValue &&
-            (requiredType
-              ? preference.preferenceType === requiredType
-              : preference.preferenceType !== 'genre'),
-        );
-        return existing
-          ? { ...existing, polarity, updatedAt: timestamp }
-          : {
-              id: createLocalDatabaseId(),
-              userId: current.user.id,
-              preferenceType: requiredType ?? 'user_defined',
-              preferenceValue,
-              polarity,
-              weight: 1,
-              confidence: 1,
-              createdAt: timestamp,
-              updatedAt: timestamp,
-            };
-      };
-
-      const preferences = [
-        ...favoriteGenres.map((value) => mapPreference(value, 1, 'genre')),
-        ...positivePreferences.map((value) => mapPreference(value, 1)),
-        ...avoidedPreferences.map((value) => mapPreference(value, -1)),
-      ];
-      return { ...current, preferences };
-    });
-  };
-
-  const addDetectedPreferences = (detectedPreferences: UserPreference[]) => {
-    setSession((current) => {
-      const merged = [...current.preferences];
-      detectedPreferences.forEach((preference) => {
-        const index = merged.findIndex(
-          (item) =>
-            item.preferenceType === preference.preferenceType &&
-            item.preferenceValue === preference.preferenceValue,
-        );
-        if (index >= 0) merged[index] = preference;
-        else merged.push(preference);
-      });
-      return { ...current, preferences: merged };
-    });
-  };
-
-  const updateConversationFromQuery = (query: string) => {
-    setSession((current) => ({
-      ...current,
-      conversations: current.conversations.map((conversation) =>
-        conversation.id === current.currentConversationId
           ? {
               ...conversation,
-              title: conversation.title ?? query.slice(0, 255),
-              updatedAt: new Date().toISOString(),
+              title: conversation.title ?? content.slice(0, 255),
+              updatedAt: message.createdAt,
             }
           : conversation,
       ),
     }));
+    return message;
   };
 
-  const recordInteraction = (
+  const updateUser = async (
+    changes: Partial<Pick<AppUser, 'username' | 'email'>>,
+  ) => {
+    if (!session.user) throw new Error('Brak aktywnego użytkownika.');
+    const user = await updateProfile({
+      username: changes.username ?? session.user.username,
+      email: changes.email ?? session.user.email,
+    });
+    setSession((current) => ({ ...current, user }));
+  };
+
+  const recordInteraction = async (
     contentId: DatabaseId,
     sourceCandidateId: DatabaseId | null,
     interactionType: InteractionType,
     rating?: number,
   ) => {
-    setSession((current) => {
-      if (
-        interactionType === 'rated' &&
-        (rating === undefined || rating < 0 || rating > 10)
-      ) {
-        return current;
-      }
-      const isSingleStateEvent = interactionType === 'watchlisted' || interactionType === 'watched';
-      const alreadyRecorded = current.interactions.some(
-        (interaction) =>
-          interaction.contentId === contentId && interaction.interactionType === interactionType,
-      );
-      if (isSingleStateEvent && alreadyRecorded) return current;
-
-      const interaction: Interaction = {
-        id: createLocalDatabaseId(),
-        userId: current.user.id,
-        contentId,
-        sourceCandidateId,
-        interactionType,
-        rating: interactionType === 'rated' ? (rating ?? null) : null,
-        metadata: {},
-        createdAt: new Date().toISOString(),
-      };
-      return { ...current, interactions: [...current.interactions, interaction] };
-    });
+    if (
+      interactionType === 'rated' &&
+      (rating === undefined || rating < 0 || rating > 10)
+    ) {
+      return null;
+    }
+    const singleState = interactionType === 'watchlisted' || interactionType === 'watched';
+    const existing = session.interactions.find(
+      (interaction) =>
+        interaction.contentId === contentId &&
+        interaction.interactionType === interactionType,
+    );
+    if (singleState && existing) return existing;
+    const interaction = await createInteractionRequest(
+      contentId,
+      sourceCandidateId,
+      interactionType,
+      rating ?? null,
+    );
+    setSession((current) => ({
+      ...current,
+      interactions: current.interactions.some((item) => item.id === interaction.id)
+        ? current.interactions
+        : [...current.interactions, interaction],
+    }));
+    return interaction;
   };
 
-  const removeInteraction = (
+  const removeInteraction = async (
     contentId: DatabaseId,
     interactionType: 'watchlisted' | 'watched',
   ) => {
     const interaction = [...session.interactions]
       .reverse()
       .find(
-        (item) => item.contentId === contentId && item.interactionType === interactionType,
+        (item) =>
+          item.contentId === contentId && item.interactionType === interactionType,
       );
-    if (!interaction) return null;
-
+    if (!interaction) return;
+    await deleteInteractionRequest(interaction.id);
     setSession((current) => ({
       ...current,
       interactions: current.interactions.filter((item) => item.id !== interaction.id),
     }));
-    return interaction;
   };
 
-  const watchlistedContentIds = Array.from(
-    new Set(
-      session.interactions
-        .filter((interaction) => interaction.interactionType === 'watchlisted')
-        .map((interaction) => interaction.contentId),
-    ),
+  const watchlistedContentIds = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          session.interactions
+            .filter((interaction) => interaction.interactionType === 'watchlisted')
+            .map((interaction) => interaction.contentId),
+        ),
+      ),
+    [session.interactions],
   );
-  const watchedContentIds = Array.from(
-    new Set(
-      session.interactions
-        .filter((interaction) => interaction.interactionType === 'watched')
-        .map((interaction) => interaction.contentId),
-    ),
+  const watchedContentIds = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          session.interactions
+            .filter((interaction) => interaction.interactionType === 'watched')
+            .map((interaction) => interaction.contentId),
+        ),
+      ),
+    [session.interactions],
   );
 
   const value: SessionContextValue = {
     ...session,
+    isLoading,
+    isAuthenticated: Boolean(session.user),
     watchlistedContentIds,
     watchedContentIds,
+    login,
+    register,
+    logout,
     createConversation,
     selectConversation,
     renameConversation,
     deleteConversation,
     addMessage,
-    appendMessage,
     updateUser,
-    replacePreferenceGroups,
-    addDetectedPreferences,
-    updateConversationFromQuery,
     recordInteraction,
     removeInteraction,
   };

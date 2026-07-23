@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import { demoUser, initialAgentSteps, initialMessages } from '../data/mockData';
+import { demoUser, initialAgentSteps, initialMessages } from './fixtures/mockData';
 import { AgentStatus } from '../components/AgentStatus';
 import { ChatInterface } from '../components/ChatInterface';
 import { EmptyState } from '../components/EmptyState';

@@ -1,6 +1,7 @@
 import '@testing-library/jest-dom/vitest';
 import { cleanup } from '@testing-library/react';
-import { afterEach, vi } from 'vitest';
+import { afterEach, beforeEach, vi } from 'vitest';
+import { installApiMock } from './apiMock';
 
 function createLocalStorageMock(): Storage {
   const values = new Map<string, string>();
@@ -35,6 +36,10 @@ if (typeof window.localStorage === 'undefined') {
     value: createLocalStorageMock(),
   });
 }
+
+beforeEach(() => {
+  installApiMock();
+});
 
 afterEach(() => {
   cleanup();

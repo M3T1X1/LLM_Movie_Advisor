@@ -4,9 +4,14 @@ from django.contrib.auth import authenticate
 from django.contrib.auth import get_user_model
 from django.contrib.auth import login as django_login
 from django.contrib.auth import logout as django_logout
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError
+from django.db import IntegrityError, transaction
 from django.http import HttpRequest, JsonResponse
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_POST
+
+from .services import sync_business_user
 
 
 def _request_data(request: HttpRequest) -> dict | None:
@@ -18,11 +23,7 @@ def _request_data(request: HttpRequest) -> dict | None:
 
 
 def _user_data(user) -> dict:
-    return {
-        "id": str(user.pk),
-        "email": user.email,
-        "username": user.get_username(),
-    }
+    return sync_business_user(user)
 
 
 @require_GET
@@ -59,6 +60,56 @@ def login(request: HttpRequest) -> JsonResponse:
 
     django_login(request, authenticated_user)
     return JsonResponse({"user": _user_data(authenticated_user)})
+
+
+@require_POST
+def register(request: HttpRequest) -> JsonResponse:
+    data = _request_data(request)
+    if data is None:
+        return JsonResponse({"detail": "Invalid JSON body."}, status=400)
+
+    username = data.get("username")
+    email = data.get("email")
+    password = data.get("password")
+    if not all(isinstance(value, str) for value in (username, email, password)):
+        return JsonResponse(
+            {"detail": "Username, email and password are required."},
+            status=400,
+        )
+
+    normalized_username = username.strip()
+    normalized_email = email.strip().lower()
+    if not normalized_username or not normalized_email or not password:
+        return JsonResponse(
+            {"detail": "Username, email and password are required."},
+            status=400,
+        )
+
+    user_model = get_user_model()
+    if user_model.objects.filter(username__iexact=normalized_username).exists():
+        return JsonResponse({"detail": "Username is already in use."}, status=409)
+    if user_model.objects.filter(email__iexact=normalized_email).exists():
+        return JsonResponse({"detail": "Email is already in use."}, status=409)
+
+    candidate = user_model(username=normalized_username, email=normalized_email)
+    try:
+        validate_password(password, user=candidate)
+        candidate.full_clean(exclude=["password"])
+    except ValidationError as error:
+        return JsonResponse({"detail": " ".join(error.messages)}, status=400)
+
+    try:
+        with transaction.atomic():
+            candidate.set_password(password)
+            candidate.save()
+            user_data = _user_data(candidate)
+            django_login(request, candidate)
+    except IntegrityError:
+        return JsonResponse(
+            {"detail": "Username or email is already in use."},
+            status=409,
+        )
+    return JsonResponse({"user": user_data}, status=201)
 
 
 @require_GET

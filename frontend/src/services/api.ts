@@ -1,25 +1,27 @@
-import {
-  demoAgentExecutions,
-  demoCatalogContent,
-  demoUpcomingReleases,
-  demoRecommendationTrends,
-  demoCandidates,
-  demoPreferences,
-  demoRequest,
-  demoRun,
-} from '../data/mockData';
 import type {
-  DatabaseId,
+  AppBootstrap,
+  AppUser,
   ChatMessage,
   Content,
+  Conversation,
+  DatabaseId,
+  Interaction,
   InteractionType,
-  RecommendationResponse,
   RecommendationTrends,
   TrendPeriod,
 } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api';
-const USE_MOCK_API = import.meta.env.VITE_USE_MOCK_API !== 'false';
+
+export class ApiError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
 
 function getCookie(name: string) {
   const cookie = document.cookie
@@ -28,98 +30,137 @@ function getCookie(name: string) {
   return cookie ? decodeURIComponent(cookie.split('=')[1]) : '';
 }
 
-function wait(duration: number) {
-  return new Promise((resolve) => window.setTimeout(resolve, duration));
+async function parseResponse<T>(response: Response): Promise<T> {
+  if (!response.ok) {
+    let message = `Backend zwrócił kod ${response.status}.`;
+    try {
+      const payload = (await response.json()) as { detail?: string };
+      if (payload.detail) message = payload.detail;
+    } catch {
+      // The status code still provides a useful fallback error.
+    }
+    throw new ApiError(message, response.status);
+  }
+  if (response.status === 204) return undefined as T;
+  return response.json() as Promise<T>;
+}
+
+async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const method = init.method?.toUpperCase() ?? 'GET';
+  const headers = new Headers(init.headers);
+  headers.set('Accept', 'application/json');
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) {
+    headers.set('X-CSRFToken', getCookie('csrftoken'));
+  }
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...init,
+    headers,
+    credentials: 'include',
+  });
+  return parseResponse<T>(response);
+}
+
+function jsonRequest(method: string, body: unknown): RequestInit {
+  return {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  };
+}
+
+export async function ensureCsrf(): Promise<void> {
+  await request<{ detail: string }>('/auth/csrf/');
+}
+
+export async function getAuthSession(): Promise<{
+  authenticated: boolean;
+  user: AppUser | null;
+}> {
+  return request('/auth/session/');
+}
+
+export async function login(email: string, password: string): Promise<AppUser> {
+  await ensureCsrf();
+  const response = await request<{ user: AppUser }>(
+    '/auth/login/',
+    jsonRequest('POST', { email, password }),
+  );
+  return response.user;
+}
+
+export async function register(
+  username: string,
+  email: string,
+  password: string,
+): Promise<AppUser> {
+  await ensureCsrf();
+  const response = await request<{ user: AppUser }>(
+    '/auth/register/',
+    jsonRequest('POST', { username, email, password }),
+  );
+  return response.user;
+}
+
+export async function logout(): Promise<void> {
+  await ensureCsrf();
+  await request('/auth/logout/', { method: 'POST' });
+}
+
+export async function getBootstrap(): Promise<AppBootstrap> {
+  return request('/bootstrap/');
 }
 
 export async function getCatalogContent(): Promise<Content[]> {
-  if (USE_MOCK_API) return demoCatalogContent;
-
-  const response = await fetch(`${API_BASE_URL}/contents/`, {
-    credentials: 'include',
-    headers: { Accept: 'application/json' },
-  });
-  if (!response.ok) throw new Error(`Nie udało się pobrać katalogu (${response.status}).`);
-  return response.json() as Promise<Content[]>;
+  return request('/contents/');
 }
 
 export async function getUpcomingReleases(): Promise<Content[]> {
-  if (USE_MOCK_API) return demoUpcomingReleases;
-
   const params = new URLSearchParams({ language: 'pl-PL', region: 'PL' });
-  const response = await fetch(`${API_BASE_URL}/contents/upcoming/?${params}`, {
-    credentials: 'include',
-    headers: { Accept: 'application/json' },
-  });
-  if (!response.ok) throw new Error(`Nie udało się pobrać przyszłych premier (${response.status}).`);
-  return response.json() as Promise<Content[]>;
+  return request(`/contents/upcoming/?${params}`);
 }
 
 export async function getRecommendationTrends(
   period: TrendPeriod,
 ): Promise<RecommendationTrends> {
-  if (USE_MOCK_API) return demoRecommendationTrends[period];
-
-  const params = new URLSearchParams({ period });
-  const response = await fetch(`${API_BASE_URL}/recommendation-trends/?${params}`, {
-    credentials: 'include',
-    headers: { Accept: 'application/json' },
-  });
-  if (!response.ok) throw new Error(`Nie udało się pobrać trendów (${response.status}).`);
-  return response.json() as Promise<RecommendationTrends>;
+  return request(`/recommendation-trends/?${new URLSearchParams({ period })}`);
 }
 
-export async function requestRecommendations(
+export async function updateProfile(
+  changes: Pick<AppUser, 'username' | 'email'>,
+): Promise<AppUser> {
+  const response = await request<{ user: AppUser }>(
+    '/profile/',
+    jsonRequest('PATCH', changes),
+  );
+  return response.user;
+}
+
+export async function createConversation(): Promise<Conversation> {
+  return request('/conversations/', jsonRequest('POST', {}));
+}
+
+export async function renameConversation(
   conversationId: DatabaseId,
-  userMessage: ChatMessage,
-): Promise<RecommendationResponse> {
-  if (USE_MOCK_API) {
-    await wait(900);
-    return {
-      conversationId,
-      request: {
-        ...demoRequest,
-        conversationId,
-        triggerMessageId: userMessage.id,
-      },
-      run: demoRun,
-      assistantMessage: {
-        id: String(Date.now()),
-        conversationId,
-        role: 'assistant',
-        content:
-          'Znalazłem trzy historie o psychologicznym napięciu, nieoczywistych zwrotach i finałach, które zostają w głowie. Najmocniejsze dopasowanie to „Zaginiona dziewczyna”.',
-        sequenceNo: userMessage.sequenceNo + 1,
-        createdAt: new Date().toISOString(),
-      },
-      candidates: demoCandidates,
-      detectedPreferences: demoPreferences.filter((preference) =>
-        ['mood', 'narrative'].includes(preference.preferenceType),
-      ),
-      agentExecutions: demoAgentExecutions,
-    };
-  }
+  title: string,
+): Promise<Conversation> {
+  return request(
+    `/conversations/${conversationId}/`,
+    jsonRequest('PATCH', { title }),
+  );
+}
 
-  const response = await fetch(`${API_BASE_URL}/recommendation-requests/`, {
-    method: 'POST',
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-CSRFToken': getCookie('csrftoken'),
-    },
-    body: JSON.stringify({
-      conversation_id: conversationId,
-      message: {
-        id: userMessage.id,
-        role: userMessage.role,
-        content: userMessage.content,
-        sequence_no: userMessage.sequenceNo,
-      },
-    }),
-  });
+export async function deleteConversation(conversationId: DatabaseId): Promise<void> {
+  await request(`/conversations/${conversationId}/`, { method: 'DELETE' });
+}
 
-  if (!response.ok) throw new Error(`Backend zwrócił kod ${response.status}.`);
-  return response.json() as Promise<RecommendationResponse>;
+export async function createMessage(
+  conversationId: DatabaseId,
+  content: string,
+): Promise<ChatMessage> {
+  return request(
+    `/conversations/${conversationId}/messages/`,
+    jsonRequest('POST', { content }),
+  );
 }
 
 export async function createInteraction(
@@ -127,42 +168,22 @@ export async function createInteraction(
   sourceCandidateId: DatabaseId | null,
   interactionType: InteractionType,
   rating: number | null = null,
-) {
+): Promise<Interaction> {
   if (interactionType === 'rated' && (rating === null || rating < 0 || rating > 10)) {
     throw new Error('Interakcja rated wymaga oceny od 0 do 10.');
   }
-  if (interactionType !== 'rated') rating = null;
-  if (USE_MOCK_API) return;
-
-  const response = await fetch(`${API_BASE_URL}/interactions/`, {
-    method: 'POST',
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-CSRFToken': getCookie('csrftoken'),
-    },
-    body: JSON.stringify({
+  return request(
+    '/interactions/',
+    jsonRequest('POST', {
       content_id: contentId,
       source_candidate_id: sourceCandidateId,
       interaction_type: interactionType,
-      rating,
+      rating: interactionType === 'rated' ? rating : null,
       metadata: {},
     }),
-  });
-
-  if (!response.ok) throw new Error(`Nie udało się zapisać interakcji (${response.status}).`);
+  );
 }
 
-export async function deleteInteraction(interactionId: DatabaseId) {
-  if (USE_MOCK_API) return;
-
-  const response = await fetch(`${API_BASE_URL}/interactions/${interactionId}/`, {
-    method: 'DELETE',
-    credentials: 'include',
-    headers: {
-      'X-CSRFToken': getCookie('csrftoken'),
-    },
-  });
-
-  if (!response.ok) throw new Error(`Nie udało się usunąć interakcji (${response.status}).`);
+export async function deleteInteraction(interactionId: DatabaseId): Promise<void> {
+  await request(`/interactions/${interactionId}/`, { method: 'DELETE' });
 }
