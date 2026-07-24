@@ -7,6 +7,7 @@ from django.contrib.staticfiles.management.commands.runserver import (
     Command as DjangoRunserverCommand,
 )
 from django.core.management.base import CommandError
+from django.db import DatabaseError
 from django.test import SimpleTestCase, override_settings
 
 from backend.accounts.management.commands.runserver import Command
@@ -141,6 +142,34 @@ class RunserverBootstrapTests(SimpleTestCase):
         mocked_exists.return_value = True
 
         self.assertFalse(self.command._database_needs_seed())
+
+    @patch("backend.accounts.management.commands.runserver.connection")
+    def test_database_introspection_error_is_propagated(self, mocked_connection):
+        mocked_connection.introspection.table_names.side_effect = DatabaseError(
+            "database unavailable"
+        )
+
+        with self.assertRaisesMessage(DatabaseError, "database unavailable"):
+            self.command._database_needs_seed()
+
+    @patch(
+        "backend.accounts.management.commands.runserver.call_command",
+        side_effect=CommandError("seeder failed"),
+    )
+    @patch.object(Command, "_database_needs_seed", return_value=True)
+    @patch.object(Command, "_run_tests")
+    def test_seeder_failure_stops_bootstrap(
+        self,
+        mocked_tests,
+        mocked_needs_seed,
+        mocked_call_command,
+    ):
+        with self.assertRaisesMessage(CommandError, "seeder failed"):
+            self.command._bootstrap()
+
+        mocked_tests.assert_called_once_with()
+        mocked_needs_seed.assert_called_once_with()
+        mocked_call_command.assert_called_once()
 
     @override_settings(DEBUG=False)
     def test_bootstrap_is_blocked_outside_debug_mode(self):

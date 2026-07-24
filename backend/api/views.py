@@ -603,7 +603,10 @@ def interactions(request: HttpRequest) -> JsonResponse:
     if data is None:
         return JsonResponse({"detail": "Invalid JSON body."}, status=400)
     try:
-        content_id = int(data.get("content_id"))
+        raw_content_id = data.get("content_id")
+        if isinstance(raw_content_id, bool):
+            raise ValueError
+        content_id = int(raw_content_id)
     except (TypeError, ValueError):
         return JsonResponse({"detail": "Valid content_id is required."}, status=400)
     source_candidate_id = data.get("source_candidate_id")

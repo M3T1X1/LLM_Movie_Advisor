@@ -193,6 +193,9 @@ AGENTS = (
     ("explanation", "Przygotowanie uzasadnień rekomendacji"),
 )
 
+ADMIN_USERNAME = "admin"
+ADMIN_EMAIL = "admin@example.com"
+
 
 @dataclass(frozen=True)
 class TmdbCatalogItem:
@@ -487,6 +490,7 @@ class Command(BaseCommand):
         catalog = client.fetch_catalog(movies=movies, tv_shows=tv_shows)
 
         with transaction.atomic():
+            self._seed_admin(password)
             business_user_ids = self._seed_users(password, user_count)
             content_ids = self._seed_catalog(genres, catalog)
             conversation_ids, candidates = self._seed_recommendation_history(
@@ -508,10 +512,28 @@ class Command(BaseCommand):
         self.stdout.write(
             f"Demo users: {', '.join(user['email'] for user in DEMO_USERS[:user_count])}"
         )
+        self.stdout.write(f"Admin account: {ADMIN_EMAIL}")
         self.stdout.write(
             f"Conversations prepared: {len(conversation_ids)}; "
             f"embeddings intentionally skipped."
         )
+
+    def _seed_admin(self, password: str):
+        user_model = get_user_model()
+        admin_user = user_model.objects.filter(username=ADMIN_USERNAME).first()
+        if admin_user is None:
+            admin_user = user_model.objects.filter(email=ADMIN_EMAIL).first()
+        if admin_user is None:
+            admin_user = user_model(username=ADMIN_USERNAME)
+        admin_user.username = ADMIN_USERNAME
+        admin_user.email = ADMIN_EMAIL
+        admin_user.is_active = True
+        admin_user.is_staff = True
+        admin_user.is_superuser = True
+        admin_user.set_password(password)
+        admin_user.full_clean()
+        admin_user.save()
+        return admin_user
 
     def _check_schema(self):
         table_names = set(connection.introspection.table_names())
