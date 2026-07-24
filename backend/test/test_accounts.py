@@ -77,6 +77,29 @@ class AuthenticationRoutesTests(TestCase):
         self.assertEqual(wrong_field_payload.status_code, 400)
         self.assertNotIn("_auth_user_id", self.client.session)
 
+    def test_login_email_lookup_resists_sql_injection(self):
+        payloads = (
+            "tester@example.com' OR '1'='1",
+            "' UNION SELECT password FROM auth_user --@example.com",
+            "admin@example.com'; DROP TABLE auth_user; --",
+        )
+
+        for payload in payloads:
+            with self.subTest(payload=payload):
+                response = self.client.post(
+                    reverse("accounts:login"),
+                    data=json.dumps(
+                        {"email": payload, "password": self.password}
+                    ),
+                    content_type="application/json",
+                )
+                self.assertIn(response.status_code, (400, 401))
+                self.assertNotIn("_auth_user_id", self.client.session)
+
+        self.assertTrue(
+            get_user_model().objects.filter(pk=self.user.pk).exists()
+        )
+
     def test_login_requires_json_object_with_credentials(self):
         invalid_json = self.client.post(
             reverse("accounts:login"),

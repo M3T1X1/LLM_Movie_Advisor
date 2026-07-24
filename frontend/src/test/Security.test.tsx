@@ -2,12 +2,15 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { ChatInterface } from '../components/ChatInterface';
+import { CatalogView } from '../components/CatalogView';
+import { ConversationManager } from '../components/ConversationManager';
 import { LoginView } from '../components/LoginView';
 import { MovieDetailModal } from '../components/MovieDetailModal';
 import { ProfileView } from '../components/ProfileView';
 import { RecommendationCard } from '../components/RecommendationCard';
 import {
   demoCandidates,
+  demoCatalogContent,
   demoConversations,
   demoPreferences,
   demoProfile,
@@ -136,5 +139,68 @@ describe('XSS protections', () => {
     expect(screen.getByRole('img', { name: /Plakat:/ }).getAttribute('src')).toMatch(
       /^https:\/\/image\.tmdb\.org\/t\/p\/w780/,
     );
+  });
+
+  it('escapes stored XSS in conversation titles and accessible labels', () => {
+    const { container } = render(
+      <ConversationManager
+        conversations={[{
+          ...demoConversations[0],
+          title: xssPayload,
+        }]}
+        currentConversationId={demoConversations[0].id}
+        onCreate={vi.fn()}
+        onSelect={vi.fn()}
+        onRename={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+
+    expectPayloadToRemainText(container);
+  });
+
+  it('escapes catalog titles, genres and backend error messages', () => {
+    const maliciousContent = {
+      ...demoCatalogContent[0],
+      title: xssPayload,
+      posterPath: null,
+    };
+    const { container } = render(
+      <CatalogView
+        content={[maliciousContent]}
+        genres={[xssPayload]}
+        pagination={{
+          page: 1,
+          pageSize: 20,
+          totalItems: 1,
+          totalPages: 1,
+          hasPrevious: false,
+          hasNext: false,
+        }}
+        query={{
+          page: 1,
+          pageSize: 20,
+          search: '',
+          mediaType: 'all',
+          genre: 'all',
+          minimumRating: 0,
+          yearFrom: null,
+          sortBy: 'popularity',
+        }}
+        isLoading={false}
+        error={xssPayload}
+        onQueryChange={vi.fn()}
+        watchlistedContentIds={[]}
+        watchedContentIds={[]}
+        onOpen={vi.fn()}
+        onWatchlist={vi.fn()}
+        onMarkWatched={vi.fn()}
+      />,
+    );
+
+    expect(container.textContent).toContain(xssPayload);
+    expect(container.querySelectorAll('script')).toHaveLength(0);
+    expect(container.querySelector('[onerror]')).toBeNull();
+    expect((window as typeof window & { __xssTriggered?: boolean }).__xssTriggered).toBeUndefined();
   });
 });
