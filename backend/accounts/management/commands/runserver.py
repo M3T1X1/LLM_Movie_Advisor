@@ -68,7 +68,15 @@ class Command(DjangoRunserverCommand):
         if "content" not in table_names:
             raise CommandError(
                 "The business database schema is missing. Apply "
-                "`przydatne/postgresql_recommendation_platform_schema.sql` first."
+                "`backend/postgresql_recommendation_platform_schema.sql` first."
+            )
+
+        missing_django_tables = {"auth_user", "django_migrations"} - table_names
+        if missing_django_tables:
+            raise CommandError(
+                "The Django database schema is missing. Run "
+                "`python manage.py migrate` before starting the server. "
+                f"Missing tables: {', '.join(sorted(missing_django_tables))}."
             )
 
         return not Content.objects.exists()

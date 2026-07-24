@@ -99,15 +99,32 @@ class RunserverBootstrapTests(SimpleTestCase):
 
     @patch("backend.accounts.management.commands.runserver.connection")
     def test_missing_business_schema_stops_startup(self, mocked_connection):
-        mocked_connection.introspection.table_names.return_value = ["auth_user"]
+        mocked_connection.introspection.table_names.return_value = [
+            "auth_user",
+            "django_migrations",
+        ]
 
         with self.assertRaisesMessage(CommandError, "business database schema is missing"):
+            self.command._database_needs_seed()
+
+    @patch("backend.accounts.management.commands.runserver.connection")
+    def test_missing_django_schema_stops_startup(self, mocked_connection):
+        mocked_connection.introspection.table_names.return_value = ["content"]
+
+        with self.assertRaisesMessage(
+            CommandError,
+            "python manage.py migrate",
+        ):
             self.command._database_needs_seed()
 
     @patch("backend.accounts.management.commands.runserver.Content.objects.exists")
     @patch("backend.accounts.management.commands.runserver.connection")
     def test_empty_content_table_requires_seed(self, mocked_connection, mocked_exists):
-        mocked_connection.introspection.table_names.return_value = ["content"]
+        mocked_connection.introspection.table_names.return_value = [
+            "auth_user",
+            "content",
+            "django_migrations",
+        ]
         mocked_exists.return_value = False
 
         self.assertTrue(self.command._database_needs_seed())
@@ -116,7 +133,11 @@ class RunserverBootstrapTests(SimpleTestCase):
     @patch("backend.accounts.management.commands.runserver.Content.objects.exists")
     @patch("backend.accounts.management.commands.runserver.connection")
     def test_non_empty_content_table_skips_seed(self, mocked_connection, mocked_exists):
-        mocked_connection.introspection.table_names.return_value = ["content"]
+        mocked_connection.introspection.table_names.return_value = [
+            "auth_user",
+            "content",
+            "django_migrations",
+        ]
         mocked_exists.return_value = True
 
         self.assertFalse(self.command._database_needs_seed())
