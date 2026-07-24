@@ -327,3 +327,42 @@ class AuthenticationRoutesTests(TestCase):
         self.assertFalse(
             get_user_model().objects.filter(username="weak-user").exists()
         )
+
+    def test_registration_rejects_invalid_json_shapes_and_field_types(self):
+        invalid_payloads = (
+            "{",
+            json.dumps([]),
+            json.dumps(None),
+            json.dumps(
+                {
+                    "username": 123,
+                    "email": "new@example.com",
+                    "password": "StrongRegistrationPassword123!",
+                }
+            ),
+            json.dumps(
+                {
+                    "username": "new-user",
+                    "email": None,
+                    "password": "StrongRegistrationPassword123!",
+                }
+            ),
+            json.dumps(
+                {
+                    "username": "   ",
+                    "email": "new@example.com",
+                    "password": "StrongRegistrationPassword123!",
+                }
+            ),
+        )
+
+        for payload in invalid_payloads:
+            with self.subTest(payload=payload):
+                response = self.client.post(
+                    reverse("accounts:register"),
+                    data=payload,
+                    content_type="application/json",
+                )
+                self.assertEqual(response.status_code, 400)
+                self.assertIn("detail", response.json())
+        self.assertEqual(get_user_model().objects.count(), 1)

@@ -626,7 +626,11 @@ def interactions(request: HttpRequest) -> JsonResponse:
         return JsonResponse({"detail": "Invalid interaction_type."}, status=400)
     rating = data.get("rating")
     if interaction_type == "rated":
-        if not isinstance(rating, (int, float)) or not 0 <= rating <= 10:
+        if (
+            isinstance(rating, bool)
+            or not isinstance(rating, (int, float))
+            or not 0 <= rating <= 10
+        ):
             return JsonResponse(
                 {"detail": "Rated interaction requires rating from 0 to 10."},
                 status=400,
@@ -635,10 +639,17 @@ def interactions(request: HttpRequest) -> JsonResponse:
         rating = None
     if not Content.objects.filter(pk=content_id).exists():
         return JsonResponse({"detail": "Content not found."}, status=404)
-    if source_candidate_id is not None and not RunCandidate.objects.filter(
-        pk=source_candidate_id
-    ).exists():
-        return JsonResponse({"detail": "Source candidate not found."}, status=404)
+    if source_candidate_id is not None:
+        source_candidate_exists = RunCandidate.objects.filter(
+            pk=source_candidate_id,
+            content_id=content_id,
+            run__request__conversation__user_id=user_id,
+        ).exists()
+        if not source_candidate_exists:
+            return JsonResponse(
+                {"detail": "Source candidate not found."},
+                status=404,
+            )
     if interaction_type in {
         InteractionType.WATCHLISTED,
         InteractionType.WATCHED,
