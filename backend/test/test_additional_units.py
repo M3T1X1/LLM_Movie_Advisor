@@ -270,7 +270,7 @@ class AdminConfigurationTests(SimpleTestCase):
         self.assertNotIn("password", auth_admin.list_display)
 
     @patch("backend.api.admin.get_user_model")
-    def test_admin_login_form_translates_email_to_username(
+    def test_admin_login_form_accepts_only_email_and_translates_it_internally(
         self,
         mocked_get_user_model,
     ):
@@ -280,22 +280,26 @@ class AdminConfigurationTests(SimpleTestCase):
         form = AdminEmailAuthenticationForm(
             data={"username": "ADMIN@example.com", "password": "secret"}
         )
-        form.cleaned_data = {
-            "username": "ADMIN@example.com",
-            "password": "secret",
-        }
 
         with patch.object(
             AuthenticationForm,
             "clean",
-            return_value=form.cleaned_data,
+            side_effect=lambda: form.cleaned_data,
         ):
-            result = form.clean()
+            self.assertTrue(form.is_valid())
 
-        self.assertEqual(result["username"], "admin")
+        self.assertEqual(form.cleaned_data["username"], "admin")
+        self.assertEqual(form.fields["username"].label, "Adres e-mail")
+        self.assertEqual(form.fields["username"].widget.input_type, "email")
         mocked_get_user_model.return_value.objects.filter.assert_called_once_with(
             email__iexact="ADMIN@example.com"
         )
+
+        username_form = AdminEmailAuthenticationForm(
+            data={"username": "admin", "password": "secret"}
+        )
+        self.assertFalse(username_form.is_valid())
+        self.assertIn("username", username_form.errors)
 
     def test_admin_blocks_manual_creation_and_limits_deletion(self):
         model_admins = (

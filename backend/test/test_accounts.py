@@ -51,6 +51,32 @@ class AuthenticationRoutesTests(TestCase):
         self.assertEqual(response.status_code, 401)
         self.assertNotIn("_auth_user_id", self.client.session)
 
+    def test_login_rejects_username_and_requires_email_identifier(self):
+        username_payload = self.client.post(
+            reverse("accounts:login"),
+            data=json.dumps(
+                {
+                    "email": self.user.username,
+                    "password": self.password,
+                }
+            ),
+            content_type="application/json",
+        )
+        wrong_field_payload = self.client.post(
+            reverse("accounts:login"),
+            data=json.dumps(
+                {
+                    "username": self.user.username,
+                    "password": self.password,
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(username_payload.status_code, 400)
+        self.assertEqual(wrong_field_payload.status_code, 400)
+        self.assertNotIn("_auth_user_id", self.client.session)
+
     def test_login_requires_json_object_with_credentials(self):
         invalid_json = self.client.post(
             reverse("accounts:login"),

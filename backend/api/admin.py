@@ -2,6 +2,8 @@ from django.contrib import admin
 from django.contrib.auth import get_user_model
 from django.contrib.auth.admin import UserAdmin
 from django.contrib.auth.forms import AuthenticationForm
+from django import forms
+from django.core.exceptions import ValidationError
 from django.db import models, transaction
 from django.db.models import Q
 
@@ -29,22 +31,35 @@ admin.site.index_title = "Baza danych platformy"
 
 
 class AdminEmailAuthenticationForm(AuthenticationForm):
-    """Allow Django Admin login with either username or e-mail."""
+    """Require an e-mail address while using Django's authentication backend."""
 
     def __init__(self, request=None, *args, **kwargs):
         super().__init__(request=request, *args, **kwargs)
-        username_field = self.fields.get("username")
-        if username_field is not None:
-            username_field.label = "Nazwa użytkownika lub e-mail"
+        self.fields["username"] = forms.EmailField(
+            label="Adres e-mail",
+            max_length=254,
+            widget=forms.EmailInput(
+                attrs={
+                    "autofocus": True,
+                    "autocomplete": "email",
+                    "placeholder": "admin@example.com",
+                }
+            ),
+        )
 
     def clean(self):
-        identifier = self.cleaned_data.get("username")
-        if isinstance(identifier, str) and "@" in identifier:
+        email = self.cleaned_data.get("username")
+        if isinstance(email, str):
             user = get_user_model().objects.filter(
-                email__iexact=identifier.strip()
+                email__iexact=email.strip()
             ).first()
-            if user is not None:
-                self.cleaned_data["username"] = user.get_username()
+            if user is None:
+                raise ValidationError(
+                    self.error_messages["invalid_login"],
+                    code="invalid_login",
+                    params={"username": "adres e-mail"},
+                )
+            self.cleaned_data["username"] = user.get_username()
         return super().clean()
 
 

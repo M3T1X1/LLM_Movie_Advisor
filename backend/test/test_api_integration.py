@@ -1899,6 +1899,29 @@ class ApplicationApiIntegrationTests(TransactionTestCase):
         self.client.force_login(self.user)
 
         denied_page = self.client.get(reverse("admin:index"), follow=True)
+        username_login = self.client.post(
+            reverse("admin:login"),
+            {
+                "username": "admin",
+                "password": self.password,
+                "next": reverse("admin:index"),
+            },
+        )
+        self.assertContains(
+            denied_page,
+            "Adres e-mail",
+        )
+        self.assertEqual(username_login.status_code, 200)
+        self.assertFormError(
+            username_login.context["form"],
+            "username",
+            "Wpisz poprawny adres e-mail.",
+        )
+        self.assertEqual(
+            int(self.client.session["_auth_user_id"]),
+            self.user.pk,
+        )
+
         login_response = self.client.post(
             reverse("admin:login"),
             {
@@ -1909,10 +1932,6 @@ class ApplicationApiIntegrationTests(TransactionTestCase):
             follow=True,
         )
 
-        self.assertContains(
-            denied_page,
-            "Nazwa użytkownika lub e-mail",
-        )
         self.assertEqual(login_response.status_code, 200)
         self.assertEqual(
             int(self.client.session["_auth_user_id"]),

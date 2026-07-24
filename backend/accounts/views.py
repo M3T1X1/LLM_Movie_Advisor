@@ -6,6 +6,7 @@ from django.contrib.auth import login as django_login
 from django.contrib.auth import logout as django_logout
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
+from django.core.validators import validate_email
 from django.db import IntegrityError, transaction
 from django.http import HttpRequest, JsonResponse
 from django.views.decorators.csrf import ensure_csrf_cookie
@@ -46,6 +47,13 @@ def login(request: HttpRequest) -> JsonResponse:
     normalized_email = email.strip().lower()
     if not normalized_email or not password:
         return JsonResponse({"detail": "Email and password are required."}, status=400)
+    try:
+        validate_email(normalized_email)
+    except ValidationError:
+        return JsonResponse(
+            {"detail": "A valid email address is required."},
+            status=400,
+        )
 
     user_model = get_user_model()
     user = user_model.objects.filter(email__iexact=normalized_email).first()
