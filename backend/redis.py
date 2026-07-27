@@ -1,9 +1,12 @@
 from django.core.cache import cache
 from redis import Redis
+from redis.exceptions import RedisError
 from django.conf import settings
 import hashlib
 import json
+import logging
 
+logger = logging.getLogger(__name__)
 
 redis_client = Redis.from_url(
     settings.REDIS_URL,
@@ -37,11 +40,18 @@ def get_cached_tmdb(client,
                     ) -> dict:
     key = tmdb_cache_key(endpoint, **params)
     if not force_refresh:
-        cached_response = cache.get(key)
-        if cached_response is not None:
-            return cached_response
+        try:
+            cached_response = cache.get(key)
+        except RedisError as error:
+            logger.warning("Redis cache read failed! %s", error)
+        else:
+            if cached_response is not None:
+                return cached_response
 
     response = client.get(endpoint, **params)
-    cache.set(key, response, timeout)
+    try:
+        cache.set(key, response, timeout = timeout)
+    except RedisError as error:
+        logger.warning("Redis cache write failed! %s", error)
 
     return response
