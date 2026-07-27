@@ -1,11 +1,11 @@
 import json
 
 from django.contrib.auth import get_user_model
-from django.contrib.sessions.backends.cached_db import SessionStore
 from django.core.cache import cache
 from django.test import Client
 from django.urls import reverse
 
+from backend.sessions import SessionStore
 from backend.test.integration.account_base import AccountApiTestCase
 
 
