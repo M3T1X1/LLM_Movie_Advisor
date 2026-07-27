@@ -111,14 +111,14 @@ DATABASES = {
 
 REDIS_URL = os.environ.get(
     "REDIS_URL",
-    "rediss://127.0.0.1:6379/1"
+    "redis://127.0.0.1:6379/1"
 )
 
 CACHES = {
     "default": {
         "BACKEND": "django.core.cache.backends.redis.RedisCache",
         "LOCATION": REDIS_URL,
-        "TIMEOUT" : 600, # 10 minutes
+        "TIMEOUT" : 60*10, # 10 minutes
         "OPTIONS" : {
             "socket_connect_timeout" : 2,
             "socket_timeout" : 2,
