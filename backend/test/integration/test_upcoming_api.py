@@ -11,11 +11,14 @@ from backend.test.integration.api_base import ApiIntegrationTestCase
 
 class UpcomingApiTests(ApiIntegrationTestCase):
     @patch("backend.api.views.sync_upcoming_from_tmdb")
-    def test_upcoming_uses_fresh_cache_without_contacting_tmdb(self, mocked_sync):
+    def test_upcoming_uses_data_fresher_than_one_hour_without_sync(
+        self,
+        mocked_sync,
+    ):
         content_id = self.insert_content(title="Świeża premiera")
         Content.objects.filter(pk=content_id).update(
             release_date=date.today() + timedelta(days=7),
-            tmdb_refreshed_at=timezone.now(),
+            tmdb_refreshed_at=timezone.now() - timedelta(minutes=59),
         )
 
         response = self.client.get(reverse("api:upcoming-contents"))
@@ -28,11 +31,16 @@ class UpcomingApiTests(ApiIntegrationTestCase):
         mocked_sync.assert_not_called()
 
     @patch("backend.api.views.sync_upcoming_from_tmdb")
-    def test_upcoming_syncs_stale_cache_and_refresh_forces_sync(self, mocked_sync):
+    def test_upcoming_syncs_data_older_than_one_hour_and_refresh_forces_sync(
+        self,
+        mocked_sync,
+    ):
         content_id = self.insert_content(title="Nieaktualna premiera")
         Content.objects.filter(pk=content_id).update(
             release_date=date.today() + timedelta(days=7),
-            tmdb_refreshed_at=timezone.now() - timedelta(days=2),
+            tmdb_refreshed_at=(
+                timezone.now() - timedelta(hours=1, minutes=1)
+            ),
         )
 
         stale_response = self.client.get(reverse("api:upcoming-contents"))

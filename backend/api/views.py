@@ -4,7 +4,7 @@ import os
 from datetime import date, timedelta
 from functools import wraps
 from math import ceil
-from backend.redis import get_cached_tmdb, sync_from_tmdb
+
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.core.management.base import CommandError
@@ -13,6 +13,8 @@ from django.db.models import Count, F, Max, Prefetch, Q
 from django.http import HttpRequest, JsonResponse
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
+from redis.exceptions import RedisError
+
 from backend.accounts.management.commands.seed_demo_data import (
     Command as SeedDemoCommand,
 )
@@ -33,12 +35,14 @@ from backend.api.models import (
     UserPreference,
     UserProfile,
 )
+from backend.redis import get_cached_tmdb, redis_client, sync_from_tmdb
 
 
 logger = logging.getLogger(__name__)
 MAX_CHAT_MESSAGE_LENGTH = 800
 CATALOG_DEFAULT_PAGE_SIZE = 20
 CATALOG_MAX_PAGE_SIZE = 50
+UPCOMING_CACHE_TTL_SECONDS = 60 * 60
 CATALOG_SORTS = {
     "popularity": (F("popularity").desc(nulls_last=True), "id"),
     "rating": (F("vote_average").desc(nulls_last=True), "id"),
@@ -155,12 +159,46 @@ def serialize_interaction(item: Interaction) -> dict:
 
 @require_http_methods(["GET"])
 def health(request: HttpRequest) -> JsonResponse:
+    services = {
+        "database": "ok",
+        "redis": "ok",
+    }
+
     try:
         connection.ensure_connection()
     except DatabaseError:
         logger.exception("Database health check failed.")
-        return JsonResponse({"status": "unavailable"}, status=503)
-    return JsonResponse({"status": "ok"})
+        services["database"] = "unavailable"
+
+    try:
+        redis_available = bool(redis_client.ping())
+    except RedisError as error:
+        logger.warning("Redis health check failed: %s", error)
+        redis_available = False
+    if not redis_available:
+        services["redis"] = "unavailable"
+
+    if services["database"] == "unavailable":
+        return JsonResponse(
+            {
+                "status": "unavailable",
+                "services": services,
+            },
+            status=503,
+        )
+    if services["redis"] == "unavailable":
+        return JsonResponse(
+            {
+                "status": "degraded",
+                "services": services,
+            }
+        )
+    return JsonResponse(
+        {
+            "status": "ok",
+            "services": services,
+        }
+    )
 
 
 @require_http_methods(["GET"])
@@ -375,7 +413,7 @@ def sync_upcoming_from_tmdb(*, force_refresh: bool = False) -> bool:
                 language="pl-PL",
                 region="PL",
                 page=page,
-                timeout=60 * 60,
+                timeout=UPCOMING_CACHE_TTL_SECONDS,
                 force_refresh=force_refresh,
             )
             for raw_item in payload.get("results", []):
@@ -397,7 +435,9 @@ def upcoming_contents(request: HttpRequest) -> JsonResponse:
     has_fresh_data = Content.objects.filter(
         media_type="movie",
         release_date__gte=date.today(),
-        tmdb_refreshed_at__gte=timezone.now() - timedelta(hours=12),
+        tmdb_refreshed_at__gte=(
+            timezone.now() - timedelta(seconds=UPCOMING_CACHE_TTL_SECONDS)
+        ),
     ).exists()
     if refresh or not has_fresh_data:
         try:
