@@ -129,6 +129,10 @@ CACHES = {
 REDIS_LOCK_TIMEOUT = int(os.environ.get('REDIS_LOCK_TIMEOUT', 120))
 REDIS_LOCK_BLOCKING_TIMEOUT = int(os.environ.get('REDIS_LOCK_BLOCKING_TIMEOUT', 5))
 
+SESSION_ENGINE = "django.contrib.sessions.backends.cached_db"
+SESSION_CACHE_ALIAS = "default"
+
+
 # Password validation
 # https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators
 

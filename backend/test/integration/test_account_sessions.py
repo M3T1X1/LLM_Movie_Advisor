@@ -1,6 +1,8 @@
 import json
 
 from django.contrib.auth import get_user_model
+from django.contrib.sessions.backends.cached_db import SessionStore
+from django.core.cache import cache
 from django.test import Client
 from django.urls import reverse
 
@@ -27,6 +29,26 @@ class AccountSessionTests(AccountApiTestCase):
                 "user": None,
             },
         )
+
+    def test_session_is_restored_from_database_after_cache_entry_is_deleted(self):
+        self.client.force_login(self.user)
+
+        session_key = self.client.session.session_key
+        session_store = SessionStore(session_key=session_key)
+        cache_key = session_store.cache_key
+
+        self.assertIsNotNone(cache.get(cache_key))
+
+        cache.delete(cache_key)
+
+        self.assertIsNone(cache.get(cache_key))
+
+        response = self.client.get(reverse("accounts:session"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["authenticated"])
+        self.assertEqual(response.json()["user"]["username"], "tester")
+        self.assertIsNotNone(cache.get(cache_key))
 
     def test_logout_removes_session(self):
         self.client.force_login(self.user)

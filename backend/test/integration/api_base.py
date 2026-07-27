@@ -4,7 +4,7 @@ from unittest import SkipTest
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import connection
-from django.test import TransactionTestCase
+from django.test import TransactionTestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
@@ -15,11 +15,13 @@ from backend.api.models import (
     RecommendationRun,
     RunCandidate,
 )
+from backend.test import IN_MEMORY_TEST_CACHES
 
 
 _business_schema_initialized = False
 
 
+@override_settings(CACHES=IN_MEMORY_TEST_CACHES)
 class ApiIntegrationTestCase(TransactionTestCase):
     reset_sequences = True
     password = "StrongIntegrationPassword123!"

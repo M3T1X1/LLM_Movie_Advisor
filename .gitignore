@@ -219,6 +219,4 @@ __marimo__/
 .streamlit/secrets.toml
 .idea/
 
-# Keep production-relevant database and Markdown documentation in Git while
-# leaving large research images and PDFs local.
-przydatne
+przydatne/

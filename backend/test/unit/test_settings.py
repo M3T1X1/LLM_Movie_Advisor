@@ -57,3 +57,11 @@ class EnvironmentSettingsTests(SimpleTestCase):
         self.assertTrue(settings.SECURE_SSL_REDIRECT)
         self.assertGreater(settings.SECURE_HSTS_SECONDS, 0)
 
+    def test_sessions_use_cached_database_backend_with_default_cache(self):
+        from django.conf import settings
+
+        self.assertEqual(
+            settings.SESSION_ENGINE,
+            "django.contrib.sessions.backends.cached_db",
+        )
+        self.assertEqual(settings.SESSION_CACHE_ALIAS, "default")
