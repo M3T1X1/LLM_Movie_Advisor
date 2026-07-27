@@ -28,12 +28,18 @@ def tmdb_cache_key(endpoint: str, **params) -> str:
     return f"apiTMDB:response:{digest}"
 
 
-def get_cached_tmdb(client, endpoint: str, *, timeout: int = 3600, **params) -> dict:
+def get_cached_tmdb(client,
+                    endpoint: str,
+                    *,
+                    timeout: int = 60*60,
+                    force_refresh: bool = False,
+                    **params
+                    ) -> dict:
     key = tmdb_cache_key(endpoint, **params)
-
-    cached_response = cache.get(key)
-    if cached_response is not None:
-        return cached_response
+    if not force_refresh:
+        cached_response = cache.get(key)
+        if cached_response is not None:
+            return cached_response
 
     response = client.get(endpoint, **params)
     cache.set(key, response, timeout)

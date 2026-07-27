@@ -124,6 +124,7 @@ class AccountServiceFallbackTests(SimpleTestCase):
     def test_sync_business_user_falls_back_to_django_identity_without_schema(
         self,
         mocked_tables,
+        force_refresh = True
     ):
         user = MagicMock()
         user.pk = 42
@@ -147,6 +148,13 @@ class AccountServiceFallbackTests(SimpleTestCase):
         mocked_tables.assert_called_once_with()
 
 
+@override_settings(
+    CACHES={
+        "default": {
+            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        }
+    }
+)
 class UpcomingSynchronizationTests(SimpleTestCase):
     @patch("backend.api.views.transaction.atomic")
     @patch("backend.api.views.SeedDemoCommand")
@@ -190,7 +198,7 @@ class UpcomingSynchronizationTests(SimpleTestCase):
         ]
         mocked_atomic.return_value.__enter__.return_value = None
 
-        sync_upcoming_from_tmdb()
+        sync_upcoming_from_tmdb(force_refresh=True)
 
         self.assertEqual(client.get.call_count, 2)
         for page, call in enumerate(client.get.call_args_list, start=1):
@@ -225,7 +233,7 @@ class UpcomingSynchronizationTests(SimpleTestCase):
             {"results": "invalid"},
         ]
 
-        sync_upcoming_from_tmdb()
+        sync_upcoming_from_tmdb(force_refresh=True)
 
         mocked_command_class.return_value._seed_catalog.assert_not_called()
 
