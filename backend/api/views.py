@@ -4,7 +4,7 @@ import os
 from datetime import date, timedelta
 from functools import wraps
 from math import ceil
-from backend.redis import get_cached_tmdb
+from backend.redis import get_cached_tmdb, sync_from_tmdb
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.core.management.base import CommandError
@@ -360,31 +360,34 @@ def contents(request: HttpRequest) -> JsonResponse:
     )
 
 
-def sync_upcoming_from_tmdb(*, force_refresh: bool = False):
-    client = TmdbClient(
-        api_key=os.environ.get("TMDB_API_KEY"),
-        access_token=os.environ.get("TMDB_API_TOKEN"),
-    )
-    genres = client.fetch_genres()
-    items = []
-    for page in (1, 2):
-        payload = get_cached_tmdb(
-            client,
-            "/movie/upcoming",
-            language="pl-PL",
-            region="PL",
-            page=page,
-            timeout=60*60,
-            force_refresh=force_refresh,
+def sync_upcoming_from_tmdb(*, force_refresh: bool = False) -> bool:
+    def synchronize() -> None:
+        client = TmdbClient(
+            api_key=os.environ.get("TMDB_API_KEY"),
+            access_token=os.environ.get("TMDB_API_TOKEN"),
         )
-        for raw_item in payload.get("results", []):
-            item = normalize_tmdb_item(raw_item, "movie")
-            if item is not None:
-                items.append(item)
-    unique_items = list({item.tmdb_id: item for item in items}.values())
-    if unique_items:
-        with transaction.atomic():
-            SeedDemoCommand()._seed_catalog(genres, unique_items)
+        genres = client.fetch_genres()
+        items = []
+        for page in (1, 2):
+            payload = get_cached_tmdb(
+                client,
+                "/movie/upcoming",
+                language="pl-PL",
+                region="PL",
+                page=page,
+                timeout=60 * 60,
+                force_refresh=force_refresh,
+            )
+            for raw_item in payload.get("results", []):
+                item = normalize_tmdb_item(raw_item, "movie")
+                if item is not None:
+                    items.append(item)
+        unique_items = list({item.tmdb_id: item for item in items}.values())
+        if unique_items:
+            with transaction.atomic():
+                SeedDemoCommand()._seed_catalog(genres, unique_items)
+
+    return sync_from_tmdb(synchronize)
 
 
 @require_http_methods(["GET"])

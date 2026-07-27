@@ -126,7 +126,8 @@ CACHES = {
         "KEY_PREFIX" : "LLM_movie_advisor"
     }
 }
-
+REDIS_LOCK_TIMEOUT = int(os.environ.get('REDIS_LOCK_TIMEOUT', 120))
+REDIS_LOCK_BLOCKING_TIMEOUT = int(os.environ.get('REDIS_LOCK_BLOCKING_TIMEOUT', 5))
 
 # Password validation
 # https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators
