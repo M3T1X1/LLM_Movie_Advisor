@@ -1,7 +1,11 @@
-# Python backend dependencies.
-# Frontend dependencies are managed separately by frontend/package-lock.json.
+asgiref==3.12.1
 Django==6.0.7
+dotenv==0.9.9
 gunicorn==26.0.0
+packaging==26.2
 pgvector==0.5.0
-psycopg[binary]==3.3.4
+psycopg==3.3.4
+psycopg-binary==3.3.4
 python-dotenv==1.2.2
+redis==8.0.1
+sqlparse==0.5.5

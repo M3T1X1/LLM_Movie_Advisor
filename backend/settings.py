@@ -109,6 +109,24 @@ DATABASES = {
     }
 }
 
+REDIS_URL = os.environ.get(
+    "REDIS_URL",
+    "rediss://127.0.0.1:6379/1"
+)
+
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": REDIS_URL,
+        "TIMEOUT" : 600, # 10 minutes
+        "OPTIONS" : {
+            "socket_connect_timeout" : 2,
+            "socket_timeout" : 2,
+        },
+        "KEY_PREFIX" : "LLM_movie_advisor"
+    }
+}
+
 
 # Password validation
 # https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators
