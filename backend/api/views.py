@@ -5,6 +5,7 @@ from datetime import date, timedelta
 from functools import wraps
 from math import ceil
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.core.management.base import CommandError
@@ -35,7 +36,13 @@ from backend.api.models import (
     UserPreference,
     UserProfile,
 )
-from backend.redis import get_cached_tmdb, redis_client, sync_from_tmdb
+from backend.redis import (
+    get_cached_catalog_search,
+    get_cached_tmdb,
+    redis_client,
+    set_cached_catalog_search,
+    sync_from_tmdb,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -298,7 +305,7 @@ def contents(request: HttpRequest) -> JsonResponse:
     if sort not in CATALOG_SORTS:
         return JsonResponse({"detail": "Invalid sort option."}, status=400)
 
-    queryset = content_queryset()
+    content_ids = None
     ids_value = request.GET.get("ids", "").strip()
     if ids_value:
         try:
@@ -326,16 +333,9 @@ def contents(request: HttpRequest) -> JsonResponse:
                 },
                 status=400,
             )
-        queryset = queryset.filter(pk__in=list(dict.fromkeys(content_ids)))
-    if query:
-        queryset = queryset.filter(
-            Q(title__icontains=query) | Q(original_title__icontains=query)
-        )
-    if media_type != "all":
-        queryset = queryset.filter(media_type=media_type)
-    if genre:
-        queryset = queryset.filter(genres__name__iexact=genre)
+        content_ids = list(dict.fromkeys(content_ids))
 
+    minimum_rating = None
     minimum_rating_value = request.GET.get("min_rating")
     if minimum_rating_value not in {None, ""}:
         try:
@@ -350,8 +350,8 @@ def contents(request: HttpRequest) -> JsonResponse:
                 {"detail": "min_rating must be between 0 and 10."},
                 status=400,
             )
-        queryset = queryset.filter(vote_average__gte=minimum_rating)
 
+    year_from = None
     year_from_value = request.GET.get("year_from")
     if year_from_value not in {None, ""}:
         try:
@@ -366,6 +366,36 @@ def contents(request: HttpRequest) -> JsonResponse:
                 {"detail": "year_from is outside the supported range."},
                 status=400,
             )
+
+    cache_params = {
+        "page": page,
+        "page_size": page_size,
+        "query": query.casefold(),
+        "media_type": media_type,
+        "genre": genre.casefold(),
+        "sort": sort,
+        "content_ids": sorted(content_ids) if content_ids is not None else None,
+        "minimum_rating": minimum_rating,
+        "year_from": year_from,
+    }
+    cache_key, cached_payload = get_cached_catalog_search(cache_params)
+    if cached_payload is not None:
+        return JsonResponse(cached_payload)
+
+    queryset = content_queryset()
+    if content_ids is not None:
+        queryset = queryset.filter(pk__in=content_ids)
+    if query:
+        queryset = queryset.filter(
+            Q(title__icontains=query) | Q(original_title__icontains=query)
+        )
+    if media_type != "all":
+        queryset = queryset.filter(media_type=media_type)
+    if genre:
+        queryset = queryset.filter(genres__name__iexact=genre)
+    if minimum_rating is not None:
+        queryset = queryset.filter(vote_average__gte=minimum_rating)
+    if year_from is not None:
         queryset = queryset.filter(release_date__gte=date(year_from, 1, 1))
 
     queryset = queryset.distinct()
@@ -382,20 +412,24 @@ def contents(request: HttpRequest) -> JsonResponse:
     items = list(
         queryset.order_by(*CATALOG_SORTS[sort])[start : start + page_size]
     )
-    return JsonResponse(
-        {
-            "items": [serialize_content(item) for item in items],
-            "pagination": {
-                "page": page,
-                "pageSize": page_size,
-                "totalItems": total_items,
-                "totalPages": total_pages,
-                "hasPrevious": page > 1,
-                "hasNext": page < total_pages,
-            },
-            "filters": {"genres": genres},
-        }
+    payload = {
+        "items": [serialize_content(item) for item in items],
+        "pagination": {
+            "page": page,
+            "pageSize": page_size,
+            "totalItems": total_items,
+            "totalPages": total_pages,
+            "hasPrevious": page > 1,
+            "hasNext": page < total_pages,
+        },
+        "filters": {"genres": genres},
+    }
+    set_cached_catalog_search(
+        cache_key,
+        payload,
+        timeout=settings.CATALOG_SEARCH_CACHE_TIMEOUT,
     )
+    return JsonResponse(payload)
 
 
 def sync_upcoming_from_tmdb(*, force_refresh: bool = False) -> bool:

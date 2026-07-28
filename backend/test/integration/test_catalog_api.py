@@ -1,6 +1,7 @@
 from dataclasses import replace
 from datetime import date
 
+from django.core.cache import cache
 from django.db import connection
 from django.urls import reverse
 from django.utils import timezone
@@ -14,6 +15,10 @@ from backend.test.integration.api_base import ApiIntegrationTestCase
 
 
 class CatalogApiTests(ApiIntegrationTestCase):
+    def setUp(self):
+        super().setUp()
+        cache.clear()
+
     def test_catalog_serializes_database_content_and_genres_to_camel_case(self):
         content_id = self.insert_content()
         with connection.cursor() as cursor:
@@ -202,6 +207,72 @@ class CatalogApiTests(ApiIntegrationTestCase):
         self.assertEqual(
             {item["id"] for item in selected_response.json()["items"]},
             {str(content_ids[2]), str(content_ids[20])},
+        )
+
+    def test_catalog_reuses_cached_search_and_separates_query_variants(self):
+        content_id = self.insert_content(title="Thriller z cache")
+        query = {
+            "q": "thriller",
+            "page": 1,
+            "page_size": 20,
+            "sort": "popularity",
+        }
+
+        first_response = self.client.get(reverse("api:contents"), query)
+        Content.objects.filter(pk=content_id).update(title="Tytuł po zmianie")
+        cached_response = self.client.get(reverse("api:contents"), query)
+        different_sort_response = self.client.get(
+            reverse("api:contents"),
+            {**query, "sort": "rating"},
+        )
+
+        self.assertEqual(first_response.status_code, 200)
+        self.assertEqual(
+            first_response.json()["items"][0]["title"],
+            "Thriller z cache",
+        )
+        self.assertEqual(
+            cached_response.json()["items"][0]["title"],
+            "Thriller z cache",
+        )
+        self.assertEqual(
+            different_sort_response.json()["items"][0]["title"],
+            "Tytuł po zmianie",
+        )
+
+    def test_catalog_seed_invalidates_cached_search_results(self):
+        item = TmdbCatalogItem(
+            tmdb_id=9200,
+            media_type="movie",
+            title="Tytuł przed synchronizacją",
+            original_title="Synchronized Movie",
+            overview="Opis",
+            release_date=date(2026, 10, 1),
+            original_language="pl",
+            poster_path="/sync.jpg",
+            vote_average=8.0,
+            popularity=70.0,
+            genre_ids=(18,),
+            metadata={"source": "test"},
+        )
+        command = SeedDemoCommand()
+        command._seed_catalog({18: "Dramat"}, [item])
+        query = {"q": "synchronized movie"}
+
+        cached_response = self.client.get(reverse("api:contents"), query)
+        command._seed_catalog(
+            {18: "Dramat"},
+            [replace(item, title="Tytuł po synchronizacji")],
+        )
+        refreshed_response = self.client.get(reverse("api:contents"), query)
+
+        self.assertEqual(
+            cached_response.json()["items"][0]["title"],
+            "Tytuł przed synchronizacją",
+        )
+        self.assertEqual(
+            refreshed_response.json()["items"][0]["title"],
+            "Tytuł po synchronizacji",
         )
 
     def test_catalog_rejects_invalid_pagination_and_filter_values(self):

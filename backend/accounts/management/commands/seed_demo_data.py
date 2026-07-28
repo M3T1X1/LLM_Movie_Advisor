@@ -37,6 +37,7 @@ from backend.api.models import (
     UserPreference,
     UserProfile,
 )
+from backend.redis import invalidate_catalog_search_cache
 
 
 TMDB_API_URL = "https://api.themoviedb.org/3"
@@ -655,6 +656,7 @@ class Command(BaseCommand):
                 ],
                 ignore_conflicts=True,
             )
+        transaction.on_commit(invalidate_catalog_search_cache)
         return content_ids
 
     def _seed_recommendation_history(
