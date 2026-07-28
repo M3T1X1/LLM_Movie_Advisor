@@ -35,7 +35,7 @@ export function RecommendationCard({
   const matchPercent = getMatchPercent(candidate);
 
   return (
-    <article className="group grid grid-cols-[104px_minmax(0,1fr)] overflow-hidden rounded-xl border border-white/[0.08] bg-[#0d0f15] transition-colors hover:border-white/[0.14] sm:grid-cols-[148px_minmax(0,1fr)]">
+    <article className="group grid grid-cols-[104px_minmax(0,1fr)] overflow-hidden border-b border-white/[0.1] bg-ink-900 transition-colors hover:border-violet-400/50 sm:grid-cols-[148px_minmax(0,1fr)]">
       <button
         type="button"
         onClick={() => onOpen(candidate)}
@@ -63,7 +63,7 @@ export function RecommendationCard({
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <button type="button" onClick={() => onOpen(candidate)} className="text-left">
-              <h3 className="truncate text-base font-semibold tracking-tight text-white transition group-hover:text-violet-200 sm:text-xl">
+              <h3 className="font-display truncate text-base tracking-tight text-white transition group-hover:text-violet-200 sm:text-xl">
                 {content.title}
               </h3>
             </button>

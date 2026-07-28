@@ -29,7 +29,7 @@ export function RegisterView({ onBack, onRegistered }: { onBack: () => void; onR
 
   return (
     <AuthPage title="Utwórz konto" onBack={onBack}>
-      <form onSubmit={submit} className="space-y-4 px-6 py-7 sm:px-8" noValidate>
+      <form onSubmit={submit} className="space-y-4 px-1 py-7" noValidate>
         <AuthField label="Nazwa użytkownika" icon={<UserRound className="h-4 w-4" />}><input type="text" value={username} onChange={(event) => { setUsername(event.target.value); setError(null); }} autoComplete="username" autoFocus maxLength={150} placeholder="Wybierz nazwę użytkownika" className={inputClassName} /></AuthField>
         <AuthField label="Adres e-mail" icon={<Mail className="h-4 w-4" />}><input type="email" value={email} onChange={(event) => { setEmail(event.target.value); setError(null); }} autoComplete="email" maxLength={254} placeholder="Wprowadź e-mail" className={inputClassName} /></AuthField>
         <PasswordField label="Hasło" value={password} visible={showPassword} error={error} autoComplete="new-password" onChange={(value) => { setPassword(value); setError(null); }} onToggle={() => setShowPassword((current) => !current)} />

@@ -63,10 +63,10 @@ export function ConversationManager({
   };
 
   return (
-    <aside className="flex min-h-[680px] flex-col overflow-hidden rounded-xl border border-white/[0.08] bg-[#0d0f15] xl:sticky xl:top-[76px] xl:h-[calc(100vh-6rem)] xl:min-h-[700px]">
+    <aside className="flex min-h-[360px] flex-col overflow-hidden rounded-lg border border-white/[0.1] bg-ink-900 xl:sticky xl:top-[88px] xl:h-[calc(100vh-7rem)] xl:min-h-[700px]">
       <div className="flex items-center justify-between border-b border-white/[0.06] px-4 py-4">
         <div>
-          <h2 className="text-xs font-semibold text-white">Historia Rozmów</h2>
+          <h2 className="text-xs font-semibold text-white">Historia rozmów</h2>
           <p className="mt-1 text-[9px] text-slate-600">{conversations.length} zapisanych</p>
         </div>
         <button

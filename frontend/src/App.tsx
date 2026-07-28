@@ -269,7 +269,14 @@ export default function App() {
   };
 
   if (isLoading) {
-    return <div className="min-h-screen bg-ink-950" aria-label="Ładowanie aplikacji" />;
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-ink-950" aria-label="Ładowanie aplikacji">
+        <div className="flex items-center gap-3 text-xs uppercase tracking-[0.16em] text-slate-500">
+          <span className="h-2 w-2 animate-pulse bg-violet-500" />
+          Otwieramy salę
+        </div>
+      </div>
+    );
   }
 
   const isPublicView = ['login', 'register'].includes(activeView);
@@ -283,7 +290,13 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-ink-950 text-slate-100 selection:bg-violet-500/30">
+    <div className="min-h-screen bg-ink-950 text-slate-100">
+      <a
+        href="#main-content"
+        className="fixed left-4 top-3 z-[60] -translate-y-20 bg-slate-100 px-3 py-2 text-xs font-semibold text-ink-950 transition focus:translate-y-0"
+      >
+        Przejdź do treści
+      </a>
       {user && !['login', 'register'].includes(effectiveView) && (
         <Navbar
           user={user}
@@ -293,8 +306,8 @@ export default function App() {
         />
       )}
 
-      <div className={['login', 'register'].includes(effectiveView) ? '' : 'mx-auto max-w-[1480px] px-4 py-7 sm:px-6 lg:px-8'}>
-        <main className="min-w-0">
+      <div className={['login', 'register'].includes(effectiveView) ? '' : 'mx-auto max-w-[1480px] px-4 py-8 sm:px-6 lg:px-8 lg:py-10'}>
+        <main id="main-content" className="min-w-0">
           {effectiveView === 'login' ? (
             <LoginView
               onLogin={completeLogin}
@@ -383,13 +396,18 @@ export default function App() {
             </div>
           ) : (
             <>
-              <div className="mb-7 border-b border-white/[0.07] pb-7">
-                <h1 className="text-center text-4xl font-semibold tracking-[-0.045em] text-white sm:text-5xl lg:text-6xl">
-                  Dzień dobry, <span className="text-violet-400">{user?.username}</span>
-                </h1>
+              <div className="mb-8 border-b border-white/[0.1] pb-8">
+                <div>
+                  <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-violet-400">
+                    Osobisty doradca filmowy
+                  </p>
+                  <h1 className="text-4xl tracking-[-0.045em] text-slate-100 sm:text-5xl">
+                    Dzień dobry, <span className="italic uppercase text-violet-300">{user?.username}</span>
+                  </h1>
+                </div>
               </div>
 
-              <div className="grid items-start gap-7 xl:grid-cols-[220px_minmax(0,1fr)]">
+              <div className="grid items-start gap-6 xl:grid-cols-[220px_minmax(0,1fr)]">
                 <ConversationManager
                   conversations={conversations}
                   currentConversationId={currentConversationId}
@@ -400,7 +418,7 @@ export default function App() {
                   onDelete={handleDeleteConversation}
                 />
 
-                <div className="grid min-w-0 items-start gap-7 2xl:grid-cols-[minmax(500px,1.08fr)_minmax(420px,0.92fr)]">
+                <div className="grid min-w-0 items-start gap-6 2xl:grid-cols-[minmax(500px,1.08fr)_minmax(420px,0.92fr)]">
                   {currentConversationId ? (
                     <ChatInterface
                       messages={messages.filter(
@@ -457,25 +475,25 @@ interface PageHeadingProps {
 function PageHeading({ eyebrow, title, description, icon }: PageHeadingProps) {
   return (
     <div className="mb-7">
-      <p className="mb-2 flex items-center gap-2 text-[10px] font-medium uppercase tracking-[0.14em] text-slate-600">
+      <p className="mb-3 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-violet-400">
         {icon}
         {eyebrow}
       </p>
-      <h1 className="text-3xl font-semibold tracking-tight text-white">{title}</h1>
-      <p className="mt-2 text-sm text-slate-500">{description}</p>
+      <h1 className="text-4xl tracking-[-0.035em] text-slate-100">{title}</h1>
+      <p className="mt-3 text-sm text-slate-500">{description}</p>
     </div>
   );
 }
 
 function ConversationWorkspaceEmpty({ onCreate }: { onCreate: () => void }) {
   return (
-    <section className="flex min-h-[680px] flex-col items-center justify-center rounded-xl border border-dashed border-white/[0.1] bg-[#0d0f15] px-6 text-center xl:sticky xl:top-[76px] xl:h-[calc(100vh-6rem)] xl:min-h-[700px]">
-      <span className="mb-4 flex h-11 w-11 items-center justify-center rounded-lg bg-white/[0.04] text-slate-500">
+    <section className="flex min-h-[680px] flex-col items-center justify-center rounded-lg border border-dashed border-white/[0.14] bg-ink-900 px-6 text-center xl:sticky xl:top-[88px] xl:h-[calc(100vh-7rem)] xl:min-h-[700px]">
+      <span className="mb-5 flex h-11 w-11 items-center justify-center border border-white/[0.1] text-slate-500">
         <MessageSquareText className="h-5 w-5" />
       </span>
       <h2 className="text-sm font-semibold text-white">Wybierz lub rozpocznij rozmowę</h2>
-      <p className="mt-2 max-w-sm text-xs leading-5 text-slate-600">
-        Wiadomości zostaną zapisane. Moduł rekomendacji zostanie podłączony w kolejnym etapie.
+      <p className="mt-2 max-w-sm text-xs leading-5 text-slate-500">
+        Rozpocznij wątek i zapisz kontekst poszukiwań w jednym miejscu.
       </p>
       <button
         type="button"
@@ -491,7 +509,7 @@ function ConversationWorkspaceEmpty({ onCreate }: { onCreate: () => void }) {
 
 function RecommendationEmptyState({ isProcessing }: { isProcessing: boolean }) {
   return (
-    <div className="flex h-full min-h-56 flex-col items-center justify-center rounded-xl border border-dashed border-white/[0.08] bg-[#0d0f15]/60 px-6 text-center">
+    <div className="flex h-full min-h-56 flex-col items-center justify-center rounded-lg border border-dashed border-white/[0.12] bg-ink-900 px-6 text-center">
       <Sparkles className={`mb-3 h-5 w-5 ${isProcessing ? 'animate-pulse text-violet-400' : 'text-slate-700'}`} />
       <p className="text-xs font-medium text-slate-400">
         {isProcessing ? 'Zapisuję wiadomość…' : 'System rekomendacji nie jest jeszcze aktywny'}
@@ -499,7 +517,7 @@ function RecommendationEmptyState({ isProcessing }: { isProcessing: boolean }) {
       <p className="mt-2 max-w-xs text-[10px] leading-5 text-slate-600">
         {isProcessing
           ? 'Wiadomość jest zapisywana w PostgreSQL.'
-          : 'Rozmowy są już zapisywane w bazie. Agenci i LLM zostaną podłączeni w kolejnym etapie.'}
+          : 'Po uruchomieniu doradcy zobaczysz uzasadnioną, krótką listę tytułów dopasowanych do rozmowy.'}
       </p>
     </div>
   );

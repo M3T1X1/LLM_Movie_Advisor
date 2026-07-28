@@ -99,12 +99,12 @@ export function CatalogView({
 
   return (
     <div>
-      <header className="mb-7 border-b border-white/[0.07] pb-7">
-        <p className="mb-2 flex items-center gap-2 text-[10px] font-medium uppercase tracking-[0.14em] text-slate-600">
+      <header className="mb-8 border-b border-white/[0.1] pb-8">
+        <p className="mb-3 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-violet-400">
           <Library className="h-4 w-4" />
           Katalog TMDB
         </p>
-        <h1 className="text-3xl font-semibold tracking-[-0.035em] text-white sm:text-4xl">
+        <h1 className="text-4xl tracking-[-0.04em] text-slate-100 sm:text-5xl">
           Baza filmów i seriali
         </h1>
         <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500">
@@ -112,7 +112,7 @@ export function CatalogView({
         </p>
       </header>
 
-      <section className="mb-6 rounded-xl border border-white/[0.08] bg-[#0d0f15] p-4" aria-label="Filtry katalogu">
+      <section className="mb-6 border-y border-white/[0.1] bg-ink-900 px-0 py-4 sm:px-4" aria-label="Filtry katalogu">
         <div className="grid gap-3 lg:grid-cols-[minmax(260px,1fr)_auto]">
           <label className="relative block">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-600" />
@@ -386,7 +386,7 @@ function FilterSelect({
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="h-9 w-full rounded-md border border-white/[0.08] bg-[#11141c] px-3 text-xs text-slate-300 outline-none transition focus:border-violet-500/60"
+        className="h-9 w-full rounded-md border border-white/[0.1] bg-ink-950 px-3 text-xs text-slate-300 outline-none transition focus:border-violet-500/60"
       >
         {children}
       </select>
@@ -414,7 +414,7 @@ export function CatalogCard({
   const releaseYear = getReleaseYear(content);
 
   return (
-    <article className="group overflow-hidden rounded-lg border border-white/[0.08] bg-[#0d0f15] transition hover:border-white/[0.15]">
+    <article className="group overflow-hidden border-b border-white/[0.1] bg-ink-950 pb-1 transition hover:border-violet-400/50">
       <button
         type="button"
         onClick={() => onOpen(content)}
@@ -446,7 +446,7 @@ export function CatalogCard({
         </div>
 
         <div className="px-3.5 pt-3.5">
-          <h2 className="truncate text-sm font-semibold text-white transition group-hover:text-violet-200" title={content.title}>{content.title}</h2>
+          <h2 className="font-display truncate text-base text-slate-100 transition group-hover:text-violet-200" title={content.title}>{content.title}</h2>
           <div className="mt-1.5 flex items-center gap-2 text-[10px] text-slate-600">
             {releaseYear && <span>{releaseYear}</span>}
             {content.voteAverage !== null && (

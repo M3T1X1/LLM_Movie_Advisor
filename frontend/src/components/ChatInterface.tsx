@@ -56,28 +56,26 @@ export function ChatInterface({
   };
 
   return (
-    <section className="flex min-h-[680px] flex-col overflow-hidden rounded-xl border border-white/[0.1] bg-[#0d0f15] xl:sticky xl:top-[76px] xl:h-[calc(100vh-6rem)] xl:min-h-[700px]">
-      <div className="flex items-center gap-3 border-b border-white/[0.06] px-5 py-4 sm:px-6">
-        <span className="relative flex h-8 w-8 items-center justify-center rounded-lg bg-violet-600 text-white">
+    <section className="flex min-h-[680px] flex-col overflow-hidden rounded-lg border border-white/[0.12] bg-ink-900 xl:sticky xl:top-[88px] xl:h-[calc(100vh-7rem)] xl:min-h-[700px]">
+      <div className="flex items-center justify-center gap-3 border-b border-white/[0.06] px-5 py-4 sm:px-6">
+        <span className="relative flex h-8 w-8 items-center justify-center border border-violet-400/30 bg-violet-500/10 text-violet-300">
           <Bot className="h-4 w-4" />
-          <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-[#0d0f15] bg-emerald-400" />
+          <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-ink-900 bg-emerald-400" />
         </span>
         <div>
-          <h2 className="text-sm font-semibold text-white">Chat</h2>
-          <p className="mt-0.5 text-[10px] text-slate-600">FilmiQ</p>
+          <h2 className="text-sm font-semibold text-white">Filmiq</h2>
         </div>
       </div>
 
       <div className="flex-1 space-y-6 overflow-y-auto px-5 py-6 [scrollbar-color:rgba(148,163,184,0.16)_transparent] sm:px-6">
         {messages.length === 0 && !isProcessing && (
           <div className="flex min-h-64 flex-col items-center justify-center text-center">
-            <span className="mb-4 flex h-10 w-10 items-center justify-center rounded-lg bg-violet-500/10 text-violet-300">
+            <span className="mb-4 flex h-10 w-10 items-center justify-center border border-violet-400/20 bg-violet-500/10 text-violet-300">
               <Bot className="h-5 w-5" />
             </span>
             <h3 className="text-sm font-semibold text-slate-200">Nowa rozmowa</h3>
-            <p className="mt-2 max-w-xs text-xs leading-5 text-slate-600">
-              Opisz, czego chcesz dziś poszukać. Rekomendacje pojawią się dopiero po wysłaniu
-              Twojej wiadomości.
+            <p className="mt-2 max-w-xs text-xs leading-5 text-slate-500">
+              Zacznij od nastroju, gatunku lub czasu, którym dysponujesz.
             </p>
           </div>
         )}
@@ -93,10 +91,10 @@ export function ChatInterface({
               <span className="text-[9px] text-slate-700">{formatTime(message.createdAt)}</span>
             </div>
             <div
-              className={`rounded-lg px-3.5 py-3 text-sm leading-6 ${
+              className={`rounded-md px-3.5 py-3 text-sm leading-6 ${
                 message.role === 'user'
                   ? 'bg-violet-600 text-white'
-                  : 'border border-white/[0.06] bg-white/[0.025] text-slate-300'
+                  : 'border-l-2 border-violet-500 bg-white/[0.025] text-slate-300'
               }`}
             >
               {message.content}
@@ -141,7 +139,7 @@ export function ChatInterface({
           </div>
         )}
         <form onSubmit={handleSubmit}>
-          <div className="rounded-lg border border-white/10 bg-[#12151d] p-2 transition focus-within:border-violet-500/60">
+          <div className="rounded-md border border-white/[0.14] bg-ink-950 p-2 transition focus-within:border-violet-400">
             <textarea
               value={input}
               onChange={(event) => setInput(event.target.value)}

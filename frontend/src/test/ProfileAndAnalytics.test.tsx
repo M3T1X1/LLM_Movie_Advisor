@@ -52,7 +52,6 @@ describe('profile and analytics views', () => {
     };
 
     expectMetric('Obejrzane tytuły', '5');
-    expectMetric('Łączny czas', '9 h');
     expectMetric('Średnia ocena TMDB', '8.2');
     expectMetric('Na liście', '1');
     expect(screen.getByRole('img', { name: 'Najczęściej oglądane gatunki' })).toBeInTheDocument();

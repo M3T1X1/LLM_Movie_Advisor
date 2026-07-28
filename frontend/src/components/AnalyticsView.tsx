@@ -1,7 +1,6 @@
 import {
   Activity,
   BarChart3,
-  Clock3,
   Eye,
   Film,
   LayoutDashboard,
@@ -33,21 +32,21 @@ interface MonthlyMetric {
 }
 
 const barColors = [
-  'fill-violet-500/80',
-  'fill-indigo-500/80',
-  'fill-blue-500/80',
-  'fill-sky-500/80',
-  'fill-cyan-500/80',
-  'fill-teal-500/80',
+  'fill-violet-400',
+  'fill-violet-500',
+  'fill-violet-600',
+  'fill-amber-500',
+  'fill-amber-600',
+  'fill-stone-500',
 ];
 
 const pointColors = [
   'fill-violet-300',
-  'fill-indigo-300',
-  'fill-blue-300',
-  'fill-sky-300',
-  'fill-cyan-300',
-  'fill-teal-300',
+  'fill-violet-400',
+  'fill-violet-500',
+  'fill-amber-300',
+  'fill-amber-400',
+  'fill-stone-300',
 ];
 
 export function AnalyticsView({ content, interactions, preferences }: AnalyticsViewProps) {
@@ -82,11 +81,6 @@ export function AnalyticsView({ content, interactions, preferences }: AnalyticsV
     const averageRating = ratings.length
       ? ratings.reduce((sum, rating) => sum + rating, 0) / ratings.length
       : 0;
-    const runtimeMinutes = watchedContent.reduce(
-      (sum, item) => sum + (item.metadata.runtimeMinutes ?? 0),
-      0,
-    );
-
     const today = new Date();
     const months: MonthlyMetric[] = Array.from({ length: 6 }, (_, index) => {
       const date = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - 5 + index, 1));
@@ -114,7 +108,6 @@ export function AnalyticsView({ content, interactions, preferences }: AnalyticsV
       movies,
       series,
       averageRating,
-      runtimeMinutes,
       months,
       positivePreferenceCount: preferences.filter((preference) => preference.polarity === 1).length,
     };
@@ -125,19 +118,19 @@ export function AnalyticsView({ content, interactions, preferences }: AnalyticsV
 
   return (
     <div>
-      <header className="mb-7 flex flex-col justify-between gap-5 border-b border-white/[0.07] pb-7 lg:flex-row lg:items-end">
+      <header className="mb-8 flex flex-col justify-between gap-5 border-b border-white/[0.1] pb-8 lg:flex-row lg:items-end">
         <div>
-          <p className="mb-2 flex items-center gap-2 text-[10px] font-medium uppercase tracking-[0.14em] text-slate-600">
+          <p className="mb-3 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-violet-400">
             <BarChart3 className="h-4 w-4" />
             Twoja aktywność
           </p>
-          <h1 className="text-3xl font-semibold tracking-[-0.035em] text-white sm:text-4xl">Analiza oglądania</h1>
+          <h1 className="text-4xl tracking-[-0.04em] text-slate-100 sm:text-5xl">Analiza oglądania</h1>
           <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500">
             Podsumowanie powstaje z zapisanych interakcji i metadanych obejrzanych treści.
           </p>
         </div>
 
-        <div className="grid grid-cols-2 rounded-md border border-white/[0.08] bg-[#0d0f15] p-1">
+        <div className="grid grid-cols-2 rounded-md border border-white/[0.1] bg-ink-900 p-1">
           <ModeButton
             active={mode === 'overview'}
             onClick={() => setMode('overview')}
@@ -186,26 +179,17 @@ function OverviewDashboard({
     movies: number;
     series: number;
     averageRating: number;
-    runtimeMinutes: number;
     months: MonthlyMetric[];
   };
 }) {
-  const hours = Math.round(analytics.runtimeMinutes / 60);
-
   return (
     <>
-      <div className="mb-5 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-white/[0.08] bg-white/[0.06] lg:grid-cols-4">
+      <div className="mb-5 grid gap-px overflow-hidden rounded-xl border border-white/[0.08] bg-white/[0.06] sm:grid-cols-3">
         <StatCard
           icon={<Eye className="h-4 w-4" />}
           iconColor="text-violet-400"
           value={analytics.watchedCount}
           label="Obejrzane tytuły"
-        />
-        <StatCard
-          icon={<Clock3 className="h-4 w-4" />}
-          iconColor="text-blue-400"
-          value={`${hours} h`}
-          label="Łączny czas"
         />
         <StatCard
           icon={<Star className="h-4 w-4" />}
@@ -215,7 +199,7 @@ function OverviewDashboard({
         />
         <StatCard
           icon={<Activity className="h-4 w-4" />}
-          iconColor="text-teal-400"
+          iconColor="text-violet-300"
           value={analytics.watchlistedCount}
           label="Na liście"
         />
@@ -297,7 +281,7 @@ function MediaDonut({ movies, series }: { movies: number; series: number }) {
             pathLength="100"
             strokeDasharray={`${seriesPercent} ${100 - seriesPercent}`}
             strokeDashoffset={-moviePercent}
-            className="fill-none stroke-cyan-400 stroke-[22]"
+            className="fill-none stroke-amber-400 stroke-[22]"
           />
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
@@ -307,7 +291,7 @@ function MediaDonut({ movies, series }: { movies: number; series: number }) {
       </div>
       <div className="flex gap-5 text-xs">
         <MediaLegend color="bg-violet-500" icon={<Film className="h-3.5 w-3.5" />} label="Filmy" value={movies} />
-        <MediaLegend color="bg-cyan-400" icon={<Tv className="h-3.5 w-3.5" />} label="Seriale" value={series} />
+        <MediaLegend color="bg-amber-400" icon={<Tv className="h-3.5 w-3.5" />} label="Seriale" value={series} />
       </div>
     </div>
   );
@@ -329,8 +313,8 @@ function ActivityLineChart({ months }: { months: MonthlyMetric[] }) {
       {[50, 92, 134, 176].map((y) => (
         <line key={y} x1="45" y1={y} x2="555" y2={y} className="stroke-white/[0.05]" />
       ))}
-      <polygon points={area} className="fill-sky-500/[0.08]" />
-      <polyline points={line} className="fill-none stroke-sky-400 stroke-[2]" />
+      <polygon points={area} className="fill-violet-500/[0.08]" />
+      <polyline points={line} className="fill-none stroke-violet-400 stroke-[2]" />
       {points.map((point, index) => (
         <g
           key={point.key}
@@ -347,7 +331,7 @@ function ActivityLineChart({ months }: { months: MonthlyMetric[] }) {
             cx={point.x}
             cy={point.y}
             r={activeIndex === index ? 6 : 4}
-            className="fill-cyan-300 stroke-[#0d0f15] stroke-[3] transition-all"
+            className="fill-violet-300 stroke-ink-900 stroke-[3] transition-all"
           />
           <text x={point.x} y="205" textAnchor="middle" className="fill-slate-600 text-[10px]">
             {point.label}
@@ -394,7 +378,7 @@ function TasteMap({
   const valuePoints = axes.map((axis) => `${axis.value.x},${axis.value.y}`).join(' ');
 
   return (
-    <div className="grid overflow-hidden rounded-xl border border-white/[0.08] bg-[#0d0f15] lg:grid-cols-[minmax(0,1fr)_300px]">
+    <div className="grid overflow-hidden rounded-lg border border-white/[0.1] bg-ink-900 lg:grid-cols-[minmax(0,1fr)_300px]">
       <div className="min-w-0 border-b border-white/[0.07] p-4 sm:p-6 lg:border-b-0 lg:border-r">
         <div className="mb-2">
           <h2 className="text-sm font-semibold text-white">Mapa najczęściej oglądanych gatunków</h2>
@@ -438,7 +422,7 @@ function TasteMap({
             </g>
           ))}
 
-          <polygon points={valuePoints} className="fill-indigo-500/15 stroke-blue-400 stroke-[2]" />
+          <polygon points={valuePoints} className="fill-violet-500/15 stroke-violet-400 stroke-[2]" />
           {axes.map((axis, index) => (
             <g
               key={`point-${axis.genre.name}`}
@@ -455,7 +439,7 @@ function TasteMap({
                 cx={axis.value.x}
                 cy={axis.value.y}
                 r={activeGenre?.name === axis.genre.name ? 6 : 4}
-                className={`${pointColors[index % pointColors.length]} stroke-[#0d0f15] stroke-[3]`}
+                className={`${pointColors[index % pointColors.length]} stroke-ink-900 stroke-[3]`}
               />
             </g>
           ))}
@@ -523,7 +507,7 @@ function StatCard({
   label: string;
 }) {
   return (
-    <div className="bg-[#0d0f15] p-4 sm:p-5">
+    <div className="bg-ink-900 p-4 sm:p-5">
       <div className={`mb-4 ${iconColor}`}>{icon}</div>
       <p className="text-xl font-semibold text-white">{value}</p>
       <p className="mt-1 text-[10px] text-slate-600">{label}</p>
@@ -533,7 +517,7 @@ function StatCard({
 
 function ChartPanel({ title, description, children }: { title: string; description: string; children: ReactNode }) {
   return (
-    <section className="rounded-xl border border-white/[0.08] bg-[#0d0f15] p-4 sm:p-5">
+    <section className="border-t border-white/[0.1] bg-ink-900 p-4 sm:p-5">
       <div className="mb-5 border-b border-white/[0.06] pb-3">
         <h2 className="text-xs font-semibold text-slate-300">{title}</h2>
         <p className="mt-1 text-[10px] text-slate-600">{description}</p>

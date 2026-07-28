@@ -158,12 +158,12 @@ export function UpcomingReleasesView({
 
   return (
     <div>
-      <header className="mb-7 border-b border-white/[0.07] pb-7">
-        <p className="mb-2 flex items-center gap-2 text-[10px] font-medium uppercase tracking-[0.14em] text-violet-300/70">
+      <header className="mb-8 border-b border-white/[0.1] pb-8">
+        <p className="mb-3 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-violet-400">
           <CalendarDays className="h-4 w-4" />
           Kalendarz TMDB
         </p>
-        <h1 className="text-3xl font-semibold tracking-[-0.035em] text-white sm:text-4xl">
+        <h1 className="text-4xl tracking-[-0.04em] text-slate-100 sm:text-5xl">
           Przyszłe premiery
         </h1>
         <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500">
@@ -172,7 +172,7 @@ export function UpcomingReleasesView({
         </p>
       </header>
 
-      <section aria-label="Filtry przyszłych premier" className="mb-6 rounded-xl border border-white/[0.08] bg-[#0d0f15] p-4 sm:p-5">
+      <section aria-label="Filtry przyszłych premier" className="mb-6 border-y border-white/[0.1] bg-ink-900 p-4 sm:p-5">
         <div className="mb-4 flex items-center gap-2 text-[10px] font-medium uppercase tracking-[0.12em] text-slate-600">
           <SlidersHorizontal className="h-3.5 w-3.5" />
           Filtry
@@ -245,7 +245,7 @@ export function UpcomingReleasesView({
               ))}
             </div>
           ) : (
-            <div className="flex min-h-64 flex-col items-center justify-center rounded-xl border border-dashed border-white/[0.08] bg-[#0d0f15]/60 px-6 text-center">
+            <div className="flex min-h-64 flex-col items-center justify-center rounded-lg border border-dashed border-white/[0.12] bg-ink-900 px-6 text-center">
               <CalendarDays className="mb-3 h-6 w-6 text-slate-700" />
               <h2 className="text-sm font-semibold text-white">Brak premier dla tych filtrów</h2>
               <p className="mt-2 text-xs text-slate-600">Zmień zakres czasu, miesiąc albo wybrany gatunek.</p>
@@ -262,7 +262,7 @@ function FilterSelect({ label, value, onChange, children }: { label: string; val
   return (
     <label className="block">
       <span className="sr-only">{label}</span>
-      <select value={value} onChange={(event) => onChange(event.target.value)} aria-label={label} className="h-10 w-full rounded-lg border border-white/[0.08] bg-[#10131a] px-3 text-xs text-slate-400 outline-none transition focus:border-violet-400/40">
+      <select value={value} onChange={(event) => onChange(event.target.value)} aria-label={label} className="h-10 w-full rounded-md border border-white/[0.1] bg-ink-950 px-3 text-xs text-slate-400 outline-none transition focus:border-violet-400/40">
         {children}
       </select>
     </label>
@@ -276,8 +276,8 @@ function UpcomingReleaseCard({ content, isWatchlisted, onOpen, onWatchlist }: { 
   const daysUntilRelease = getDaysUntilRelease(releaseDate);
 
   return (
-    <article className="grid overflow-hidden rounded-xl border border-white/[0.08] bg-[#0d0f15] transition hover:border-violet-300/20 sm:grid-cols-[128px_minmax(0,1fr)_180px]">
-      <div className="aspect-[16/8] overflow-hidden bg-gradient-to-br from-violet-950/50 via-slate-900 to-blue-950/40 sm:aspect-[2/3]">
+    <article className="grid overflow-hidden border-b border-white/[0.1] bg-ink-900 transition hover:border-violet-400/50 sm:grid-cols-[128px_minmax(0,1fr)_180px]">
+      <div className="aspect-[16/8] overflow-hidden bg-ink-800 sm:aspect-[2/3]">
         {posterUrl && !imageFailed ? <img src={posterUrl} alt={`Plakat: ${content.title}`} onError={() => setImageFailed(true)} className="h-full w-full object-cover" /> : <span className="flex h-full w-full items-center justify-center"><Film className="h-8 w-8 text-slate-700" /></span>}
       </div>
 
@@ -285,7 +285,7 @@ function UpcomingReleaseCard({ content, isWatchlisted, onOpen, onWatchlist }: { 
         <div className="flex flex-wrap items-center gap-2 text-[9px] font-medium uppercase tracking-[0.1em] text-violet-300/70">
           {content.genres.slice(0, 3).map((itemGenre) => <span key={itemGenre.tmdbGenreId}>{itemGenre.name}</span>)}
         </div>
-        <h2 className="mt-2 text-lg font-semibold text-white">{content.title}</h2>
+        <h2 className="font-display mt-2 text-xl text-white">{content.title}</h2>
         {content.originalTitle && content.originalTitle !== content.title && <p className="mt-1 text-[10px] text-slate-600">{content.originalTitle}</p>}
         <p className="mt-3 line-clamp-3 max-w-3xl text-xs leading-5 text-slate-500">{content.overview || 'Opis nie jest jeszcze dostępny w języku polskim.'}</p>
         <button type="button" onClick={() => onOpen(content)} className="mt-3 text-[10px] font-medium text-violet-300 transition hover:text-violet-200" aria-label={`Pokaż szczegóły: ${content.title}`}>Zobacz szczegóły</button>

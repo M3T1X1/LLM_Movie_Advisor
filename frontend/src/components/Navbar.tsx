@@ -9,11 +9,11 @@ interface NavbarProps {
   onLogout: () => void;
 }
 
-const primaryNavigation: { id: AppView; label: string; icon: typeof Sparkles }[] = [
-  { id: 'recommendations', label: 'System Rekomendacji', icon: Sparkles },
-  { id: 'catalog', label: 'Baza filmów i seriali', icon: Library },
-  { id: 'trends', label: 'Trendy', icon: Flame },
-  { id: 'upcoming', label: 'Przyszłe premiery', icon: CalendarDays },
+const primaryNavigation: { id: AppView; label: string; shortLabel: string; icon: typeof Sparkles }[] = [
+  { id: 'recommendations', label: 'System Rekomendacji', shortLabel: 'Doradca', icon: Sparkles },
+  { id: 'catalog', label: 'Baza filmów i seriali', shortLabel: 'Katalog', icon: Library },
+  { id: 'trends', label: 'Trendy', shortLabel: 'Trendy', icon: Flame },
+  { id: 'upcoming', label: 'Przyszłe premiery', shortLabel: 'Premiery', icon: CalendarDays },
 ];
 
 export function Navbar({ user, activeView, onViewChange, onLogout }: NavbarProps) {
@@ -50,9 +50,20 @@ export function Navbar({ user, activeView, onViewChange, onLogout }: NavbarProps
   };
 
   return (
-    <header className="sticky top-0 z-40 border-b border-white/[0.07] bg-ink-950/95 backdrop-blur-lg">
-      <div className="mx-auto flex h-14 max-w-[1480px] items-center px-4 sm:px-6 lg:px-8">
-        <nav className="flex h-full items-center gap-1">
+    <header className="sticky top-0 z-40 border-b border-white/[0.09] bg-ink-950/95 backdrop-blur-lg">
+      <div className="mx-auto flex h-16 max-w-[1480px] items-center px-3 sm:px-6 lg:px-8">
+        <button
+          type="button"
+          onClick={() => onViewChange('recommendations')}
+          className="mr-8 hidden shrink-0 text-left lg:block"
+          aria-label="Filmiq — przejdź do doradcy"
+        >
+          <span>
+            <span className="font-display block text-lg leading-none text-slate-100">Filmiq</span>
+            <span className="mt-1 block text-[8px] uppercase tracking-[0.18em] text-slate-600">Doradca Filmowy</span>
+          </span>
+        </button>
+        <nav className="flex h-full min-w-0 items-center">
           {primaryNavigation.map((item) => {
             const Icon = item.icon;
             const isActive = activeView === item.id;
@@ -62,19 +73,21 @@ export function Navbar({ user, activeView, onViewChange, onLogout }: NavbarProps
                 key={item.id}
                 type="button"
                 onClick={() => onViewChange(item.id)}
-                className={`relative flex h-full items-center gap-2 px-3 text-xs font-medium transition-colors ${
-                  isActive ? 'text-white' : 'text-slate-500 hover:text-slate-200'
+                aria-label={item.label}
+                aria-current={isActive ? 'page' : undefined}
+                className={`relative flex h-full min-w-11 items-center justify-center gap-2 px-2 text-xs font-medium transition-colors sm:px-3 ${
+                  isActive ? 'text-slate-100' : 'text-slate-600 hover:text-slate-200'
                 }`}
               >
-                <Icon className="h-3.5 w-3.5 sm:hidden" />
-                <span className="hidden sm:inline">{item.label}</span>
-                {isActive && <span className="absolute inset-x-3 bottom-0 h-px bg-violet-400" />}
+                <Icon className="h-4 w-4 md:hidden" />
+                <span className="hidden md:inline">{item.shortLabel}</span>
+                {isActive && <span className="absolute inset-x-2 bottom-0 h-0.5 bg-violet-400 sm:inset-x-3" />}
               </button>
             );
           })}
         </nav>
 
-        <div className="ml-auto flex items-center gap-4">
+        <div className="ml-auto flex items-center gap-3">
           <span className="hidden h-5 w-px bg-white/[0.08] sm:block" />
 
           <div ref={menuRef} className="relative">
@@ -98,7 +111,7 @@ export function Navbar({ user, activeView, onViewChange, onLogout }: NavbarProps
               <div
                 role="menu"
                 aria-label="Menu konta"
-                className="absolute right-0 top-[calc(100%+0.65rem)] w-64 overflow-hidden rounded-xl border border-white/[0.1] bg-[#0d0f15] shadow-2xl"
+                className="absolute right-0 top-[calc(100%+0.65rem)] w-64 overflow-hidden rounded-lg border border-white/[0.12] bg-ink-900 shadow-2xl"
               >
                 <div className="border-b border-white/[0.07] px-4 py-4">
                   <div className="flex items-center gap-3">

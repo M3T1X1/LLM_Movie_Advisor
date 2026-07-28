@@ -98,16 +98,16 @@ export function ProfileView({
   return (
     <div className="mx-auto max-w-5xl">
       <div className="mb-7">
-        <p className="mb-2 flex items-center gap-2 text-[10px] font-medium uppercase tracking-[0.14em] text-slate-600">
+        <p className="mb-3 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-violet-400">
           Konto użytkownika
         </p>
-        <div className="flex flex-col justify-between gap-5 border-b border-white/[0.07] pb-7 sm:flex-row sm:items-end">
+        <div className="flex flex-col justify-between gap-5 border-b border-white/[0.1] pb-8 sm:flex-row sm:items-end">
           <div className="flex items-center gap-4">
-            <span className="flex h-16 w-16 items-center justify-center rounded-xl bg-slate-800 text-lg font-semibold text-white">
+            <span className="flex h-16 w-16 items-center justify-center border border-violet-400/20 bg-violet-500/10 text-lg font-semibold text-violet-200">
               {initials}
             </span>
             <div>
-              <h1 className="text-2xl font-semibold tracking-tight text-white sm:text-3xl">{user.username}</h1>
+              <h1 className="text-4xl tracking-tight text-white sm:text-5xl">{user.username}</h1>
               <p className="mt-1 text-sm text-slate-500">{user.email}</p>
             </div>
           </div>
@@ -122,7 +122,7 @@ export function ProfileView({
         </div>
       </div>
 
-      <div className="mb-7 grid grid-cols-3 overflow-hidden rounded-xl border border-white/[0.08] bg-[#0d0f15]">
+      <div className="mb-7 grid grid-cols-3 overflow-hidden border-y border-white/[0.1] bg-ink-900">
         <ProfileStat icon={<Bookmark className="h-4 w-4" />} value={savedCount} label="Zapisane" />
         <ProfileStat icon={<Eye className="h-4 w-4" />} value={watchedCount} label="Obejrzane" bordered />
         <ProfileStat
@@ -133,7 +133,7 @@ export function ProfileView({
       </div>
 
       {isEditing ? (
-        <form onSubmit={handleSubmit} className="rounded-xl border border-white/[0.1] bg-[#0d0f15] p-5 sm:p-6">
+        <form onSubmit={handleSubmit} className="rounded-lg border border-white/[0.1] bg-ink-900 p-5 sm:p-6">
           <div className="mb-6 flex items-center justify-between border-b border-white/[0.06] pb-4">
             <div>
               <h2 className="text-sm font-semibold text-white">Edycja profilu</h2>
@@ -260,7 +260,7 @@ function ProfileSection({
   children: ReactNode;
 }) {
   return (
-    <section className="rounded-xl border border-white/[0.08] bg-[#0d0f15] p-5">
+    <section className="border-t border-white/[0.1] bg-ink-900 p-5">
       <div className="mb-5 flex items-center gap-2 border-b border-white/[0.06] pb-3 text-slate-500">
         {icon}
         <h2 className="text-xs font-semibold text-slate-300">{title}</h2>

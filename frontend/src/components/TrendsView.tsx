@@ -69,14 +69,14 @@ export function TrendsView({ onOpen }: TrendsViewProps) {
 
   return (
     <div>
-      <header className="mb-7 border-b border-white/[0.07] pb-7">
-        <p className="mb-2 flex items-center gap-2 text-[10px] font-medium uppercase tracking-[0.14em] text-violet-300/70">
+      <header className="mb-8 border-b border-white/[0.1] pb-8">
+        <p className="mb-3 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-violet-400">
           <Flame className="h-4 w-4" />
           Popularne w rekomendacjach
         </p>
         <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-end">
           <div>
-            <h1 className="text-3xl font-semibold tracking-[-0.035em] text-white sm:text-4xl">
+            <h1 className="text-4xl tracking-[-0.04em] text-slate-100 sm:text-5xl">
               Trendy
             </h1>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500">
@@ -86,7 +86,7 @@ export function TrendsView({ onOpen }: TrendsViewProps) {
           </div>
 
           <div
-            className="grid grid-cols-3 rounded-lg border border-white/[0.08] bg-[#0d0f15] p-1"
+            className="grid grid-cols-3 rounded-md border border-white/[0.1] bg-ink-900 p-1"
             aria-label="Zakres czasu trendów"
           >
             {periodOptions.map((option) => (
@@ -117,7 +117,7 @@ export function TrendsView({ onOpen }: TrendsViewProps) {
           <div className="grid gap-6 xl:grid-cols-[minmax(280px,0.68fr)_minmax(0,1.32fr)] xl:items-stretch">
             <section
               aria-labelledby="trending-genres-title"
-              className="rounded-xl border border-white/[0.08] bg-[#0d0f15] p-5 sm:p-6">
+              className="border-y border-white/[0.1] bg-ink-900 p-5 sm:p-6">
               <div className="mb-6 flex items-start justify-between gap-4">
                 <div>
                   <p className="text-[9px] font-medium uppercase tracking-[0.12em] text-slate-600">
@@ -150,7 +150,7 @@ export function TrendsView({ onOpen }: TrendsViewProps) {
                       </div>
                       <div className="ml-7 h-1.5 overflow-hidden rounded-full bg-white/[0.05]">
                         <div
-                          className="h-full rounded-full bg-gradient-to-r from-violet-500/75 to-blue-500/65"
+                          className="h-full rounded-full bg-violet-500"
                           style={{ width: `${width}%` }}
                         />
                       </div>
@@ -207,7 +207,7 @@ function TrendingContentCard({
   const releaseYear = getReleaseYear(item.content);
 
   return (
-    <article className="group overflow-hidden rounded-xl border border-white/[0.08] bg-[#0d0f15] transition hover:-translate-y-0.5 hover:border-violet-300/20">
+    <article className="group overflow-hidden border-b border-white/[0.1] bg-ink-950 transition hover:border-violet-400/50">
       <button
         type="button"
         onClick={() => onOpen(item.content)}
@@ -227,10 +227,10 @@ function TrendingContentCard({
               <Film className="h-9 w-9 text-slate-700" />
             </span>
           )}
-          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/15" />
+          <div className="absolute inset-x-0 bottom-0 h-24 bg-black/70" />
           <span
             aria-label={`Pozycja: ${position}`}
-            className={`absolute left-3 top-3 flex h-10 min-w-10 items-center justify-center rounded-lg border px-2 text-base font-bold shadow-xl backdrop-blur-md ${
+            className={`absolute left-3 top-3 flex h-10 min-w-10 items-center justify-center border px-2 text-base font-bold ${
               position === 1
                 ? 'border-violet-300/40 bg-violet-500/90 text-white'
                 : 'border-white/10 bg-black/65 text-white'

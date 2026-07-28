@@ -25,7 +25,7 @@ export function LoginView({ onLogin, onRegister }: { onLogin: (email: string, pa
 
   return (
     <AuthPage title="Zaloguj się">
-      <form onSubmit={submit} className="space-y-5 px-6 py-7 sm:px-8" noValidate>
+      <form onSubmit={submit} className="space-y-5 px-1 py-7" noValidate>
         <AuthField label="Adres e-mail" icon={<Mail className="h-4 w-4" />}>
           <input type="email" value={email} onChange={(event) => { setEmail(event.target.value); setError(null); }} autoComplete="email" autoFocus maxLength={254} placeholder="Wprowadź e-mail" aria-invalid={Boolean(error)} className={inputClassName} />
         </AuthField>
@@ -34,7 +34,7 @@ export function LoginView({ onLogin, onRegister }: { onLogin: (email: string, pa
           {error && <p className="text-xs text-red-300">{error}</p>}
         </div>
         <PrimaryButton disabled={isSubmitting}>{isSubmitting ? 'Logowanie…' : 'Zaloguj się'}</PrimaryButton>
-        <p className="text-center text-xs text-slate-600">Nie masz jeszcze konta?{' '}<button type="button" onClick={onRegister} className="font-medium text-violet-400 transition hover:text-violet-300">Zarejestruj się</button></p>
+        <p className="text-center text-xs text-slate-500">Nie masz jeszcze konta?{' '}<button type="button" onClick={onRegister} className="font-medium text-violet-400 underline decoration-violet-400/30 underline-offset-4 transition hover:text-violet-300">Zarejestruj się</button></p>
       </form>
     </AuthPage>
   );

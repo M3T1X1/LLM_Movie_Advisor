@@ -54,7 +54,7 @@ export function MovieDetailModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/80 p-0 backdrop-blur-md sm:items-center sm:p-5"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/85 p-0 sm:items-center sm:p-5"
       role="dialog"
       aria-modal="true"
       aria-labelledby="content-modal-title"
@@ -62,7 +62,7 @@ export function MovieDetailModal({
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <div className="max-h-[96vh] w-full max-w-5xl overflow-y-auto rounded-t-xl border border-white/10 bg-[#0d0f15] shadow-2xl [scrollbar-color:rgba(148,163,184,0.2)_transparent] sm:rounded-xl">
+      <div className="max-h-[96vh] w-full max-w-5xl overflow-y-auto rounded-t-lg border border-white/10 bg-ink-900 shadow-2xl [scrollbar-color:rgba(148,163,184,0.2)_transparent] sm:rounded-lg">
         <div className="relative min-h-[340px] overflow-hidden sm:min-h-[420px]">
           {backdropUrl && !imageFailed ? (
             <img
@@ -72,7 +72,7 @@ export function MovieDetailModal({
               className="absolute inset-0 h-full w-full object-cover"
             />
           ) : (
-            <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-violet-950 via-slate-900 to-blue-950">
+            <div className="absolute inset-0 flex items-center justify-center bg-ink-800">
               <Film className="h-16 w-16 text-white/10" />
             </div>
           )}
@@ -93,7 +93,7 @@ export function MovieDetailModal({
                 </span>
               )}
             </div>
-            <h2 id="content-modal-title" className="max-w-3xl text-3xl font-bold tracking-tight text-white sm:text-5xl">
+            <h2 id="content-modal-title" className="font-display max-w-3xl text-3xl tracking-tight text-white sm:text-5xl">
               {content.title}
             </h2>
             {content.originalTitle && <p className="mt-2 text-sm text-slate-400">{content.originalTitle}</p>}
