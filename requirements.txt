@@ -9,3 +9,4 @@ psycopg-binary==3.3.4
 python-dotenv==1.2.2
 redis==8.0.1
 sqlparse==0.5.5
+whitenoise==6.12.0
