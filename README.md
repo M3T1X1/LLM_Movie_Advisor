@@ -123,22 +123,22 @@ open it at full resolution.
 
 ```mermaid
 flowchart LR
-    Browser[Browser]
-    App[Django + Gunicorn<br/>React build from Vite]
-    Sync[catalog-sync<br/>runs every 6 hours]
-    DB[(PostgreSQL 17<br/>pgvector)]
-    Redis[(Redis<br/>cache, locks, sessions)]
-    TMDB[TMDB API]
-    CDN[TMDB CDN]
+    Browser["Browser"]
+    App["Django, Gunicorn, and React"]
+    Sync["Catalog synchronization every 6 hours"]
+    Database["PostgreSQL 17 with pgvector"]
+    Cache["Redis"]
+    TMDB["TMDB API"]
+    CDN["TMDB image CDN"]
 
-    Browser -->|HTTP / API| App
-    App -->|catalog query on cache miss<br/>and persistent data| DB
-    App -->|ready catalog pages<br/>cache, locks, sessions| Redis
-    App -->|lazy upcoming refresh| TMDB
-    Sync --> TMDB
-    Sync --> DB
-    Sync --> Redis
-    Browser -->|posters and backdrops| CDN
+    Browser -->|HTTP requests| App
+    App -->|Catalog queries and persistent data| Database
+    App -->|Cached catalog pages and sessions| Cache
+    App -->|Upcoming release refresh| TMDB
+    Sync -->|Metadata requests| TMDB
+    Sync -->|Catalog updates| Database
+    Sync -->|Locks and cache invalidation| Cache
+    Browser -->|Posters and backdrops| CDN
 ```
 
 Docker Compose runs these services:
