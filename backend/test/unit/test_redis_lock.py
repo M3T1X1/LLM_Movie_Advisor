@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 from django.test import SimpleTestCase
 from redis.exceptions import RedisError
 
-from backend.redis import sync_from_tmdb
+from backend.redis import run_with_redis_lock, sync_from_tmdb
 
 
 class TmdbSynchronizationLockTests(SimpleTestCase):
@@ -19,6 +19,11 @@ class TmdbSynchronizationLockTests(SimpleTestCase):
         result = sync_from_tmdb(operation)
 
         self.assertTrue(result)
+        mocked_lock_factory.assert_called_once_with(
+            "lock:tmdb:catalog",
+            timeout=120,
+            blocking_timeout=5,
+        )
         operation.assert_called_once_with()
         lock.acquire.assert_called_once_with(blocking=True)
         lock.release.assert_called_once_with()
@@ -55,3 +60,18 @@ class TmdbSynchronizationLockTests(SimpleTestCase):
         operation.assert_called_once_with()
         lock.release.assert_not_called()
 
+    @patch("backend.redis.redis_client.lock")
+    def test_generic_lock_uses_requested_key(self, mocked_lock_factory):
+        lock = mocked_lock_factory.return_value
+        lock.acquire.return_value = True
+        operation = MagicMock()
+
+        result = run_with_redis_lock("lock:tmdb:catalog", operation)
+
+        self.assertTrue(result)
+        mocked_lock_factory.assert_called_once_with(
+            "lock:tmdb:catalog",
+            timeout=120,
+            blocking_timeout=5,
+        )
+        operation.assert_called_once_with()

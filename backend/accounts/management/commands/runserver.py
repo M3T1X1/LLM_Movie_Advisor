@@ -15,8 +15,8 @@ from backend.api.models import Content
 
 class Command(DjangoRunserverCommand):
     help = (
-        "Starts the development server after running backend tests and seeding "
-        "an empty business database."
+        "Starts the development server after running backend tests, "
+        "synchronizing an empty catalog and preparing demo activity."
     )
 
     def add_arguments(self, parser):
@@ -47,10 +47,21 @@ class Command(DjangoRunserverCommand):
         self.stdout.write(self.style.SUCCESS("Backend tests passed."))
 
         if self._database_needs_seed():
-            self.stdout.write("Business database is empty. Running seed_demo_data...")
+            self.stdout.write(
+                "Business catalog is empty. Running sync_tmdb_catalog..."
+            )
+            call_command(
+                "sync_tmdb_catalog",
+                stdout=self.stdout,
+                stderr=self.stderr,
+            )
+            self.stdout.write("Preparing demo users and activity...")
             call_command("seed_demo_data", stdout=self.stdout, stderr=self.stderr)
         else:
-            self.stdout.write("Business database already contains content. Skipping seeder.")
+            self.stdout.write(
+                "Business database already contains content. "
+                "Skipping initial synchronization and seeder."
+            )
 
     def _run_tests(self):
         result = subprocess.run(

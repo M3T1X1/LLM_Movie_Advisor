@@ -1,13 +1,7 @@
-import json
 import os
 import random
-import time
-from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import timedelta
 from typing import Any
-from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode
-from urllib.request import Request, urlopen
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -17,7 +11,6 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import connection, transaction
 from django.utils import timezone
 
-from backend.api.genre_normalization import canonical_genre_ids, canonical_genres
 from backend.api.models import (
     AgentExecution,
     AgentStatus,
@@ -37,12 +30,8 @@ from backend.api.models import (
     UserPreference,
     UserProfile,
 )
-from backend.redis import invalidate_catalog_search_cache
 
 
-TMDB_API_URL = "https://api.themoviedb.org/3"
-TMDB_PAGE_SIZE = 20
-TMDB_MAX_PAGES = 500
 REQUIRED_TABLES = {
     "agent_execution",
     "app_user",
@@ -198,252 +187,10 @@ ADMIN_USERNAME = "admin"
 ADMIN_EMAIL = "admin@example.com"
 
 
-@dataclass(frozen=True)
-class TmdbCatalogItem:
-    tmdb_id: int
-    media_type: str
-    title: str
-    original_title: str | None
-    overview: str | None
-    release_date: date | None
-    original_language: str | None
-    poster_path: str | None
-    vote_average: float | None
-    popularity: float | None
-    genre_ids: tuple[int, ...]
-    metadata: dict[str, Any]
-
-
-class TmdbClient:
-    def __init__(
-        self,
-        *,
-        api_key: str | None,
-        access_token: str | None,
-        timeout: float = 20,
-        retries: int = 3,
-    ):
-        self.api_key = api_key
-        self.access_token = access_token
-        self.timeout = timeout
-        self.retries = retries
-        if not self.api_key and not self.access_token:
-            raise CommandError(
-                "TMDB credentials are required. Set TMDB_API_KEY or TMDB_API_TOKEN."
-            )
-
-    def get(self, path: str, **params: Any) -> dict[str, Any]:
-        query = {key: value for key, value in params.items() if value is not None}
-        if self.api_key:
-            query["api_key"] = self.api_key
-        url = f"{TMDB_API_URL}{path}?{urlencode(query)}"
-        headers = {"Accept": "application/json"}
-        if self.access_token:
-            headers["Authorization"] = f"Bearer {self.access_token}"
-
-        for attempt in range(1, self.retries + 1):
-            try:
-                with urlopen(
-                    Request(url, headers=headers),
-                    timeout=self.timeout,
-                ) as response:
-                    payload = json.loads(response.read().decode("utf-8"))
-                if not isinstance(payload, dict):
-                    raise CommandError(f"TMDB returned an invalid response for {path}.")
-                return payload
-            except HTTPError as error:
-                if error.code in {429, 500, 502, 503, 504} and attempt < self.retries:
-                    time.sleep(attempt)
-                    continue
-                detail = error.read().decode("utf-8", errors="replace")[:300]
-                raise CommandError(
-                    f"TMDB request failed ({error.code}) for {path}: {detail}"
-                ) from error
-            except (URLError, TimeoutError, json.JSONDecodeError) as error:
-                if attempt < self.retries:
-                    time.sleep(attempt)
-                    continue
-                raise CommandError(f"TMDB request failed for {path}: {error}") from error
-
-        raise CommandError(f"TMDB request failed for {path}.")
-
-    def fetch_genres(self) -> dict[int, str]:
-        genres: dict[int, str] = {}
-        for path in ("/genre/movie/list", "/genre/tv/list"):
-            payload = self.get(path, language="pl-PL")
-            for genre in payload.get("genres", []):
-                if isinstance(genre, dict) and isinstance(genre.get("id"), int):
-                    genres[genre["id"]] = str(genre.get("name") or genre["id"])
-        if not genres:
-            raise CommandError("TMDB returned no genres.")
-        return genres
-
-    def fetch_catalog(self, *, movies: int, tv_shows: int) -> list[TmdbCatalogItem]:
-        catalog: list[TmdbCatalogItem] = []
-        catalog.extend(self._fetch_popular("movie", movies))
-        catalog.extend(self._fetch_popular("tv", tv_shows))
-        return catalog
-
-    def _fetch_popular(self, media_type: str, target_count: int) -> list[TmdbCatalogItem]:
-        if target_count <= 0:
-            return []
-
-        items: list[TmdbCatalogItem] = []
-        seen_ids: set[int] = set()
-        page = 1
-        available_pages = TMDB_MAX_PAGES
-        pages_checked = 0
-        pages_without_new_items = 0
-        while len(items) < target_count and page <= available_pages:
-            payload = self.get(
-                f"/{media_type}/popular",
-                language="pl-PL",
-                page=page,
-                region="PL" if media_type == "movie" else None,
-            )
-            pages_checked += 1
-            results = payload.get("results")
-            if not isinstance(results, list):
-                raise CommandError(
-                    f"TMDB returned an invalid popular {media_type} response."
-                )
-            reported_total_pages = payload.get("total_pages")
-            if (
-                isinstance(reported_total_pages, int)
-                and not isinstance(reported_total_pages, bool)
-                and reported_total_pages > 0
-            ):
-                available_pages = min(reported_total_pages, TMDB_MAX_PAGES)
-
-            item_count_before_page = len(items)
-            for raw_item in results:
-                item = normalize_tmdb_item(raw_item, media_type)
-                if item is None or item.tmdb_id in seen_ids:
-                    continue
-                items.append(item)
-                seen_ids.add(item.tmdb_id)
-                if len(items) >= target_count:
-                    return items
-
-            if not results:
-                break
-            if len(items) == item_count_before_page:
-                pages_without_new_items += 1
-                if pages_without_new_items >= 3:
-                    break
-            else:
-                pages_without_new_items = 0
-            page += 1
-
-        if len(items) < target_count:
-            raise CommandError(
-                f"TMDB returned only {len(items)} unique {media_type} items; "
-                f"{target_count} requested after checking {pages_checked} page(s)."
-            )
-        return items
-
-
-def normalize_tmdb_item(
-    raw_item: Any,
-    media_type: str,
-) -> TmdbCatalogItem | None:
-    if not isinstance(raw_item, dict) or media_type not in {"movie", "tv"}:
-        return None
-    tmdb_id = raw_item.get("id")
-    title_key = "title" if media_type == "movie" else "name"
-    original_title_key = "original_title" if media_type == "movie" else "original_name"
-    date_key = "release_date" if media_type == "movie" else "first_air_date"
-    title = raw_item.get(title_key)
-    if not isinstance(tmdb_id, int) or not isinstance(title, str) or not title.strip():
-        return None
-
-    raw_genre_ids = raw_item.get("genre_ids")
-    if not isinstance(raw_genre_ids, list):
-        raw_genre_ids = []
-    genre_ids = tuple(
-        genre_id
-        for genre_id in raw_genre_ids
-        if isinstance(genre_id, int)
-    )
-    metadata = {
-        "voteCount": positive_int_or_none(raw_item.get("vote_count")),
-        "backdropPath": nullable_string(raw_item.get("backdrop_path")),
-        "adult": bool(raw_item.get("adult", False)),
-        "originCountry": [
-            country
-            for country in raw_item.get("origin_country", [])
-            if isinstance(country, str)
-        ],
-        "source": "tmdb",
-    }
-    return TmdbCatalogItem(
-        tmdb_id=tmdb_id,
-        media_type=media_type,
-        title=title.strip()[:500],
-        original_title=nullable_string(raw_item.get(original_title_key), limit=500),
-        overview=nullable_string(raw_item.get("overview")),
-        release_date=parse_date(raw_item.get(date_key)),
-        original_language=nullable_string(raw_item.get("original_language"), limit=20),
-        poster_path=nullable_string(raw_item.get("poster_path"), limit=500),
-        vote_average=bounded_float(raw_item.get("vote_average"), 0, 10),
-        popularity=bounded_float(raw_item.get("popularity"), 0, None),
-        genre_ids=genre_ids,
-        metadata=metadata,
-    )
-
-
-def nullable_string(value: Any, *, limit: int | None = None) -> str | None:
-    if not isinstance(value, str):
-        return None
-    normalized = value.strip()
-    if not normalized:
-        return None
-    return normalized[:limit] if limit else normalized
-
-
-def parse_date(value: Any) -> date | None:
-    if not isinstance(value, str) or not value:
-        return None
-    try:
-        return date.fromisoformat(value)
-    except ValueError:
-        return None
-
-
-def bounded_float(value: Any, minimum: float, maximum: float | None) -> float | None:
-    if not isinstance(value, (int, float)) or isinstance(value, bool):
-        return None
-    result = float(value)
-    if result < minimum or (maximum is not None and result > maximum):
-        return None
-    return result
-
-
-def positive_int_or_none(value: Any) -> int | None:
-    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
-        return None
-    return value
-
-
 class Command(BaseCommand):
-    help = (
-        "Seeds the full development database and synchronizes movie/TV metadata "
-        "from TMDB."
-    )
+    help = "Seeds demo users and activity using the existing TMDB catalog."
 
     def add_arguments(self, parser):
-        parser.add_argument(
-            "--movies",
-            type=int,
-            default=1500,
-            help="Number of popular movies fetched from TMDB (default: 1500).",
-        )
-        parser.add_argument(
-            "--tv-shows",
-            type=int,
-            default=1500,
-            help="Number of popular TV shows fetched from TMDB (default: 1500).",
-        )
         parser.add_argument(
             "--users",
             type=int,
@@ -460,16 +207,10 @@ class Command(BaseCommand):
         if not settings.DEBUG:
             raise CommandError("Demo data can only be loaded when DEBUG=True.")
 
-        movies = options["movies"]
-        tv_shows = options["tv_shows"]
         user_count = options["users"]
         password = options["password"]
         if not 1 <= user_count <= len(DEMO_USERS):
             raise CommandError(f"--users must be between 1 and {len(DEMO_USERS)}.")
-        if movies < 3 or tv_shows < 0:
-            raise CommandError("--movies must be at least 3 and --tv-shows cannot be negative.")
-        if movies + tv_shows < 3:
-            raise CommandError("At least 3 catalog items are required.")
         if not password:
             raise CommandError(
                 "Password is required. Use --password or SEED_USER_PASSWORD."
@@ -480,20 +221,18 @@ class Command(BaseCommand):
             raise CommandError(" ".join(error.messages)) from error
 
         self._check_schema()
-        client = TmdbClient(
-            api_key=os.environ.get("TMDB_API_KEY"),
-            access_token=os.environ.get("TMDB_API_TOKEN"),
+        content_ids = list(
+            Content.objects.order_by("id").values_list("id", flat=True)
         )
-        self.stdout.write(
-            f"Fetching {movies} movies, {tv_shows} TV shows and genres from TMDB..."
-        )
-        genres = client.fetch_genres()
-        catalog = client.fetch_catalog(movies=movies, tv_shows=tv_shows)
+        if len(content_ids) < 3:
+            raise CommandError(
+                "At least 3 catalog items are required. Run "
+                "`python manage.py sync_tmdb_catalog` first."
+            )
 
         with transaction.atomic():
             self._seed_admin(password)
             business_user_ids = self._seed_users(password, user_count)
-            content_ids = self._seed_catalog(genres, catalog)
             conversation_ids, candidates = self._seed_recommendation_history(
                 business_user_ids,
                 content_ids,
@@ -610,54 +349,6 @@ class Command(BaseCommand):
                 )
             business_ids.append(business_user.pk)
         return business_ids
-
-    def _seed_catalog(
-        self,
-        genres: dict[int, str],
-        catalog: list[TmdbCatalogItem],
-    ) -> list[int]:
-        now = timezone.now()
-        genre_objects: dict[int, Genre] = {}
-        content_ids: list[int] = []
-        for tmdb_genre_id, name in sorted(canonical_genres(genres).items()):
-            genre, _ = Genre.objects.update_or_create(
-                tmdb_genre_id=tmdb_genre_id,
-                defaults={"name": name[:100]},
-            )
-            genre_objects[tmdb_genre_id] = genre
-
-        for item in catalog:
-            content, _ = Content.objects.update_or_create(
-                tmdb_id=item.tmdb_id,
-                media_type=item.media_type,
-                defaults={
-                    "title": item.title,
-                    "original_title": item.original_title,
-                    "overview": item.overview,
-                    "release_date": item.release_date,
-                    "original_language": item.original_language,
-                    "poster_path": item.poster_path,
-                    "vote_average": item.vote_average,
-                    "popularity": item.popularity,
-                    "metadata": item.metadata,
-                    "tmdb_refreshed_at": now,
-                },
-            )
-            content_ids.append(content.pk)
-            ContentGenre.objects.filter(content=content).delete()
-            ContentGenre.objects.bulk_create(
-                [
-                    ContentGenre(
-                        content=content,
-                        genre=genre_objects[tmdb_genre_id],
-                    )
-                    for tmdb_genre_id in canonical_genre_ids(item.genre_ids)
-                    if tmdb_genre_id in genre_objects
-                ],
-                ignore_conflicts=True,
-            )
-        transaction.on_commit(invalidate_catalog_search_cache)
-        return content_ids
 
     def _seed_recommendation_history(
         self,

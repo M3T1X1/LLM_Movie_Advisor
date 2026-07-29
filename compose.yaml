@@ -29,6 +29,7 @@ services:
       REDIS_URL: redis://redis:6379/1
       REDIS_LOCK_TIMEOUT: ${REDIS_LOCK_TIMEOUT:-120}
       REDIS_LOCK_BLOCKING_TIMEOUT: ${REDIS_LOCK_BLOCKING_TIMEOUT:-5}
+      TMDB_CATALOG_LOCK_TIMEOUT: ${TMDB_CATALOG_LOCK_TIMEOUT:-1800}
       CATALOG_SEARCH_CACHE_TIMEOUT: ${CATALOG_SEARCH_CACHE_TIMEOUT:-600}
       TMDB_API_KEY: ${TMDB_API_KEY:-}
       TMDB_API_TOKEN: ${TMDB_API_TOKEN:-}
@@ -60,6 +61,43 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+    restart: unless-stopped
+
+  catalog-sync:
+    image: llm-movie-advisor-app:local
+    environment:
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?Set DJANGO_SECRET_KEY in .env}
+      DJANGO_DEBUG: "False"
+      POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB in .env}
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_CONN_MAX_AGE: ${POSTGRES_CONN_MAX_AGE:-60}
+      REDIS_URL: redis://redis:6379/1
+      REDIS_LOCK_TIMEOUT: ${REDIS_LOCK_TIMEOUT:-120}
+      REDIS_LOCK_BLOCKING_TIMEOUT: ${REDIS_LOCK_BLOCKING_TIMEOUT:-5}
+      TMDB_CATALOG_LOCK_TIMEOUT: ${TMDB_CATALOG_LOCK_TIMEOUT:-1800}
+      TMDB_API_KEY: ${TMDB_API_KEY:-}
+      TMDB_API_TOKEN: ${TMDB_API_TOKEN:-}
+      TMDB_BASELINE_MOVIES: ${TMDB_BASELINE_MOVIES:-2000}
+      TMDB_BASELINE_TV_SHOWS: ${TMDB_BASELINE_TV_SHOWS:-2000}
+      TMDB_SYNC_INTERVAL_SECONDS: ${TMDB_SYNC_INTERVAL_SECONDS:-21600}
+      TMDB_SYNC_DAYS_BACK: ${TMDB_SYNC_DAYS_BACK:-30}
+      TMDB_SYNC_MAX_PAGES: ${TMDB_SYNC_MAX_PAGES:-10}
+      TMDB_UPCOMING_DAYS_AHEAD: ${TMDB_UPCOMING_DAYS_AHEAD:-365}
+      TMDB_UPCOMING_MAX_PAGES: ${TMDB_UPCOMING_MAX_PAGES:-10}
+    command:
+      - /bin/sh
+      - -c
+      - >-
+        while true; do
+          python manage.py sync_tmdb_catalog;
+          sleep "$${TMDB_SYNC_INTERVAL_SECONDS}";
+        done
+    depends_on:
+      app:
+        condition: service_healthy
     restart: unless-stopped
 
   postgres:

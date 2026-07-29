@@ -186,7 +186,7 @@ class ConversationsApiTests(ApiIntegrationTestCase):
                     content_type="application/json",
                 )
             finally:
-                close_old_connections()
+                connection.close()
 
         with ThreadPoolExecutor(max_workers=2) as executor:
             responses = list(executor.map(post_message, range(2)))

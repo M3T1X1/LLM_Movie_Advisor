@@ -12,6 +12,7 @@ from redis.exceptions import RedisError
 logger = logging.getLogger(__name__)
 CATALOG_SEARCH_VERSION_KEY = "catalog:search:version"
 DEFAULT_CATALOG_SEARCH_VERSION = 1
+TMDB_CATALOG_LOCK_KEY = "lock:tmdb:catalog"
 
 redis_client = Redis.from_url(
     settings.REDIS_URL,
@@ -118,10 +119,15 @@ def get_cached_tmdb(
     return response
 
 
-def sync_from_tmdb(sync_operation: Callable[[], None]) -> bool:
+def run_with_redis_lock(
+    lock_key: str,
+    operation: Callable[[], None],
+    *,
+    timeout: int | None = None,
+) -> bool:
     lock = redis_client.lock(
-        "lock:tmdb:upcoming",
-        timeout=settings.REDIS_LOCK_TIMEOUT,
+        lock_key,
+        timeout=timeout or settings.REDIS_LOCK_TIMEOUT,
         blocking_timeout=settings.REDIS_LOCK_BLOCKING_TIMEOUT,
     )
 
@@ -129,18 +135,22 @@ def sync_from_tmdb(sync_operation: Callable[[], None]) -> bool:
         acquired = lock.acquire(blocking=True)
     except RedisError as error:
         logger.warning("Redis lock acquire failed! %s", error)
-        sync_operation()
+        operation()
         return True
 
     if not acquired:
-        logger.warning("Synchronization already running!")
+        logger.warning("Operation protected by %s is already running!", lock_key)
         return False
 
     try:
-        sync_operation()
+        operation()
         return True
     finally:
         try:
             lock.release()
         except RedisError as error:
             logger.warning("Redis lock release failed! %s", error)
+
+
+def sync_from_tmdb(sync_operation: Callable[[], None]) -> bool:
+    return run_with_redis_lock(TMDB_CATALOG_LOCK_KEY, sync_operation)

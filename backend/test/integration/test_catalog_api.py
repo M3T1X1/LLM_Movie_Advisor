@@ -1,5 +1,5 @@
 from dataclasses import replace
-from datetime import date
+from datetime import date, timedelta
 
 from django.core.cache import cache
 from django.db import connection
@@ -9,9 +9,10 @@ from django.utils import timezone
 from backend.accounts.management.commands.seed_demo_data import (
     Command as SeedDemoCommand,
 )
-from backend.accounts.management.commands.seed_demo_data import TmdbCatalogItem
+from backend.api.catalog_sync import upsert_catalog
 from backend.api.models import Content, ContentGenre, Genre, Interaction
 from backend.test.integration.api_base import ApiIntegrationTestCase
+from backend.tmdb import TmdbCatalogItem
 
 
 class CatalogApiTests(ApiIntegrationTestCase):
@@ -53,7 +54,7 @@ class CatalogApiTests(ApiIntegrationTestCase):
         )
         self.assertEqual(payload["filters"]["genres"], ["Thriller"])
 
-    def test_orm_seeder_upserts_catalog_and_relations_idempotently(self):
+    def test_catalog_sync_upserts_catalog_and_relations_idempotently(self):
         item = TmdbCatalogItem(
             tmdb_id=9001,
             media_type="movie",
@@ -75,11 +76,11 @@ class CatalogApiTests(ApiIntegrationTestCase):
             replace(item, tmdb_id=9002, title="Drugi film ORM"),
             replace(item, tmdb_id=9003, title="Trzeci film ORM"),
         ]
-        first_ids = command._seed_catalog(
+        first_ids = upsert_catalog(
             {18: "Dramat", 53: "Thriller"},
             catalog,
         )
-        second_ids = command._seed_catalog(
+        second_ids = upsert_catalog(
             {18: "Dramat", 53: "Thriller"},
             [replace(item, title="Film ORM po aktualizacji"), *catalog[1:]],
         )
@@ -105,7 +106,7 @@ class CatalogApiTests(ApiIntegrationTestCase):
         self.assertEqual(len(candidates), 12)
         self.assertEqual(Interaction.objects.count(), 30)
 
-    def test_orm_seeder_normalizes_composite_tv_genres(self):
+    def test_catalog_sync_normalizes_composite_tv_genres(self):
         item = TmdbCatalogItem(
             tmdb_id=9100,
             media_type="tv",
@@ -121,7 +122,7 @@ class CatalogApiTests(ApiIntegrationTestCase):
             metadata={"source": "test"},
         )
 
-        content_id = SeedDemoCommand()._seed_catalog(
+        content_id = upsert_catalog(
             {
                 10759: "Akcja i Przygoda",
                 10765: "Sci-Fi i Fantasy",
@@ -240,14 +241,14 @@ class CatalogApiTests(ApiIntegrationTestCase):
             "Tytuł po zmianie",
         )
 
-    def test_catalog_seed_invalidates_cached_search_results(self):
+    def test_catalog_sync_invalidates_cached_search_results(self):
         item = TmdbCatalogItem(
             tmdb_id=9200,
             media_type="movie",
             title="Tytuł przed synchronizacją",
             original_title="Synchronized Movie",
             overview="Opis",
-            release_date=date(2026, 10, 1),
+            release_date=date.today(),
             original_language="pl",
             poster_path="/sync.jpg",
             vote_average=8.0,
@@ -255,12 +256,11 @@ class CatalogApiTests(ApiIntegrationTestCase):
             genre_ids=(18,),
             metadata={"source": "test"},
         )
-        command = SeedDemoCommand()
-        command._seed_catalog({18: "Dramat"}, [item])
+        upsert_catalog({18: "Dramat"}, [item])
         query = {"q": "synchronized movie"}
 
         cached_response = self.client.get(reverse("api:contents"), query)
-        command._seed_catalog(
+        upsert_catalog(
             {18: "Dramat"},
             [replace(item, title="Tytuł po synchronizacji")],
         )
@@ -273,6 +273,29 @@ class CatalogApiTests(ApiIntegrationTestCase):
         self.assertEqual(
             refreshed_response.json()["items"][0]["title"],
             "Tytuł po synchronizacji",
+        )
+
+    def test_catalog_hides_future_releases_but_keeps_direct_id_lookup(self):
+        released_id = self.insert_content(9300, "Film już wydany")
+        future_id = self.insert_content(9301, "Film przed premierą")
+        Content.objects.filter(pk=future_id).update(
+            release_date=date.today() + timedelta(days=1)
+        )
+
+        catalog_response = self.client.get(reverse("api:contents"))
+        direct_response = self.client.get(
+            reverse("api:contents"),
+            {"ids": str(future_id)},
+        )
+
+        self.assertEqual(catalog_response.status_code, 200)
+        self.assertEqual(
+            {item["id"] for item in catalog_response.json()["items"]},
+            {str(released_id)},
+        )
+        self.assertEqual(
+            [item["id"] for item in direct_response.json()["items"]],
+            [str(future_id)],
         )
 
     def test_catalog_rejects_invalid_pagination_and_filter_values(self):

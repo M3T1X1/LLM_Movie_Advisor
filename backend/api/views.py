@@ -16,14 +16,8 @@ from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 from redis.exceptions import RedisError
 
-from backend.accounts.management.commands.seed_demo_data import (
-    Command as SeedDemoCommand,
-)
-from backend.accounts.management.commands.seed_demo_data import (
-    TmdbClient,
-    normalize_tmdb_item,
-)
 from backend.accounts.services import get_business_user_id, sync_business_user
+from backend.api.catalog_sync import upsert_catalog
 from backend.api.models import (
     Content,
     Conversation,
@@ -43,6 +37,7 @@ from backend.redis import (
     set_cached_catalog_search,
     sync_from_tmdb,
 )
+from backend.tmdb import TmdbClient, normalize_tmdb_item
 
 
 logger = logging.getLogger(__name__)
@@ -377,6 +372,9 @@ def contents(request: HttpRequest) -> JsonResponse:
         "content_ids": sorted(content_ids) if content_ids is not None else None,
         "minimum_rating": minimum_rating,
         "year_from": year_from,
+        "released_through": (
+            date.today().isoformat() if content_ids is None else None
+        ),
     }
     cache_key, cached_payload = get_cached_catalog_search(cache_params)
     if cached_payload is not None:
@@ -385,6 +383,8 @@ def contents(request: HttpRequest) -> JsonResponse:
     queryset = content_queryset()
     if content_ids is not None:
         queryset = queryset.filter(pk__in=content_ids)
+    else:
+        queryset = queryset.filter(release_date__lte=date.today())
     if query:
         queryset = queryset.filter(
             Q(title__icontains=query) | Q(original_title__icontains=query)
@@ -457,7 +457,7 @@ def sync_upcoming_from_tmdb(*, force_refresh: bool = False) -> bool:
         unique_items = list({item.tmdb_id: item for item in items}.values())
         if unique_items:
             with transaction.atomic():
-                SeedDemoCommand()._seed_catalog(genres, unique_items)
+                upsert_catalog(genres, unique_items)
 
     return sync_from_tmdb(synchronize)
 

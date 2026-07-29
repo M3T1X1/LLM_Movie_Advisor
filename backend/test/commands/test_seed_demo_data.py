@@ -32,13 +32,11 @@ class FullSeedCommandValidationTests(SimpleTestCase):
         self.assertEqual(REQUIRED_TABLES, expected_tables)
 
     @patch.object(Command, "_check_schema")
-    def test_command_validates_arguments_before_contacting_tmdb(self, mocked_schema):
+    def test_command_validates_arguments_before_database_work(self, mocked_schema):
         invalid_options = (
-            {"movies": 2, "tv_shows": 100, "users": 5, "password": "StrongPassword123!"},
-            {"movies": 200, "tv_shows": -1, "users": 5, "password": "StrongPassword123!"},
-            {"movies": 200, "tv_shows": 100, "users": 0, "password": "StrongPassword123!"},
-            {"movies": 200, "tv_shows": 100, "users": 6, "password": "StrongPassword123!"},
-            {"movies": 200, "tv_shows": 100, "users": 5, "password": None},
+            {"users": 0, "password": "StrongPassword123!"},
+            {"users": 6, "password": "StrongPassword123!"},
+            {"users": 5, "password": None},
         )
 
         for options in invalid_options:
@@ -52,8 +50,6 @@ class FullSeedCommandValidationTests(SimpleTestCase):
     def test_command_is_blocked_outside_debug_mode(self):
         with self.assertRaisesMessage(CommandError, "DEBUG=True"):
             self.command.handle(
-                movies=3,
-                tv_shows=0,
                 users=1,
                 password="StrongPassword123!",
             )
@@ -67,8 +63,8 @@ class FullSeedCommandValidationTests(SimpleTestCase):
         with self.assertRaisesMessage(CommandError, "agent_execution"):
             self.command._check_schema()
 
+    @patch("backend.accounts.management.commands.seed_demo_data.Content.objects")
     @patch("backend.accounts.management.commands.seed_demo_data.transaction.atomic")
-    @patch("backend.accounts.management.commands.seed_demo_data.TmdbClient")
     @patch.object(Command, "_seeded_counts", return_value={"content": 3})
     @patch.object(Command, "_seed_interactions")
     @patch.object(
@@ -76,7 +72,6 @@ class FullSeedCommandValidationTests(SimpleTestCase):
         "_seed_recommendation_history",
         return_value=([1], [(1, 1)]),
     )
-    @patch.object(Command, "_seed_catalog", return_value=[1, 2, 3])
     @patch.object(Command, "_seed_users", return_value=[1])
     @patch.object(Command, "_seed_admin")
     @patch.object(Command, "_check_schema")
@@ -86,39 +81,49 @@ class FullSeedCommandValidationTests(SimpleTestCase):
         mocked_schema,
         mocked_admin,
         mocked_users,
-        mocked_catalog,
         mocked_history,
         mocked_interactions,
         mocked_counts,
-        mocked_client_class,
         mocked_atomic,
+        mocked_content_objects,
     ):
-        client = mocked_client_class.return_value
-        client.fetch_genres.return_value = {18: "Dramat"}
-        client.fetch_catalog.return_value = ["one", "two", "three"]
+        mocked_content_objects.order_by.return_value.values_list.return_value = [
+            1,
+            2,
+            3,
+        ]
         mocked_atomic.return_value.__enter__.return_value = None
         self.command.stdout = MagicMock()
 
         self.command.handle(
-            movies=3,
-            tv_shows=0,
             users=1,
             password="StrongPassword123!",
         )
 
         mocked_schema.assert_called_once_with()
-        mocked_client_class.assert_called_once()
-        client.fetch_genres.assert_called_once_with()
-        client.fetch_catalog.assert_called_once_with(movies=3, tv_shows=0)
         mocked_admin.assert_called_once_with("StrongPassword123!")
         mocked_users.assert_called_once_with("StrongPassword123!", 1)
-        mocked_catalog.assert_called_once_with(
-            {18: "Dramat"},
-            ["one", "two", "three"],
-        )
         mocked_history.assert_called_once_with([1], [1, 2, 3])
         mocked_interactions.assert_called_once_with([1], [1, 2, 3], [(1, 1)])
         mocked_counts.assert_called_once_with()
+
+    @patch("backend.accounts.management.commands.seed_demo_data.Content.objects")
+    @patch.object(Command, "_check_schema")
+    @override_settings(DEBUG=True)
+    def test_requires_catalog_synchronized_before_demo_activity(
+        self,
+        mocked_schema,
+        mocked_content_objects,
+    ):
+        mocked_content_objects.order_by.return_value.values_list.return_value = [1, 2]
+
+        with self.assertRaisesMessage(CommandError, "sync_tmdb_catalog"):
+            self.command.handle(
+                users=1,
+                password="StrongPassword123!",
+            )
+
+        mocked_schema.assert_called_once_with()
 
     @patch(
         "backend.accounts.management.commands.seed_demo_data.get_user_model"

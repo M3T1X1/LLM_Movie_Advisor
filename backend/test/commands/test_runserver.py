@@ -33,8 +33,10 @@ class RunserverBootstrapTests(SimpleTestCase):
 
         mocked_run_tests.assert_called_once_with()
         mocked_database_needs_seed.assert_called_once_with()
-        mocked_call_command.assert_called_once()
-        self.assertEqual(mocked_call_command.call_args.args[0], "seed_demo_data")
+        self.assertEqual(
+            [call.args[0] for call in mocked_call_command.call_args_list],
+            ["sync_tmdb_catalog", "seed_demo_data"],
+        )
 
     @patch("backend.accounts.management.commands.runserver.call_command")
     @patch.object(Command, "_database_needs_seed", return_value=False)
@@ -158,7 +160,7 @@ class RunserverBootstrapTests(SimpleTestCase):
     )
     @patch.object(Command, "_database_needs_seed", return_value=True)
     @patch.object(Command, "_run_tests")
-    def test_seeder_failure_stops_bootstrap(
+    def test_catalog_synchronization_failure_stops_bootstrap(
         self,
         mocked_tests,
         mocked_needs_seed,
@@ -170,6 +172,7 @@ class RunserverBootstrapTests(SimpleTestCase):
         mocked_tests.assert_called_once_with()
         mocked_needs_seed.assert_called_once_with()
         mocked_call_command.assert_called_once()
+        self.assertEqual(mocked_call_command.call_args.args[0], "sync_tmdb_catalog")
 
     @override_settings(DEBUG=False)
     def test_bootstrap_is_blocked_outside_debug_mode(self):

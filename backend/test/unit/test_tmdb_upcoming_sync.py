@@ -24,12 +24,12 @@ class UpcomingSynchronizationTests(SimpleTestCase):
         self.addCleanup(lock_patcher.stop)
 
     @patch("backend.api.views.transaction.atomic")
-    @patch("backend.api.views.SeedDemoCommand")
+    @patch("backend.api.views.upsert_catalog")
     @patch("backend.api.views.TmdbClient")
     def test_sync_fetches_two_polish_pages_deduplicates_and_seeds(
         self,
         mocked_client_class,
-        mocked_command_class,
+        mocked_upsert_catalog,
         mocked_atomic,
     ):
         client = mocked_client_class.return_value
@@ -74,7 +74,7 @@ class UpcomingSynchronizationTests(SimpleTestCase):
                 call.kwargs,
                 {"language": "pl-PL", "region": "PL", "page": page},
             )
-        genres, items = mocked_command_class.return_value._seed_catalog.call_args.args
+        genres, items = mocked_upsert_catalog.call_args.args
         self.assertEqual(genres, {18: "Dramat"})
         self.assertEqual({item.tmdb_id for item in items}, {1, 3})
         self.assertEqual(
@@ -86,12 +86,12 @@ class UpcomingSynchronizationTests(SimpleTestCase):
             date(2026, 9, 1),
         )
 
-    @patch("backend.api.views.SeedDemoCommand")
+    @patch("backend.api.views.upsert_catalog")
     @patch("backend.api.views.TmdbClient")
     def test_sync_does_not_seed_when_tmdb_has_no_valid_items(
         self,
         mocked_client_class,
-        mocked_command_class,
+        mocked_upsert_catalog,
     ):
         client = mocked_client_class.return_value
         client.fetch_genres.return_value = {18: "Dramat"}
@@ -102,5 +102,4 @@ class UpcomingSynchronizationTests(SimpleTestCase):
 
         sync_upcoming_from_tmdb(force_refresh=True)
 
-        mocked_command_class.return_value._seed_catalog.assert_not_called()
-
+        mocked_upsert_catalog.assert_not_called()

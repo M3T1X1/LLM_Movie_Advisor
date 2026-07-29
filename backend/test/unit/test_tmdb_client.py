@@ -1,4 +1,5 @@
 import json
+from datetime import date
 from io import BytesIO
 from unittest.mock import MagicMock, patch
 from urllib.error import HTTPError
@@ -6,7 +7,7 @@ from urllib.error import HTTPError
 from django.core.management.base import CommandError
 from django.test import SimpleTestCase
 
-from backend.accounts.management.commands.seed_demo_data import TmdbClient
+from backend.tmdb import TmdbClient
 
 
 class TmdbClientTests(SimpleTestCase):
@@ -14,7 +15,7 @@ class TmdbClientTests(SimpleTestCase):
         with self.assertRaisesMessage(CommandError, "TMDB credentials are required"):
             TmdbClient(api_key=None, access_token=None)
 
-    @patch("backend.accounts.management.commands.seed_demo_data.urlopen")
+    @patch("backend.tmdb.urlopen")
     def test_uses_api_key_and_decodes_json(self, mocked_urlopen):
         response = MagicMock()
         response.__enter__.return_value.read.return_value = json.dumps(
@@ -32,7 +33,7 @@ class TmdbClientTests(SimpleTestCase):
         self.assertIn("api_key=test-key", request.full_url)
         self.assertIn("language=pl-PL", request.full_url)
 
-    @patch("backend.accounts.management.commands.seed_demo_data.urlopen")
+    @patch("backend.tmdb.urlopen")
     def test_uses_bearer_token(self, mocked_urlopen):
         response = MagicMock()
         response.__enter__.return_value.read.return_value = b'{"results": []}'
@@ -65,86 +66,8 @@ class TmdbClientTests(SimpleTestCase):
         )
         self.assertEqual(client.get.call_count, 2)
 
-    def test_popular_catalog_paginates_deduplicates_and_stops_at_target(self):
-        client = TmdbClient(api_key="key", access_token=None)
-        first_page = [
-            {
-                "id": item_id,
-                "title": f"Film {item_id}",
-                "genre_ids": [18],
-            }
-            for item_id in range(1, 21)
-        ]
-        second_page = [
-            {"id": 20, "title": "Duplikat", "genre_ids": [18]},
-            {"id": 21, "title": "Film 21", "genre_ids": [18]},
-            {"id": 22, "title": "Film 22", "genre_ids": [18]},
-        ]
-        client.get = MagicMock(
-            side_effect=[{"results": first_page}, {"results": second_page}]
-        )
-
-        items = client.fetch_catalog(movies=22, tv_shows=0)
-
-        self.assertEqual(len(items), 22)
-        self.assertEqual([item.tmdb_id for item in items], list(range(1, 23)))
-        self.assertEqual(client.get.call_count, 2)
-        self.assertEqual(client.get.call_args_list[1].kwargs["page"], 2)
-
-    def test_popular_catalog_fetches_extra_pages_after_deduplication(self):
-        client = TmdbClient(api_key="key", access_token=None)
-        first_page = [
-            {
-                "id": item_id,
-                "title": f"Film {item_id}",
-                "genre_ids": [18],
-            }
-            for item_id in range(1, 21)
-        ]
-        client.get = MagicMock(
-            side_effect=[
-                {"results": first_page, "total_pages": 4},
-                {
-                    "results": [
-                        {"id": 20, "title": "Duplikat 20"},
-                        {"id": 21, "title": "Film 21"},
-                    ],
-                    "total_pages": 4,
-                },
-                {
-                    "results": [
-                        {"id": 21, "title": "Duplikat 21"},
-                        {"id": 22, "title": "Film 22"},
-                    ],
-                    "total_pages": 4,
-                },
-            ]
-        )
-
-        items = client.fetch_catalog(movies=22, tv_shows=0)
-
-        self.assertEqual([item.tmdb_id for item in items], list(range(1, 23)))
-        self.assertEqual(client.get.call_count, 3)
-        self.assertEqual(client.get.call_args_list[2].kwargs["page"], 3)
-
-    def test_popular_catalog_stops_at_reported_last_page(self):
-        client = TmdbClient(api_key="key", access_token=None)
-        client.get = MagicMock(
-            return_value={
-                "results": [
-                    {"id": 1, "title": "Jedyny film"},
-                ],
-                "total_pages": 1,
-            }
-        )
-
-        with self.assertRaisesMessage(CommandError, "after checking 1 page"):
-            client.fetch_catalog(movies=3, tv_shows=0)
-
-        self.assertEqual(client.get.call_count, 1)
-
-    @patch("backend.accounts.management.commands.seed_demo_data.time.sleep")
-    @patch("backend.accounts.management.commands.seed_demo_data.urlopen")
+    @patch("backend.tmdb.time.sleep")
+    @patch("backend.tmdb.urlopen")
     def test_retries_rate_limited_request(self, mocked_urlopen, mocked_sleep):
         rate_limit_error = HTTPError(
             "https://api.themoviedb.org/3/movie/popular",
@@ -167,7 +90,7 @@ class TmdbClientTests(SimpleTestCase):
         self.assertEqual(mocked_urlopen.call_count, 2)
         mocked_sleep.assert_called_once_with(1)
 
-    @patch("backend.accounts.management.commands.seed_demo_data.urlopen")
+    @patch("backend.tmdb.urlopen")
     def test_non_retryable_tmdb_error_is_reported_without_credentials(
         self,
         mocked_urlopen,
@@ -183,10 +106,152 @@ class TmdbClientTests(SimpleTestCase):
         with self.assertRaisesMessage(CommandError, "TMDB request failed (401)"):
             TmdbClient(api_key="bad-key", access_token=None).get("/movie/popular")
 
-    def test_popular_catalog_rejects_incomplete_tmdb_response(self):
+    def test_release_catalog_fetches_movies_and_tv_with_date_filters(self):
         client = TmdbClient(api_key="key", access_token=None)
-        client.get = MagicMock(return_value={"results": []})
+        client.get = MagicMock(
+            side_effect=[
+                {
+                    "results": [
+                        {
+                            "id": 1,
+                            "title": "Film pierwszy",
+                            "release_date": "2026-08-01",
+                        }
+                    ],
+                    "total_pages": 2,
+                },
+                {
+                    "results": [
+                        {
+                            "id": 1,
+                            "title": "Film zduplikowany",
+                            "release_date": "2026-08-01",
+                        },
+                        {
+                            "id": 2,
+                            "title": "Film drugi",
+                            "release_date": "2026-09-01",
+                        },
+                    ],
+                    "total_pages": 2,
+                },
+                {
+                    "results": [
+                        {
+                            "id": 1,
+                            "name": "Serial pierwszy",
+                            "first_air_date": "2026-08-15",
+                        }
+                    ],
+                    "total_pages": 1,
+                },
+            ]
+        )
 
-        with self.assertRaisesMessage(CommandError, "returned only 0 unique movie"):
-            client.fetch_catalog(movies=3, tv_shows=0)
+        items = client.fetch_release_catalog(
+            start_date=date(2026, 7, 1),
+            end_date=date(2027, 7, 1),
+            max_pages=3,
+        )
 
+        self.assertEqual(
+            [(item.media_type, item.tmdb_id) for item in items],
+            [("movie", 1), ("movie", 2), ("tv", 1)],
+        )
+        movie_call = client.get.call_args_list[0]
+        self.assertEqual(movie_call.args, ("/discover/movie",))
+        self.assertEqual(movie_call.kwargs["region"], "PL")
+        self.assertEqual(movie_call.kwargs["release_date.gte"], "2026-07-01")
+        self.assertEqual(movie_call.kwargs["release_date.lte"], "2027-07-01")
+        tv_call = client.get.call_args_list[2]
+        self.assertEqual(tv_call.args, ("/discover/tv",))
+        self.assertEqual(tv_call.kwargs["first_air_date.gte"], "2026-07-01")
+        self.assertEqual(tv_call.kwargs["first_air_date.lte"], "2027-07-01")
+
+    def test_release_catalog_rejects_invalid_discover_response(self):
+        client = TmdbClient(api_key="key", access_token=None)
+        client.get = MagicMock(return_value={"results": "invalid"})
+
+        with self.assertRaisesMessage(
+            CommandError,
+            "invalid discover movie response",
+        ):
+            client.fetch_release_catalog(
+                start_date=date(2026, 7, 1),
+                end_date=date(2026, 8, 1),
+                max_pages=1,
+            )
+
+    def test_release_catalog_can_fetch_only_upcoming_movies(self):
+        client = TmdbClient(api_key="key", access_token=None)
+        client.get = MagicMock(
+            return_value={
+                "results": [
+                    {
+                        "id": 7,
+                        "title": "Przyszły film",
+                        "release_date": "2026-09-01",
+                    }
+                ],
+                "total_pages": 1,
+            }
+        )
+
+        items = client.fetch_release_catalog(
+            start_date=date(2026, 8, 1),
+            end_date=date(2027, 8, 1),
+            max_pages=10,
+            media_types=("movie",),
+        )
+
+        self.assertEqual(
+            [(item.media_type, item.tmdb_id) for item in items],
+            [("movie", 7)],
+        )
+        client.get.assert_called_once()
+
+    def test_popular_catalog_collects_only_released_unique_items(self):
+        client = TmdbClient(api_key="key", access_token=None)
+        client.get = MagicMock(
+            side_effect=[
+                {
+                    "results": [
+                        {
+                            "id": 1,
+                            "title": "Film wydany",
+                            "release_date": "2026-07-01",
+                        },
+                        {
+                            "id": 2,
+                            "title": "Film przyszły",
+                            "release_date": "2026-08-01",
+                        },
+                    ],
+                    "total_pages": 2,
+                },
+                {
+                    "results": [
+                        {
+                            "id": 1,
+                            "title": "Duplikat",
+                            "release_date": "2026-07-01",
+                        },
+                        {
+                            "id": 3,
+                            "title": "Drugi wydany",
+                            "release_date": "2026-06-01",
+                        },
+                    ],
+                    "total_pages": 2,
+                },
+            ]
+        )
+
+        items = client.fetch_popular_catalog(
+            media_type="movie",
+            target_count=2,
+            released_through=date(2026, 7, 29),
+        )
+
+        self.assertEqual([item.tmdb_id for item in items], [1, 3])
+        self.assertEqual(client.get.call_count, 2)

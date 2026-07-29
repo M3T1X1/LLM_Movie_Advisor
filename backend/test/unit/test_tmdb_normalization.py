@@ -2,7 +2,7 @@ from datetime import date
 
 from django.test import SimpleTestCase
 
-from backend.accounts.management.commands.seed_demo_data import (
+from backend.tmdb import (
     bounded_float,
     normalize_tmdb_item,
     parse_date,
@@ -104,4 +104,3 @@ class TmdbNormalizationTests(SimpleTestCase):
         self.assertEqual(item.genre_ids, ())
         self.assertIsNone(parse_date("2026-02-31"))
         self.assertIsNone(bounded_float(True, 0, 10))
-
