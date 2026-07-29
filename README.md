@@ -187,7 +187,10 @@ POSTGRES_PASSWORD="a-strong-password"
 TMDB_API_KEY="your-tmdb-key"
 ```
 
-`SEED_USER_PASSWORD` is required only when creating demo accounts.
+`SEED_USER_PASSWORD` is only used when creating demo accounts. Replace the
+`123` placeholder from `.env.example` with a strong password before running
+the seeder, or pass a valid password through the command's `--password`
+option.
 
 ### 2. Validate the Compose configuration
 
@@ -275,13 +278,13 @@ available. An unavailable PostgreSQL instance produces HTTP `503` with an
 | Variable | Default | Purpose |
 |---|---:|---|
 | `DJANGO_SECRET_KEY` | none | required Django secret |
-| `DJANGO_DEBUG` | `True` locally, `False` in Compose | debug mode |
+| `DJANGO_DEBUG` | `True` in Django settings, `False` in Compose | debug mode |
 | `DJANGO_ALLOWED_HOSTS` | local hosts | allowed HTTP hosts |
 | `DJANGO_CSRF_TRUSTED_ORIGINS` | empty | trusted CSRF origins |
-| `DJANGO_SECURE_SSL_REDIRECT` | depends on `DEBUG` | redirect HTTP to HTTPS |
-| `DJANGO_SECURE_COOKIES` | depends on `DEBUG` | secure session and CSRF cookies |
-| `DJANGO_HSTS_SECONDS` | `0` locally | HSTS duration |
-| `DJANGO_HSTS_INCLUDE_SUBDOMAINS` | depends on `DEBUG` | HSTS for subdomains |
+| `DJANGO_SECURE_SSL_REDIRECT` | `False` in Compose | redirect HTTP to HTTPS |
+| `DJANGO_SECURE_COOKIES` | `False` in Compose | secure session and CSRF cookies |
+| `DJANGO_HSTS_SECONDS` | `0` in Compose | HSTS duration |
+| `DJANGO_HSTS_INCLUDE_SUBDOMAINS` | `False` in Compose | HSTS for subdomains |
 | `DJANGO_HSTS_PRELOAD` | `False` | HSTS preload flag |
 | `DJANGO_TRUST_X_FORWARDED_PROTO` | `False` | trust the reverse proxy protocol header |
 | `DJANGO_MAX_REQUEST_BYTES` | `2097152` | maximum request size |
@@ -329,10 +332,14 @@ available. An unavailable PostgreSQL instance produces HTTP `503` with an
 |---|---:|---|
 | `APP_PORT` | `8000` | application port exposed on the host |
 | `GUNICORN_WORKERS` | `3` | Gunicorn worker count |
-| `SEED_USER_PASSWORD` | empty in Compose | demo account password |
-| `VITE_API_BASE_URL` | `/api` | frontend API base path |
+| `SEED_USER_PASSWORD` | empty in Compose when unset | demo account password |
+| `VITE_API_BASE_URL` | `/api` | frontend API base path selected at build time |
 
 Do not commit secrets. Git and the Docker build context ignore `.env` files.
+
+`VITE_API_BASE_URL` is evaluated while Vite builds the frontend. The current
+Dockerfile and Compose configuration use `/api` and do not forward this
+variable from the root `.env` file into the image build.
 
 ## TMDB catalog
 
@@ -476,16 +483,16 @@ Run it in Docker with debug mode enabled:
 
 ```bash
 docker compose exec -e DJANGO_DEBUG=True app \
-  python manage.py seed_demo_data
+  python manage.py seed_demo_data \
+  --password 'StrongPassword123!'
 ```
 
-The password comes from `SEED_USER_PASSWORD` or the command argument:
+Alternatively, set a strong `SEED_USER_PASSWORD` in `.env` and omit the
+`--password` argument:
 
 ```bash
 docker compose exec -e DJANGO_DEBUG=True app \
-  python manage.py seed_demo_data \
-  --users 2 \
-  --password 'StrongPassword123!'
+  python manage.py seed_demo_data --users 2
 ```
 
 The seeder is restricted to `DEBUG=True`.
@@ -658,7 +665,8 @@ this table or perform semantic search.
 
 ## Redis and caching
 
-Redis is an acceleration layer; PostgreSQL remains the main DB.
+Redis is an acceleration layer; PostgreSQL remains the authoritative data
+store.
 
 Redis provides:
 
@@ -845,6 +853,10 @@ commands, and SPA routes.
 
 ### Frontend
 
+These commands require Node.js 22.x and npm 10.x on the host. They are
+development quality checks; running the application through Docker Compose
+does not require a host installation of Node.js or npm.
+
 ```bash
 npm --prefix frontend test
 npm --prefix frontend run lint
@@ -916,7 +928,6 @@ automation, scheduled backups, monitoring, alerting, log retention, rollback
 automation, or CI/CD.
 
 ## Recommendation system scope
-# TODO
 
 The intended recommendation workflow consists of four roles:
 
@@ -948,6 +959,20 @@ The repository does not select a specific LLM or embedding model. Model names
 and versions require quality, performance, hardware, license, and
 multilingual-support evaluation.
 
+## Known limitations
+
+- no recommendation-generation endpoint;
+- no local LLM or Ollama service in Compose;
+- no LangChain or LangGraph integration;
+- no generated catalog embeddings or semantic search;
+- no automatic semantic-profile updates;
+- recommendation trends depend on stored records, which can be demo data;
+- recommendation and agent-status components have no live pipeline;
+- upcoming releases cover movies, not future TV seasons;
+- `catalog-sync` uses a shell loop instead of a scheduler with job history;
+- local Redis has no password;
+- no rate limiting or password-reset flow;
+- no CI/CD or automated monitoring.
 
 ## Common operations
 
@@ -980,7 +1005,8 @@ docker compose exec app python manage.py sync_tmdb_catalog
 
 ```bash
 docker compose exec -e DJANGO_DEBUG=True app \
-  python manage.py seed_demo_data
+  python manage.py seed_demo_data \
+  --password 'StrongPassword123!'
 ```
 
 ### Stop without removing data
