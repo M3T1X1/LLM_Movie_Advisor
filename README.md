@@ -15,8 +15,40 @@ recommendation workflow. The LLM recommendation pipeline itself is outside the
 implemented runtime: the application does not run Ollama, LangChain,
 LangGraph, or recommendation agents, and it does not generate recommendations.
 
+## Application screenshots
+
+The screenshots below present the main application flows. Select an image to
+open it at full resolution.
+
+### Authentication and recommendation advisor
+
+| Sign in | Recommendation advisor |
+|:---:|:---:|
+| [![FilmiQ sign-in screen](scr/1.png)](scr/1.png) | [![FilmiQ recommendation advisor](scr/2.png)](scr/2.png) |
+
+### Catalog and discovery
+
+[![FilmiQ movie and TV show catalog](scr/3.png)](scr/3.png)
+
+| Recommendation trends | Upcoming releases |
+|:---:|:---:|
+| [![FilmiQ recommendation trends](scr/4.png)](scr/4.png) | [![FilmiQ upcoming releases](scr/5.png)](scr/5.png) |
+
+### Personal library and profile
+
+| Watchlist | User profile |
+|:---:|:---:|
+| [![FilmiQ user watchlist](scr/7.png)](scr/7.png) | [![FilmiQ user profile](scr/6.png)](scr/6.png) |
+
+### Viewing analytics
+
+| Activity overview | Genre map |
+|:---:|:---:|
+| [![FilmiQ viewing activity overview](scr/8.png)](scr/8.png) | [![FilmiQ viewing genre map](scr/9.png)](scr/9.png) |
+
 ## Table of contents
 
+- [Application screenshots](#application-screenshots)
 - [Features](#features)
 - [Architecture](#architecture)
 - [Technology stack](#technology-stack)
