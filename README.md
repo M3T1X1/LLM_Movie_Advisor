@@ -1,0 +1,1034 @@
+# FilmiQ — LLM Movie Advisor
+
+FilmiQ is a web platform for browsing movies and TV shows, managing a user
+profile, storing conversations, and tracking interactions with titles. The
+application imports its catalog from [The Movie Database (TMDB)](https://www.themoviedb.org/)
+and stores application data in PostgreSQL.
+
+The implemented application includes a React frontend, a Django backend,
+session-based authentication, TMDB catalog synchronization, user profiles,
+conversations, interactions, PostgreSQL with pgvector, Redis, Docker Compose,
+and automated tests.
+
+The database schema and frontend contain the foundations for an LLM-based
+recommendation workflow. The LLM recommendation pipeline itself is outside the
+implemented runtime: the application does not run Ollama, LangChain,
+LangGraph, or recommendation agents, and it does not generate recommendations.
+
+## Table of contents
+
+- [Features](#features)
+- [Architecture](#architecture)
+- [Technology stack](#technology-stack)
+- [Quick start with Docker Compose](#quick-start-with-docker-compose)
+- [Environment configuration](#environment-configuration)
+- [TMDB catalog](#tmdb-catalog)
+- [Demo data](#demo-data)
+- [Backend and API](#backend-and-api)
+- [Frontend](#frontend)
+- [Data model](#data-model)
+- [Redis and caching](#redis-and-caching)
+- [PostgreSQL and pgvector](#postgresql-and-pgvector)
+- [Management commands](#management-commands)
+- [Tests and quality checks](#tests-and-quality-checks)
+- [Security](#security)
+- [Production deployment](#production-deployment)
+- [Recommendation system scope](#recommendation-system-scope)
+- [Known limitations](#known-limitations)
+- [Common operations](#common-operations)
+- [License](#license)
+
+## Features
+
+### User accounts and activity
+
+- account registration, login, and logout;
+- Django sessions with CSRF protection;
+- user profile and preference storage;
+- semantic profile summary storage;
+- conversations and user messages;
+- watchlist and watched-title views;
+- interactions for opening details, liking, disliking, adding to the
+  watchlist, marking as watched, and rating;
+- Django administration panel.
+
+### Catalog
+
+- movies and TV shows imported from TMDB;
+- a baseline of at least 2,000 released movies and 2,000 released TV shows;
+- synchronization of recent releases every six hours;
+- synchronization of upcoming movies;
+- PostgreSQL-backed search, filtering, sorting, and pagination;
+- Redis caching of complete catalog pages returned to the frontend;
+- a shared taxonomy for movie and TV genres;
+- poster and backdrop path storage;
+- a separate upcoming-release view;
+- automatic catalog visibility when a title reaches its release date.
+
+### Infrastructure
+
+- PostgreSQL 17 with pgvector;
+- Redis with AOF persistence;
+- catalog and TMDB response caching;
+- Redis-backed Django sessions with a persistent PostgreSQL fallback;
+- a distributed catalog synchronization lock;
+- four Docker Compose services;
+- a multi-stage application image;
+- Gunicorn and WhiteNoise;
+- an unprivileged `app` user in the application container;
+- health checks for PostgreSQL, Redis, and the application.
+
+### Quality
+
+- backend unit and integration tests;
+- API and management-command tests;
+- frontend security and session tests;
+- TypeScript validation;
+- ESLint;
+- a production React/Vite build.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    Browser[Browser]
+    App[Django + Gunicorn<br/>React build from Vite]
+    Sync[catalog-sync<br/>runs every 6 hours]
+    DB[(PostgreSQL 17<br/>pgvector)]
+    Redis[(Redis<br/>cache, locks, sessions)]
+    TMDB[TMDB API]
+    CDN[TMDB CDN]
+
+    Browser -->|HTTP / API| App
+    App -->|catalog query on cache miss<br/>and persistent data| DB
+    App -->|ready catalog pages<br/>cache, locks, sessions| Redis
+    App -->|lazy upcoming refresh| TMDB
+    Sync --> TMDB
+    Sync --> DB
+    Sync --> Redis
+    Browser -->|posters and backdrops| CDN
+```
+
+Docker Compose runs these services:
+
+| Service | Responsibility | Host access |
+|---|---|---|
+| `app` | Django, Gunicorn, API, and the built React frontend | port `8000` by default |
+| `catalog-sync` | initial catalog population and periodic TMDB synchronization | no public port |
+| `postgres` | persistent application data and pgvector | Compose network only |
+| `redis` | ready-to-display catalog page cache, TMDB response cache, synchronization locks, and fast session reads | Compose network only |
+
+PostgreSQL and Redis use the named volumes `postgres_data` and `redis_data`.
+Recreating containers preserves their data unless the volumes are explicitly
+removed.
+
+## Technology stack
+
+### Backend
+
+- Python 3.13;
+- Django 6.0.7;
+- Psycopg 3;
+- Gunicorn 26;
+- WhiteNoise;
+- pgvector for Django;
+- Redis client for Python.
+
+### Frontend
+
+- React 18;
+- TypeScript 5.6;
+- Vite 6;
+- Tailwind CSS 3;
+- Lucide React;
+- Vitest;
+- Testing Library;
+- ESLint 9.
+
+### Data and infrastructure
+
+- PostgreSQL 17;
+- `pgvector/pgvector:0.8.2-pg17-bookworm`;
+- Redis 8.2.8 Alpine;
+- Docker and Docker Compose;
+- TMDB API.
+
+## Quick start with Docker Compose
+
+### Requirements
+
+The host needs:
+
+- Docker Engine;
+- the Docker Compose plugin;
+- the project source code;
+- a TMDB API key or access token.
+
+PostgreSQL, Redis, Python, and Node.js run in containers and do not need to be
+installed directly on the host.
+
+### 1. Configure the environment
+
+```bash
+cp .env.example .env
+```
+
+Set at least:
+
+```env
+DJANGO_SECRET_KEY="a-long-random-secret"
+DJANGO_DEBUG="False"
+DJANGO_ALLOWED_HOSTS="localhost,127.0.0.1,[::1]"
+
+POSTGRES_DB="movie_advisor"
+POSTGRES_USER="movie_advisor"
+POSTGRES_PASSWORD="a-strong-password"
+
+TMDB_API_KEY="your-tmdb-key"
+```
+
+`SEED_USER_PASSWORD` is required only when creating demo accounts.
+
+### 2. Validate the Compose configuration
+
+```bash
+docker compose config --quiet
+```
+
+No output and exit code `0` indicate valid syntax and the presence of required
+Compose values.
+
+### 3. Build and start
+
+```bash
+docker compose up -d --build
+```
+
+On a new environment, Compose:
+
+1. builds the frontend in a Node.js image;
+2. builds the Django image on Python 3.13;
+3. starts PostgreSQL and Redis;
+4. initializes the business schema on a new PostgreSQL volume;
+5. applies Django migrations;
+6. starts Gunicorn;
+7. starts `catalog-sync` after the application becomes healthy;
+8. populates at least 2,000 released movies and 2,000 released TV shows;
+9. synchronizes recent and upcoming releases.
+
+The initial catalog import makes many TMDB requests and can take longer than a
+regular synchronization cycle.
+
+### 4. Check service health
+
+```bash
+docker compose ps
+docker compose logs --tail=100 app
+docker compose logs --tail=100 catalog-sync
+```
+
+Expected state:
+
+- `app`, `postgres`, and `redis` are healthy;
+- `catalog-sync` is running;
+- the application responds on port `8000`.
+
+Health endpoint:
+
+```bash
+curl http://localhost:8000/api/health/
+```
+
+Example response:
+
+```json
+{
+  "status": "ok",
+  "services": {
+    "database": "ok",
+    "redis": "ok"
+  }
+}
+```
+
+A `degraded` status means Redis is unavailable while PostgreSQL remains
+available. An unavailable PostgreSQL instance produces HTTP `503` with an
+`unavailable` status.
+
+### 5. Application URLs
+
+- application: <http://localhost:8000>;
+- login: <http://localhost:8000/login>;
+- registration: <http://localhost:8000/register>;
+- catalog: <http://localhost:8000/catalog>;
+- upcoming releases: <http://localhost:8000/upcoming>;
+- watchlist: <http://localhost:8000/watchlist>;
+- analytics: <http://localhost:8000/analytics>;
+- profile: <http://localhost:8000/profile>;
+- Django admin: <http://localhost:8000/admin/>;
+- health endpoint: <http://localhost:8000/api/health/>.
+
+## Environment configuration
+
+### Django and HTTP
+
+| Variable | Default | Purpose |
+|---|---:|---|
+| `DJANGO_SECRET_KEY` | none | required Django secret |
+| `DJANGO_DEBUG` | `True` locally, `False` in Compose | debug mode |
+| `DJANGO_ALLOWED_HOSTS` | local hosts | allowed HTTP hosts |
+| `DJANGO_CSRF_TRUSTED_ORIGINS` | empty | trusted CSRF origins |
+| `DJANGO_SECURE_SSL_REDIRECT` | depends on `DEBUG` | redirect HTTP to HTTPS |
+| `DJANGO_SECURE_COOKIES` | depends on `DEBUG` | secure session and CSRF cookies |
+| `DJANGO_HSTS_SECONDS` | `0` locally | HSTS duration |
+| `DJANGO_HSTS_INCLUDE_SUBDOMAINS` | depends on `DEBUG` | HSTS for subdomains |
+| `DJANGO_HSTS_PRELOAD` | `False` | HSTS preload flag |
+| `DJANGO_TRUST_X_FORWARDED_PROTO` | `False` | trust the reverse proxy protocol header |
+| `DJANGO_MAX_REQUEST_BYTES` | `2097152` | maximum request size |
+| `DJANGO_LOG_LEVEL` | `INFO` | application log level |
+| `DJANGO_REQUEST_LOG_LEVEL` | `ERROR` locally, `WARNING` in Compose | request log level |
+
+### PostgreSQL
+
+| Variable | Default | Purpose |
+|---|---:|---|
+| `POSTGRES_DB` | none | database name |
+| `POSTGRES_USER` | none | database user |
+| `POSTGRES_PASSWORD` | none | database password |
+| `POSTGRES_HOST` | set by Compose | database host |
+| `POSTGRES_PORT` | `5432` | database port |
+| `POSTGRES_CONN_MAX_AGE` | `60` | persistent connection lifetime |
+
+### Redis
+
+| Variable | Default | Purpose |
+|---|---:|---|
+| `REDIS_URL` | `redis://127.0.0.1:6379/1` | Redis logical database URL |
+| `REDIS_LOCK_TIMEOUT` | `120` | short synchronization lock duration |
+| `REDIS_LOCK_BLOCKING_TIMEOUT` | `5` | lock acquisition wait time |
+| `TMDB_CATALOG_LOCK_TIMEOUT` | `1800` | catalog import lock duration |
+| `CATALOG_SEARCH_CACHE_TIMEOUT` | `600` | catalog response TTL |
+
+### TMDB and catalog
+
+| Variable | Default | Purpose |
+|---|---:|---|
+| `TMDB_API_KEY` | empty | TMDB API v3 key |
+| `TMDB_API_TOKEN` | empty | alternative TMDB API v4 token |
+| `TMDB_BASELINE_MOVIES` | `2000` | minimum number of released movies |
+| `TMDB_BASELINE_TV_SHOWS` | `2000` | minimum number of released TV shows |
+| `TMDB_SYNC_INTERVAL_SECONDS` | `21600` | six-hour synchronization interval |
+| `TMDB_SYNC_DAYS_BACK` | `30` | recent-release lookback window |
+| `TMDB_SYNC_MAX_PAGES` | `10` | page limit per content type |
+| `TMDB_UPCOMING_DAYS_AHEAD` | `365` | upcoming movie window |
+| `TMDB_UPCOMING_MAX_PAGES` | `10` | upcoming movie page limit |
+
+### Application process
+
+| Variable | Default | Purpose |
+|---|---:|---|
+| `APP_PORT` | `8000` | application port exposed on the host |
+| `GUNICORN_WORKERS` | `3` | Gunicorn worker count |
+| `SEED_USER_PASSWORD` | empty in Compose | demo account password |
+| `VITE_API_BASE_URL` | `/api` | frontend API base path |
+
+Do not commit secrets. Git and the Docker build context ignore `.env` files.
+
+## TMDB catalog
+
+Catalog synchronization is implemented by:
+
+- `backend/tmdb.py` — TMDB client and response normalization;
+- `backend/api/catalog_sync.py` — PostgreSQL persistence;
+- `sync_tmdb_catalog` — Django synchronization command;
+- `catalog-sync` — periodic Compose service.
+
+### Catalog display flow
+
+The catalog view uses Redis directly through the backend's cache-aside flow:
+
+1. the React frontend calls `GET /api/contents/` with the selected page,
+   search term, filters, and sorting;
+2. Django validates and normalizes those parameters and uses them to build a
+   versioned Redis cache key;
+3. on a cache hit, Django returns the complete cached response to the
+   frontend, including the movie and TV show items, pagination data, and
+   available genres;
+4. on a cache miss, Django queries PostgreSQL, serializes the requested
+   catalog page, returns it to the frontend, and stores the complete response
+   in Redis for `CATALOG_SEARCH_CACHE_TIMEOUT` seconds (`600`, or 10 minutes,
+   by default);
+5. a successful TMDB catalog write increments the cache version after the
+   database transaction commits, so subsequent requests receive refreshed
+   catalog data.
+
+Redis therefore accelerates the display of movies and TV shows in the
+catalog, especially for repeated combinations of pages, searches, filters,
+and sorting. PostgreSQL remains the authoritative catalog store. If Redis is
+unavailable, the request falls back to PostgreSQL and the catalog remains
+usable.
+
+### Baseline population
+
+The synchronization command establishes the configured catalog baseline:
+
+1. it counts released movies and TV shows;
+2. it fetches popular movies until `TMDB_BASELINE_MOVIES` is satisfied;
+3. it fetches popular TV shows until `TMDB_BASELINE_TV_SHOWS` is satisfied;
+4. it skips records without a date and records with a future release date;
+5. it skips the large baseline import when the configured minimum is already
+   satisfied.
+
+The baseline is a minimum, not an exact final count. Recent-release
+synchronization can add further records.
+
+### Recent releases
+
+Every six hours, the synchronizer imports:
+
+- movies released between 30 days ago and the current date;
+- TV shows first aired during the same period;
+- up to 10 result pages per content type.
+
+The moving windows intentionally overlap. This refreshes corrected metadata
+and reduces the chance of missing a title after a temporary failure.
+
+### Upcoming movies
+
+Each synchronization cycle also imports upcoming movies:
+
+- from the current date;
+- up to 365 days ahead by default;
+- up to 10 TMDB result pages.
+
+`GET /api/contents/upcoming/` performs a lazy two-page refresh from
+`/movie/upcoming` when PostgreSQL has no fresh data. The `refresh=1` query
+parameter forces a new fetch.
+
+### Persistence and idempotency
+
+A title is uniquely identified by:
+
+```text
+tmdb_id + media_type
+```
+
+Synchronization performs an upsert:
+
+- new titles are inserted;
+- existing titles are updated;
+- genre relationships are rebuilt;
+- `tmdb_refreshed_at` is updated;
+- the catalog cache is logically invalidated.
+
+The process retains older records and does not create duplicate records for
+the same `tmdb_id + media_type` pair.
+
+### Release visibility
+
+`GET /api/contents/` returns records whose `release_date` is not later than
+the current date. Future records remain in PostgreSQL and appear through the
+upcoming endpoint.
+
+The current date is part of the catalog cache key, so a title becomes visible
+in the regular catalog on its release date without depending on a cache entry
+created on the previous day.
+
+The technical `GET /api/contents/?ids=...` query can include future records.
+This keeps future titles available when they are present on a user's list.
+
+### Genres and images
+
+TMDB uses separate genre dictionaries for movies and TV shows. The backend
+maps both dictionaries to a shared taxonomy. Composite categories such as
+`Sci-Fi & Fantasy` map to the canonical `Science Fiction` and `Fantasy`
+genres.
+
+The database stores TMDB image paths rather than image files. Browsers load
+posters and backdrops directly from the TMDB CDN, for example:
+
+```text
+https://image.tmdb.org/t/p/w780/<poster_path>
+```
+
+## Demo data
+
+```bash
+python manage.py seed_demo_data
+```
+
+The command requires an existing catalog with at least three titles. It
+creates or updates:
+
+- an administrator account;
+- up to five demo accounts;
+- profiles and preferences;
+- conversations and messages;
+- demo recommendation requests and runs;
+- candidates and agent execution records;
+- user interactions.
+
+The seeded recommendation records are fixtures for presenting and testing the
+interface and data model. They are not LLM output. The command does not import
+or update movies, TV shows, or genres.
+
+Run it in Docker with debug mode enabled:
+
+```bash
+docker compose exec -e DJANGO_DEBUG=True app \
+  python manage.py seed_demo_data
+```
+
+The password comes from `SEED_USER_PASSWORD` or the command argument:
+
+```bash
+docker compose exec -e DJANGO_DEBUG=True app \
+  python manage.py seed_demo_data \
+  --users 2 \
+  --password 'StrongPassword123!'
+```
+
+The seeder is restricted to `DEBUG=True`.
+
+## Backend and API
+
+The backend uses Django ORM with PostgreSQL.
+
+### Authentication
+
+Django's `auth_user` table handles authentication. Registration and login
+create or update the corresponding `app_user` business record. The frontend
+uses a session cookie and the `X-CSRFToken` header.
+
+| Method | Endpoint | Access | Purpose |
+|---|---|---|---|
+| `GET` | `/api/auth/csrf/` | public | set the CSRF cookie |
+| `POST` | `/api/auth/register/` | public | create an account and sign in |
+| `POST` | `/api/auth/login/` | public | sign in with email and password |
+| `GET` | `/api/auth/session/` | public | return the active session state |
+| `POST` | `/api/auth/logout/` | authenticated | sign out |
+
+### Application data
+
+Application-data endpoints require an authenticated session, except for the
+health endpoint.
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| `GET` | `/api/health/` | report PostgreSQL and Redis status |
+| `GET` | `/api/bootstrap/` | return initial data for the signed-in user |
+| `GET` | `/api/contents/` | catalog search, filters, sorting, and pagination |
+| `GET` | `/api/contents/upcoming/` | upcoming movie releases |
+| `GET` | `/api/recommendation-trends/?period=...` | aggregate stored candidate data |
+| `PATCH` | `/api/profile/` | update name, email, profile, and preferences |
+| `GET` | `/api/conversations/` | list conversations |
+| `POST` | `/api/conversations/` | create a conversation |
+| `PATCH` | `/api/conversations/:id/` | rename a conversation |
+| `DELETE` | `/api/conversations/:id/` | delete a conversation |
+| `POST` | `/api/conversations/:id/messages/` | store a user message |
+| `POST` | `/api/interactions/` | store a title interaction |
+| `DELETE` | `/api/interactions/:id/` | delete the user's interaction |
+
+`GET /api/bootstrap/` provides the frontend with the user, profile,
+preferences, conversations, messages, and interactions. It is unrelated to
+the catalog baseline process and the Bootstrap CSS framework.
+
+### Catalog query parameters
+
+`GET /api/contents/` supports:
+
+- `page`;
+- `page_size`, with a maximum of 50;
+- `q` for title search;
+- `media_type`: `all`, `movie`, or `tv`;
+- `genre`;
+- `min_rating`;
+- `year_from`;
+- `sort`;
+- `ids` for fetching a specified list of identifiers.
+
+### Recommendation data
+
+`RecommendationRequest`, `RecommendationRun`, `RunCandidate`, and
+`AgentExecution` provide persistence for recommendation-related data. The API
+does not execute a recommendation pipeline. Posting a message stores it in
+PostgreSQL without fabricating an assistant response.
+
+## Frontend
+
+The frontend is a React and TypeScript single-page application. Django serves
+the production build from `frontend/dist`, and frontend routes resolve to the
+same `index.html`.
+
+### Views
+
+- login;
+- registration;
+- recommendation advisor;
+- movie and TV catalog;
+- trends;
+- upcoming movie releases;
+- watchlist;
+- analytics;
+- profile.
+
+### Main components
+
+| File | Responsibility |
+|---|---|
+| `App.tsx` | view routing and main application state |
+| `SessionContext.tsx` | session, user data, and API synchronization |
+| `ChatInterface.tsx` | conversation and message form |
+| `ConversationManager.tsx` | list, create, rename, and delete conversations |
+| `CatalogView.tsx` | catalog search, filters, and pagination |
+| `UpcomingReleasesView.tsx` | chronological upcoming-release view |
+| `MovieDetailModal.tsx` | title details and user actions |
+| `RecommendationCard.tsx` | presentation component for recommendation data |
+| `TrendsView.tsx` | trends based on stored recommendation data |
+| `AnalyticsView.tsx` | user activity statistics |
+| `ProfileView.tsx` | account, profile, and preferences |
+
+Recommendation generation is designed to begin only after the user
+explicitly submits text. Navigation, filter changes, opening a title, adding
+it to the watchlist, or marking it as watched must not trigger an LLM request.
+
+## Data model
+
+The business schema is defined in:
+
+```text
+backend/postgresql_recommendation_platform_schema.sql
+```
+
+Django models are defined in `backend/api/models.py`.
+
+### Main entities
+
+| Model or table | Purpose |
+|---|---|
+| `auth_user` | Django authentication |
+| `app_user` | application-level user record |
+| `user_profile` | semantic profile summary and version |
+| `user_preference` | preference value, polarity, weight, and confidence |
+| `conversation` | user conversation |
+| `message` | ordered conversation message |
+| `recommendation_request` | extracted context and constraints |
+| `recommendation_run` | recommendation process state |
+| `content` | movie or TV show imported from TMDB |
+| `genre` | canonical genre |
+| `content_genre` | many-to-many content/genre relation |
+| `content_embedding` | 768-dimensional content embedding |
+| `run_candidate` | candidate and ranking values |
+| `interaction` | user behavior associated with a title |
+| `agent_execution` | trace of one agent step |
+
+```mermaid
+erDiagram
+    APP_USER ||--o| USER_PROFILE : has
+    APP_USER ||--o{ USER_PREFERENCE : has
+    APP_USER ||--o{ CONVERSATION : owns
+    CONVERSATION ||--o{ MESSAGE : contains
+    CONVERSATION ||--o{ RECOMMENDATION_REQUEST : initiates
+    RECOMMENDATION_REQUEST ||--o{ RECOMMENDATION_RUN : starts
+    RECOMMENDATION_RUN ||--o{ RUN_CANDIDATE : evaluates
+    RECOMMENDATION_RUN ||--o{ AGENT_EXECUTION : records
+    CONTENT ||--o{ RUN_CANDIDATE : becomes
+    CONTENT ||--o{ INTERACTION : receives
+    APP_USER ||--o{ INTERACTION : performs
+    CONTENT ||--o{ CONTENT_EMBEDDING : has
+    CONTENT ||--o{ CONTENT_GENRE : has
+    GENRE ||--o{ CONTENT_GENRE : describes
+```
+
+Supported interaction types are:
+
+- `details_opened`;
+- `liked`;
+- `disliked`;
+- `watchlisted`;
+- `watched`;
+- `rated`.
+
+Only a `rated` interaction accepts a rating, and its value must be between
+0 and 10.
+
+The `content_embedding` table and an HNSW index are present in the schema.
+The `embedding` column uses `vector(768)`. The application does not populate
+this table or perform semantic search.
+
+## Redis and caching
+
+Redis is an acceleration layer; PostgreSQL remains the main DB.
+
+Redis provides:
+
+- cache-aside storage for raw `/movie/upcoming` responses;
+- complete, ready-to-display `/api/contents/` responses containing catalog
+  items, pagination metadata, and available genres;
+- version-based catalog cache invalidation;
+- a shared TMDB synchronization lock;
+- fast reads for Django sessions;
+- PostgreSQL session fallback when the cache is unavailable.
+
+Key formats:
+
+```text
+apiTMDB:response:<sha256>
+catalog:search:v<version>:<sha256>
+lock:tmdb:catalog
+```
+
+The catalog key includes query parameters and the current date. A successful
+TMDB write increments the cache version, which makes stale variants
+unreachable without scanning and deleting every key.
+
+`backend.sessions.SessionStore` extends Django's `cached_db` session backend:
+
+1. PostgreSQL stores the persistent session;
+2. Redis accelerates reads;
+3. cache errors fall back to PostgreSQL;
+4. Redis can be repopulated from the persistent session.
+
+If Redis is unavailable, the health endpoint reports `degraded`, catalog
+reads can use PostgreSQL, and sessions use their persistent database copy.
+Catalog synchronization can continue without the distributed lock.
+
+## PostgreSQL and pgvector
+
+PostgreSQL stores:
+
+- business user records;
+- profiles and preferences;
+- conversations and messages;
+- catalog entries and genres;
+- interactions;
+- demo recommendation data;
+- Django sessions;
+- the schema prepared for content embeddings.
+
+For a new Compose volume, PostgreSQL executes:
+
+```text
+backend/postgresql_recommendation_platform_schema.sql
+```
+
+The script creates the `vector` extension, custom enum types, tables, indexes,
+and triggers. It is intended for an empty database because not every statement
+is idempotent.
+
+Migration `api.0001_initial` uses `SeparateDatabaseAndState`. It registers the
+business models in Django's migration state without recreating the tables from
+the initialization script. Regular Django migrations handle subsequent schema
+changes.
+
+The graphical ERD is available in
+[`PostgreSQL_ERD.png`](PostgreSQL_ERD.png).
+
+## Management commands
+
+### Synchronize the catalog
+
+```bash
+python manage.py sync_tmdb_catalog
+```
+
+Options:
+
+```text
+--baseline-movies
+--baseline-tv-shows
+--days-back
+--max-pages
+--upcoming-days-ahead
+--upcoming-max-pages
+```
+
+Example:
+
+```bash
+python manage.py sync_tmdb_catalog \
+  --baseline-movies 2000 \
+  --baseline-tv-shows 2000 \
+  --days-back 30 \
+  --max-pages 10 \
+  --upcoming-days-ahead 365 \
+  --upcoming-max-pages 10
+```
+
+This command supports `DEBUG=False`.
+
+### Seed demo data
+
+```bash
+python manage.py seed_demo_data --users 5
+```
+
+Options:
+
+- `--users`: from 1 to 5;
+- `--password`: password used instead of `SEED_USER_PASSWORD`.
+
+This command requires `DEBUG=True`.
+
+### Clear application data
+
+Interactive:
+
+```bash
+python manage.py clear_database_data
+```
+
+Without confirmation:
+
+```bash
+python manage.py clear_database_data --yes
+```
+
+Preserve users, profiles, and preferences:
+
+```bash
+python manage.py clear_database_data --keep-users
+```
+
+The command uses `TRUNCATE ... RESTART IDENTITY CASCADE`, preserves the schema
+and migration history, and requires `DEBUG=True`. It clears PostgreSQL but
+does not run `FLUSHDB` in Redis.
+
+> **Warning:** clearing data is destructive. Clear the project Redis cache
+> separately when performing a complete development-environment reset.
+
+### Development server
+
+The project extends Django's development command:
+
+```bash
+python manage.py runserver 8000
+```
+
+Before starting the server, it:
+
+1. runs the backend test suite;
+2. checks the database schema;
+3. runs `sync_tmdb_catalog` when the `content` table is empty;
+4. runs the demo seeder after catalog synchronization;
+5. starts the development server.
+
+Skip this automation with:
+
+```bash
+python manage.py runserver 8000 --skip-bootstrap
+```
+
+This behavior applies to the development server, not to Gunicorn in Compose.
+
+## Tests and quality checks
+
+### Backend
+
+```bash
+python manage.py test
+python manage.py check
+```
+
+In Docker:
+
+```bash
+docker compose exec app python manage.py test --noinput
+docker compose exec app python manage.py check
+```
+
+The backend suite covers authentication, sessions, CSRF, ownership checks,
+catalog queries, pagination, filtering, caching, upcoming releases, TMDB
+normalization, synchronization, Redis locks, conversations, message sequence
+numbers, interactions, rating validation, the admin panel, management
+commands, and SPA routes.
+
+### Frontend
+
+```bash
+npm --prefix frontend test
+npm --prefix frontend run lint
+npm --prefix frontend run build
+```
+
+The frontend suite covers views, API communication, session context, routing,
+safe rendering, upcoming releases, and user interactions.
+
+### Docker
+
+```bash
+docker compose config --quiet
+docker compose up -d --build
+docker compose ps
+```
+
+## Security
+
+The application implements:
+
+- Django password hashing and password validators;
+- session authentication and session-key rotation after login;
+- CSRF protection;
+- `HttpOnly` and `SameSite=Lax` cookies;
+- configurable secure cookies, HTTPS redirects, and HSTS;
+- ownership checks for conversations and interactions;
+- input validation and request-size limits;
+- Django ORM for user-influenced queries;
+- WhiteNoise static-file serving;
+- an unprivileged application-container user;
+- no public PostgreSQL or Redis ports in Compose;
+- server-side TMDB credentials;
+- frontend XSS tests and React's safe rendering behavior.
+
+The deployment does not include rate limiting, password reset, a Content
+Security Policy, Redis authentication/TLS, or LLM-specific safeguards.
+
+## Production deployment
+
+Compose runs Gunicorn. A public deployment also requires a domain, HTTPS, and
+a reverse proxy or load balancer.
+
+Minimum production-oriented settings:
+
+```env
+DJANGO_DEBUG="False"
+DJANGO_SECRET_KEY="a-long-random-secret"
+DJANGO_ALLOWED_HOSTS="app.example.com"
+DJANGO_CSRF_TRUSTED_ORIGINS="https://app.example.com"
+DJANGO_SECURE_SSL_REDIRECT="True"
+DJANGO_SECURE_COOKIES="True"
+DJANGO_HSTS_SECONDS="31536000"
+DJANGO_TRUST_X_FORWARDED_PROTO="True"
+```
+
+Run Django's deployment checks:
+
+```bash
+docker compose exec app \
+  python manage.py check --deploy
+```
+
+Do not use `runserver` in production. Place Nginx, Caddy, or a load balancer
+in front of the application.
+
+The repository does not provide a public-server definition, TLS certificate
+automation, scheduled backups, monitoring, alerting, log retention, rollback
+automation, or CI/CD.
+
+## Recommendation system scope
+# TODO
+
+The intended recommendation workflow consists of four roles:
+
+1. a profiling and context step that interprets the user's message,
+   conversation history, profile, mood, themes, and constraints;
+2. a retrieval step that combines relational filters, PostgreSQL/pgvector,
+   and optional TMDB metadata;
+3. a ranking and critique step that scores candidates and rejects mismatches;
+4. an explanation and interaction step that returns a concise response and
+   explains each selected title.
+
+The schema provides `recommendation_request`, `recommendation_run`,
+`run_candidate`, and `agent_execution` for storing this workflow. Implementing
+the workflow requires:
+
+- selecting and integrating a local LLM runtime;
+- defining validated input and output contracts;
+- populating and versioning 768-dimensional catalog embeddings;
+- implementing relational and vector retrieval;
+- implementing ranking, rejection thresholds, and deterministic validation;
+- adding a recommendation API with errors, cancellation, retries, and
+  optional streaming;
+- connecting the existing frontend components to that API;
+- updating persistent preferences separately from a user's temporary mood;
+- evaluating recommendation accuracy, diversity, novelty, catalog coverage,
+  latency, and hardware requirements.
+
+The repository does not select a specific LLM or embedding model. Model names
+and versions require quality, performance, hardware, license, and
+multilingual-support evaluation.
+
+
+## Common operations
+
+### Logs
+
+```bash
+docker compose logs -f app
+docker compose logs -f catalog-sync
+docker compose logs -f postgres
+docker compose logs -f redis
+```
+
+### Restart services
+
+```bash
+docker compose restart app
+docker compose restart catalog-sync
+```
+
+Restarting `catalog-sync` starts synchronization immediately; the process
+runs the command before waiting for the next six-hour interval.
+
+### Run synchronization manually
+
+```bash
+docker compose exec app python manage.py sync_tmdb_catalog
+```
+
+### Seed demo data
+
+```bash
+docker compose exec -e DJANGO_DEBUG=True app \
+  python manage.py seed_demo_data
+```
+
+### Stop without removing data
+
+```bash
+docker compose stop
+```
+
+### Remove containers and preserve data
+
+```bash
+docker compose down
+```
+
+### Reset all Compose data
+
+```bash
+docker compose down --volumes
+docker compose up -d --build
+```
+
+> **Warning:** `down --volumes` permanently deletes this project's PostgreSQL
+> and Redis data.
+
+### Back up PostgreSQL
+
+```bash
+docker compose exec -T postgres \
+  sh -c 'pg_dump --format=custom --no-owner -U "$POSTGRES_USER" "$POSTGRES_DB"' \
+  > movie_advisor_backup.dump
+```
+
+### Restore PostgreSQL
+
+Stop processes that write to the database, restore the backup, and start them
+again:
+
+```bash
+docker compose stop app catalog-sync
+docker compose exec -T postgres \
+  sh -c 'pg_restore --clean --if-exists --no-owner -U "$POSTGRES_USER" -d "$POSTGRES_DB"' \
+  < movie_advisor_backup.dump
+docker compose start app catalog-sync
+```
+
+Test the restore procedure in a non-production environment before relying on
+it.
+
+## License
+
+This project is available under the MIT License. See [`LICENSE`](LICENSE).
