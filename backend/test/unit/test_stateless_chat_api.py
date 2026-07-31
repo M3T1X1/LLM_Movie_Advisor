@@ -8,6 +8,7 @@ from django.test import RequestFactory, SimpleTestCase, override_settings
 from backend.ai_context import LlmApplicationContext
 from backend.api.views import (
     CHAT_SYSTEM_PROMPT,
+    CONVERSATION_MEMORY_SYSTEM_PROMPT,
     INITIAL_RECOMMENDATION_SYSTEM_PROMPT,
     PROMPT_INJECTION_REJECTION,
     PROTECTED_OUTPUT_REPLACEMENT,
@@ -137,6 +138,10 @@ class StatelessChatApiTests(SimpleTestCase):
                     "content": "Kontekst z PostgreSQL i Redis.",
                 },
                 {
+                    "role": "system",
+                    "content": CONVERSATION_MEMORY_SYSTEM_PROMPT,
+                },
+                {
                     "role": "user",
                     "content": serialize_untrusted_history(
                         [
@@ -164,6 +169,79 @@ class StatelessChatApiTests(SimpleTestCase):
         self.assertEqual(context_prompt, "Poleć thriller.")
         self.assertIs(context_client, client)
 
+    def test_conversation_memory_allows_recalling_previous_recommendations(self):
+        self.assertIn(
+            "odszukaj ostatnią wcześniejszą odpowiedź FilmiQ",
+            CONVERSATION_MEMORY_SYSTEM_PROMPT,
+        )
+        self.assertIn(
+            "nie jest nową rekomendacją",
+            CONVERSATION_MEMORY_SYSTEM_PROMPT,
+        )
+        self.assertIn(
+            "nie muszą należeć do bieżącego catalog_candidates",
+            CONVERSATION_MEMORY_SYSTEM_PROMPT,
+        )
+
+    @patch("backend.api.views.get_ollama_client")
+    def test_recall_prompt_receives_recommendations_from_earlier_turn(
+        self,
+        mocked_get_client,
+    ):
+        client = mocked_get_client.return_value
+        client.model = "llama3.1:8b"
+        client.embedding_model = "nomic-embed-text:latest"
+        client.list_models.return_value = (
+            "llama3.1:8b",
+            "nomic-embed-text:latest",
+        )
+        client.is_model_available.return_value = True
+        client.chat.return_value = OllamaChatResponse(
+            content="Polecałem: Obcy, Coś i Martwe zło.",
+            model="llama3.1:8b",
+            done_reason="stop",
+            total_duration_ns=123,
+            prompt_eval_count=80,
+            eval_count=15,
+        )
+        history = [
+            {"role": "user", "content": "Poleć trzy horrory."},
+            {
+                "role": "assistant",
+                "content": "1. Obcy\n2. Coś\n3. Martwe zło",
+            },
+            {"role": "user", "content": "Daj przepis na pizzę."},
+            {
+                "role": "assistant",
+                "content": "Nie zajmuję się gotowaniem.",
+            },
+        ]
+
+        response = stateless_chat(
+            self.request(
+                {
+                    "message": "Przypomnij, jakie filmy poleciłeś na początku.",
+                    "history": history,
+                }
+            )
+        )
+
+        self.assertEqual(response.status_code, 200)
+        messages = client.chat.call_args.args[0]
+        self.assertEqual(
+            messages[-3],
+            {"role": "system", "content": CONVERSATION_MEMORY_SYSTEM_PROMPT},
+        )
+        self.assertIn("Obcy", messages[-2]["content"])
+        self.assertIn("Coś", messages[-2]["content"])
+        self.assertIn("Martwe zło", messages[-2]["content"])
+        self.assertEqual(
+            messages[-1],
+            {
+                "role": "user",
+                "content": "Przypomnij, jakie filmy poleciłeś na początku.",
+            },
+        )
     @patch("backend.api.views.get_ollama_client")
     def test_first_message_receives_initial_recommendation_instruction(
         self,
