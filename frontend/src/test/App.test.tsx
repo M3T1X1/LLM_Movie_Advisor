@@ -48,7 +48,7 @@ describe('App routing', () => {
   it('clearly reports that recommendations are not active yet', async () => {
     renderApp('/recommendations');
     expect(
-      await screen.findByText('System rekomendacji nie jest jeszcze aktywny'),
+      await screen.findByText('Karty rekomendacji nie są jeszcze aktywne'),
     ).toBeInTheDocument();
     expect(screen.queryByText('96%')).not.toBeInTheDocument();
   });
@@ -103,7 +103,7 @@ describe('App routing', () => {
     expect(await screen.findByRole('heading', { name: 'Trendy' })).toBeInTheDocument();
   });
 
-  it('persists a prompt without fabricating recommendations', async () => {
+  it('shows a transient prompt and local model response in the chat', async () => {
     const user = userEvent.setup();
     renderApp('/recommendations');
 
@@ -117,12 +117,22 @@ describe('App routing', () => {
 
     await user.click(screen.getByRole('button', { name: 'Wyślij wiadomość' }));
     expect(
-      (await screen.findAllByText('Lekki serial na dwa wieczory')).length,
-    ).toBeGreaterThanOrEqual(2);
+      await screen.findByText('Lekki serial na dwa wieczory'),
+    ).toBeInTheDocument();
     expect(
-      screen.getByText('System rekomendacji nie jest jeszcze aktywny'),
+      await screen.findByText(
+        'Wstępna odpowiedź modelu na: Lekki serial na dwa wieczory',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('Karty rekomendacji nie są jeszcze aktywne'),
     ).toBeInTheDocument();
     expect(screen.queryByText('96%')).not.toBeInTheDocument();
+
+    const fetchMock = vi.mocked(fetch);
+    expect(
+      fetchMock.mock.calls.some(([url]) => String(url).includes('/messages/')),
+    ).toBe(false);
 
     await user.click(screen.getByRole('button', { name: 'Nowa rozmowa' }));
     expect(screen.queryByText('96%')).not.toBeInTheDocument();

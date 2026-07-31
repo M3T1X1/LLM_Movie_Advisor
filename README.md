@@ -13,8 +13,9 @@ an AMD ROCm-backed Ollama runtime, and automated tests.
 The database schema and frontend contain the foundations for an LLM-based
 recommendation workflow. Docker Compose runs Ollama and downloads Llama 3.1
 8B into a persistent volume, but the recommendation pipeline itself is not yet
-implemented: Django does not call Ollama or recommendation agents and does not
-generate recommendations.
+implemented. The React chat can exchange temporary messages with the local
+model through Django, but it does not yet retrieve catalog-backed
+recommendations or run recommendation agents.
 
 ## Application screenshots
 
@@ -309,15 +310,16 @@ Example response:
   "status": "ok",
   "services": {
     "database": "ok",
-    "redis": "ok"
+    "redis": "ok",
+    "ollama": "ok"
   }
 }
 ```
 
-A `degraded` status means Redis is unavailable while PostgreSQL remains
-available. An unavailable PostgreSQL instance produces HTTP `503` with an
-`unavailable` status. The Django health endpoint does not yet call Ollama;
-inspect the `ollama` Compose health status separately.
+A `degraded` status means Redis or Ollama is unavailable while PostgreSQL
+remains available. Ollama reports `model_missing` when its HTTP service works
+but the configured chat model is not downloaded. An unavailable PostgreSQL
+instance produces HTTP `503` with an `unavailable` status.
 
 ### 5. Application URLs
 
@@ -400,11 +402,21 @@ destination. Use <http://localhost:8000> on the machine running Compose.
 | `OLLAMA_CONTEXT_LENGTH` | `8192` | default context window and associated VRAM allocation |
 | `OLLAMA_MAX_LOADED_MODELS` | `1` | maximum simultaneously loaded models |
 | `OLLAMA_NUM_PARALLEL` | `1` | parallel requests processed by one model |
-| `OLLAMA_REQUEST_TIMEOUT_SECONDS` | `120` | future Django-to-Ollama request timeout |
+| `OLLAMA_REQUEST_TIMEOUT_SECONDS` | `120` | Django-to-Ollama chat request timeout |
+| `OLLAMA_HEALTH_TIMEOUT_SECONDS` | `2` | short timeout used when checking Ollama and the selected model |
+| `OLLAMA_TEMPERATURE` | `0.4` | response randomness passed to the chat model |
+| `OLLAMA_TOP_P` | empty | optional nucleus-sampling threshold |
+| `OLLAMA_TOP_K` | empty | optional size of the token candidate pool |
+| `OLLAMA_NUM_PREDICT` | empty | optional generated-token limit |
+| `OLLAMA_REPEAT_PENALTY` | empty | optional repetition penalty |
 
 Compose supplies `OLLAMA_BASE_URL=http://ollama:11434` directly to the
 application container. The hostname is only meaningful on the Compose network
 and does not need to be added to `.env`.
+
+Model and generation parameters have a single source of truth in `.env`.
+Empty optional generation parameters are omitted from the Ollama request, so
+the selected model retains its own default for them.
 
 ### Application process
 
@@ -412,6 +424,7 @@ and does not need to be added to `.env`.
 |---|---:|---|
 | `APP_PORT` | `8000` | application port exposed on the host loopback interface |
 | `GUNICORN_WORKERS` | `3` | Gunicorn worker count |
+| `GUNICORN_TIMEOUT` | `180` | worker timeout long enough for a local model response |
 | `SEED_USER_PASSWORD` | required | demo account password used by `demo-seed` |
 | `VITE_API_BASE_URL` | `/api` | frontend API base path selected at build time |
 
@@ -430,6 +443,29 @@ through `/dev/kfd` and `/dev/dri`. It has no published host port; Django and
 The `ollama-init` service waits for Ollama to become healthy, requests the
 configured model, and exits. Ollama stores downloaded layers in the
 `ollama_data` volume, so an unchanged model is reused on later starts.
+
+Django includes a minimal HTTP client for model discovery and non-streaming
+chat calls. The application chat sends its current prompt and up to ten recent
+messages to `POST /api/chat/`. The prompt and response remain only in React
+memory and disappear after a page reload; this preliminary flow does not
+create `message`, `recommendation_request`, or `recommendation_run` records.
+
+Check the complete application health response:
+
+```bash
+curl http://localhost:8000/api/health/
+```
+
+Send one manual test message through Django:
+
+```bash
+docker compose exec app \
+  python manage.py ollama_chat "Poleć krótki thriller z mocnym twistem."
+```
+
+This command verifies the integration and returns the model's raw text. It
+does not query the application catalog, create a conversation, or persist a
+recommendation run.
 
 List downloaded models:
 
@@ -651,7 +687,8 @@ health endpoint.
 
 | Method | Endpoint | Purpose |
 |---|---|---|
-| `GET` | `/api/health/` | report PostgreSQL and Redis status |
+| `GET` | `/api/health/` | report PostgreSQL, Redis, Ollama, and model status |
+| `POST` | `/api/chat/` | return a temporary response from the local chat model without database persistence |
 | `GET` | `/api/bootstrap/` | return initial data for the signed-in user |
 | `GET` | `/api/contents/` | catalog search, filters, sorting, and pagination |
 | `GET` | `/api/contents/upcoming/` | upcoming movie releases |
@@ -713,8 +750,8 @@ same `index.html`.
 | File | Responsibility |
 |---|---|
 | `App.tsx` | view routing and main application state |
-| `SessionContext.tsx` | session, user data, and API synchronization |
-| `ChatInterface.tsx` | conversation and message form |
+| `SessionContext.tsx` | session, user data, API synchronization, and temporary chat messages |
+| `ChatInterface.tsx` | temporary local-model conversation and message form |
 | `ConversationManager.tsx` | list, create, rename, and delete conversations |
 | `CatalogView.tsx` | catalog search, filters, and pagination |
 | `UpcomingReleasesView.tsx` | chronological upcoming-release view |
@@ -907,6 +944,16 @@ Options:
 
 This command requires `DEBUG=True`.
 
+### Test the local chat model
+
+```bash
+python manage.py ollama_chat "Odpowiedz jednym zdaniem: czy działasz?"
+```
+
+The command checks that `OLLAMA_CHAT_MODEL` appears in Ollama's downloaded
+model list and then makes one non-streaming chat request. The response text is
+written to standard output and basic token metrics to standard error.
+
 ### Clear application data
 
 Interactive:
@@ -1072,7 +1119,7 @@ The schema provides `recommendation_request`, `recommendation_run`,
 `run_candidate`, and `agent_execution` for storing this workflow. Implementing
 the workflow requires:
 
-- connecting Django to the configured Ollama runtime;
+- using the existing Ollama client in the recommendation workflow;
 - defining validated input and output contracts;
 - populating and versioning 768-dimensional catalog embeddings;
 - implementing relational and vector retrieval;
@@ -1090,8 +1137,9 @@ hardware, license, and multilingual-support evaluation.
 
 ## Known limitations
 
-- no recommendation-generation endpoint;
-- the containerized Ollama runtime is not yet called by Django;
+- no catalog-grounded recommendation-generation endpoint;
+- the preliminary Ollama chat does not persist messages or recommendation
+  runs and loses its temporary messages after a page reload;
 - no LangChain or LangGraph integration;
 - no generated catalog embeddings or semantic search;
 - no automatic semantic-profile updates;

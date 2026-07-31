@@ -10,6 +10,7 @@ import type {
   Interaction,
   InteractionType,
   RecommendationTrends,
+  StatelessChatResponse,
   TrendPeriod,
 } from '../types';
 
@@ -202,6 +203,19 @@ export async function createMessage(
   return request(
     `/conversations/${conversationId}/messages/`,
     jsonRequest('POST', { content }),
+  );
+}
+
+export async function requestStatelessChat(
+  message: string,
+  history: Array<Pick<ChatMessage, 'role' | 'content'>>,
+): Promise<StatelessChatResponse> {
+  return request(
+    '/chat/',
+    jsonRequest('POST', {
+      message,
+      history,
+    }),
   );
 }
 

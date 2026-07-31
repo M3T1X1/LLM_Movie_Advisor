@@ -48,6 +48,17 @@ export function installApiMock() {
         interactions,
       });
     }
+    if (path === '/api/chat/' && method === 'POST') {
+      return json({
+        message: `Wstępna odpowiedź modelu na: ${body.message}`,
+        model: 'llama3.1:8b',
+        usage: {
+          promptTokens: 24,
+          generatedTokens: 12,
+          totalDurationNs: 123456,
+        },
+      });
+    }
     if (path === '/api/contents/') {
       const params = new URL(url, 'http://localhost').searchParams;
       const page = Number(params.get('page') ?? 1);

@@ -51,31 +51,30 @@ describe('SessionContext backend integration', () => {
     expect(result.current.conversations.some((item) => item.id === createdId)).toBe(false);
   });
 
-  it('persists a user message and derives the conversation title', async () => {
+  it('keeps a prompt and Ollama response only in the current browser session', async () => {
     const { result } = await renderAuthenticatedSession();
-
-    await act(() => result.current.createConversation());
     const conversationId = result.current.currentConversationId!;
-    await act(() => result.current.addMessage('user', 'Ambitne science fiction'));
+
+    await act(() => result.current.sendChatMessage('Poleć lekki serial'));
 
     expect(
-      result.current.messages.some(
+      result.current.messages.filter(
         (message) =>
           message.conversationId === conversationId &&
-          message.content === 'Ambitne science fiction',
+          message.id.startsWith('transient-'),
       ),
-    ).toBe(true);
-    expect(
-      result.current.conversations.find((item) => item.id === conversationId)?.title,
-    ).toBe('Ambitne science fiction');
-  });
-
-  it('does not accept fabricated assistant messages before LLM integration', async () => {
-    const { result } = await renderAuthenticatedSession();
-
-    await expect(
-      result.current.addMessage('assistant', 'Sztuczna odpowiedź'),
-    ).rejects.toThrow('wyłącznie wiadomości użytkownika');
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          role: 'user',
+          content: 'Poleć lekki serial',
+        }),
+        expect.objectContaining({
+          role: 'assistant',
+          content: 'Wstępna odpowiedź modelu na: Poleć lekki serial',
+        }),
+      ]),
+    );
   });
 
   it('records and removes a watchlist interaction through backend', async () => {

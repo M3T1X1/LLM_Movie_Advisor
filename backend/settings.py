@@ -144,6 +144,36 @@ OLLAMA_CHAT_MODEL = os.environ.get('OLLAMA_CHAT_MODEL', 'llama3.1:8b')
 OLLAMA_REQUEST_TIMEOUT_SECONDS = int(
     os.environ.get('OLLAMA_REQUEST_TIMEOUT_SECONDS', 120)
 )
+OLLAMA_HEALTH_TIMEOUT_SECONDS = int(
+    os.environ.get('OLLAMA_HEALTH_TIMEOUT_SECONDS', 2)
+)
+OLLAMA_CHAT_OPTIONS = {
+    key: value
+    for key, value in {
+        'temperature': float(os.environ.get('OLLAMA_TEMPERATURE', '0.4')),
+        'top_p': (
+            float(os.environ['OLLAMA_TOP_P'])
+            if os.environ.get('OLLAMA_TOP_P', '').strip()
+            else None
+        ),
+        'top_k': (
+            int(os.environ['OLLAMA_TOP_K'])
+            if os.environ.get('OLLAMA_TOP_K', '').strip()
+            else None
+        ),
+        'num_predict': (
+            int(os.environ['OLLAMA_NUM_PREDICT'])
+            if os.environ.get('OLLAMA_NUM_PREDICT', '').strip()
+            else None
+        ),
+        'repeat_penalty': (
+            float(os.environ['OLLAMA_REPEAT_PENALTY'])
+            if os.environ.get('OLLAMA_REPEAT_PENALTY', '').strip()
+            else None
+        ),
+    }.items()
+    if value is not None
+}
 
 SESSION_ENGINE = "backend.sessions"
 SESSION_CACHE_ALIAS = "default"

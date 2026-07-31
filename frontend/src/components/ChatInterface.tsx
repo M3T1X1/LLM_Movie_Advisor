@@ -120,7 +120,7 @@ export function ChatInterface({
         <div ref={bottomRef} />
       </div>
 
-      {isProcessing && <AgentStatus steps={agentSteps} />}
+      {isProcessing && agentSteps.length > 0 && <AgentStatus steps={agentSteps} />}
 
       <div className="border-t border-white/[0.06] p-4 sm:p-5">
         {messages.length < 3 && (

@@ -30,6 +30,13 @@ from backend.api.models import (
     UserPreference,
     UserProfile,
 )
+from backend.ollama import (
+    OllamaConfigurationError,
+    OllamaError,
+    OllamaResponseError,
+    OllamaUnavailableError,
+    get_ollama_client,
+)
 from backend.redis import (
     get_cached_catalog_search,
     get_cached_tmdb,
@@ -42,6 +49,16 @@ from backend.tmdb import TmdbClient, normalize_tmdb_item
 
 logger = logging.getLogger(__name__)
 MAX_CHAT_MESSAGE_LENGTH = 800
+MAX_CHAT_HISTORY_MESSAGES = 10
+MAX_CHAT_HISTORY_CONTENT_LENGTH = 4000
+CHAT_SYSTEM_PROMPT = (
+    "Jesteś FilmiQ, polskojęzycznym doradcą pomagającym wybierać filmy i "
+    "seriale. Odpowiadaj konkretnie, naturalnie i zwięźle. Możesz korzystać "
+    "wyłącznie ze swojej wiedzy ogólnej: nie masz jeszcze dostępu do katalogu "
+    "aplikacji, profilu użytkownika ani aktualnych danych TMDB. Jeśli nie "
+    "masz pewności, powiedz o tym wprost. Gdy prośba jest zbyt ogólna, zadaj "
+    "jedno krótkie pytanie doprecyzowujące."
+)
 CATALOG_DEFAULT_PAGE_SIZE = 20
 CATALOG_MAX_PAGE_SIZE = 50
 UPCOMING_CACHE_TTL_SECONDS = 60 * 60
@@ -164,6 +181,7 @@ def health(request: HttpRequest) -> JsonResponse:
     services = {
         "database": "ok",
         "redis": "ok",
+        "ollama": "ok",
     }
 
     try:
@@ -180,6 +198,13 @@ def health(request: HttpRequest) -> JsonResponse:
     if not redis_available:
         services["redis"] = "unavailable"
 
+    try:
+        if not get_ollama_client().has_configured_model():
+            services["ollama"] = "model_missing"
+    except OllamaError:
+        logger.warning("Ollama health check failed.")
+        services["ollama"] = "unavailable"
+
     if services["database"] == "unavailable":
         return JsonResponse(
             {
@@ -188,7 +213,7 @@ def health(request: HttpRequest) -> JsonResponse:
             },
             status=503,
         )
-    if services["redis"] == "unavailable":
+    if any(status != "ok" for status in services.values()):
         return JsonResponse(
             {
                 "status": "degraded",
@@ -199,6 +224,110 @@ def health(request: HttpRequest) -> JsonResponse:
         {
             "status": "ok",
             "services": services,
+        }
+    )
+
+
+@require_http_methods(["POST"])
+@authenticated
+def stateless_chat(request: HttpRequest) -> JsonResponse:
+    data = request_data(request)
+    if data is None:
+        return JsonResponse({"detail": "Invalid JSON body."}, status=400)
+
+    prompt = data.get("message")
+    if not isinstance(prompt, str) or not prompt.strip():
+        return JsonResponse({"detail": "Message content is required."}, status=400)
+    prompt = prompt.strip()
+    if len(prompt) > MAX_CHAT_MESSAGE_LENGTH:
+        return JsonResponse(
+            {
+                "detail": (
+                    f"Message content cannot exceed "
+                    f"{MAX_CHAT_MESSAGE_LENGTH} characters."
+                )
+            },
+            status=400,
+        )
+
+    raw_history = data.get("history", [])
+    if not isinstance(raw_history, list):
+        return JsonResponse({"detail": "Chat history must be a list."}, status=400)
+    if len(raw_history) > MAX_CHAT_HISTORY_MESSAGES:
+        return JsonResponse(
+            {
+                "detail": (
+                    f"Chat history cannot exceed "
+                    f"{MAX_CHAT_HISTORY_MESSAGES} messages."
+                )
+            },
+            status=400,
+        )
+
+    history: list[dict[str, str]] = []
+    for item in raw_history:
+        if not isinstance(item, dict):
+            return JsonResponse(
+                {"detail": "Chat history contains an invalid message."},
+                status=400,
+            )
+        role = item.get("role")
+        content = item.get("content")
+        if role not in {"user", "assistant"}:
+            return JsonResponse(
+                {"detail": "Chat history contains an invalid role."},
+                status=400,
+            )
+        if not isinstance(content, str) or not content.strip():
+            return JsonResponse(
+                {"detail": "Chat history contains empty content."},
+                status=400,
+            )
+        content = content.strip()
+        if len(content) > MAX_CHAT_HISTORY_CONTENT_LENGTH:
+            return JsonResponse(
+                {"detail": "Chat history message is too long."},
+                status=400,
+            )
+        history.append({"role": role, "content": content})
+
+    try:
+        client = get_ollama_client()
+        if not client.has_configured_model():
+            return JsonResponse(
+                {"detail": "Skonfigurowany lokalny model nie jest jeszcze pobrany."},
+                status=503,
+            )
+        response = client.chat(
+            [
+                {"role": "system", "content": CHAT_SYSTEM_PROMPT},
+                *history,
+                {"role": "user", "content": prompt},
+            ],
+            options=settings.OLLAMA_CHAT_OPTIONS,
+        )
+    except (OllamaUnavailableError, OllamaConfigurationError):
+        logger.warning("Stateless chat could not reach Ollama.")
+        return JsonResponse(
+            {"detail": "Lokalny model językowy jest obecnie niedostępny."},
+            status=503,
+        )
+    except OllamaResponseError:
+        logger.warning("Stateless chat received an invalid Ollama response.")
+        return JsonResponse(
+            {"detail": "Lokalny model zwrócił nieprawidłową odpowiedź."},
+            status=502,
+        )
+
+    return JsonResponse(
+        {
+            "message": response.content,
+            "model": response.model,
+            "usage": {
+                "promptTokens": response.prompt_eval_count,
+                "generatedTokens": response.eval_count,
+                "totalDurationNs": response.total_duration_ns,
+            },
         }
     )
 

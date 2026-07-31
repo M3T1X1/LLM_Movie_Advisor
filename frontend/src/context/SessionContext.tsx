@@ -2,7 +2,6 @@ import { createContext, type ReactNode, useContext, useEffect, useMemo, useState
 import {
   createConversation as createConversationRequest,
   createInteraction as createInteractionRequest,
-  createMessage,
   deleteConversation as deleteConversationRequest,
   deleteInteraction as deleteInteractionRequest,
   getAuthSession,
@@ -10,6 +9,7 @@ import {
   login as loginRequest,
   logout as logoutRequest,
   register as registerRequest,
+  requestStatelessChat,
   renameConversation as renameConversationRequest,
   updateProfile,
 } from '../services/api';
@@ -21,7 +21,6 @@ import type {
   DatabaseId,
   Interaction,
   InteractionType,
-  MessageRole,
   UserPreference,
   UserSemanticProfile,
 } from '../types';
@@ -48,7 +47,7 @@ interface SessionContextValue extends SessionState {
   selectConversation: (conversationId: DatabaseId) => void;
   renameConversation: (conversationId: DatabaseId, title: string) => Promise<void>;
   deleteConversation: (conversationId: DatabaseId) => Promise<void>;
-  addMessage: (role: MessageRole, content: string) => Promise<ChatMessage>;
+  sendChatMessage: (content: string) => Promise<ChatMessage>;
   updateUser: (
     changes: Partial<Pick<AppUser, 'username' | 'email'>>,
   ) => Promise<void>;
@@ -75,6 +74,13 @@ const emptySession: SessionState = {
 };
 
 const SessionContext = createContext<SessionContextValue | undefined>(undefined);
+export const TRANSIENT_CHAT_CONVERSATION_ID = 'transient-chat';
+let transientMessageCounter = 0;
+
+function transientMessageId() {
+  transientMessageCounter += 1;
+  return `transient-${Date.now()}-${transientMessageCounter}`;
+}
 
 function stateFromBootstrap(data: AppBootstrap): SessionState {
   return {
@@ -177,27 +183,70 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     });
   };
 
-  const addMessage = async (role: MessageRole, content: string) => {
-    if (role !== 'user') {
-      throw new Error('Backend przyjmuje obecnie wyłącznie wiadomości użytkownika.');
-    }
-    const conversationId = session.currentConversationId;
-    if (!conversationId) throw new Error('Nie wybrano aktywnej rozmowy.');
-    const message = await createMessage(conversationId, content);
+  const sendChatMessage = async (content: string) => {
+    const conversationId =
+      session.currentConversationId ?? TRANSIENT_CHAT_CONVERSATION_ID;
+
+    const conversationMessages = session.messages.filter(
+      (message) => message.conversationId === conversationId,
+    );
+    const nextSequence =
+      Math.max(0, ...conversationMessages.map((message) => message.sequenceNo)) + 1;
+    const userMessage: ChatMessage = {
+      id: transientMessageId(),
+      conversationId,
+      role: 'user',
+      content,
+      sequenceNo: nextSequence,
+      createdAt: new Date().toISOString(),
+    };
     setSession((current) => ({
       ...current,
-      messages: [...current.messages, message],
-      conversations: current.conversations.map((conversation) =>
-        conversation.id === conversationId
-          ? {
-              ...conversation,
-              title: conversation.title ?? content.slice(0, 255),
-              updatedAt: message.createdAt,
-            }
-          : conversation,
-      ),
+      messages: [...current.messages, userMessage],
     }));
-    return message;
+
+    const history = conversationMessages
+      .filter((message) => message.role === 'user' || message.role === 'assistant')
+      .slice(-10)
+      .map((message) => ({
+        role: message.role,
+        content: message.content.slice(0, 4000),
+      }));
+
+    try {
+      const response = await requestStatelessChat(content, history);
+      const assistantMessage: ChatMessage = {
+        id: transientMessageId(),
+        conversationId,
+        role: 'assistant',
+        content: response.message,
+        sequenceNo: nextSequence + 1,
+        createdAt: new Date().toISOString(),
+      };
+      setSession((current) => ({
+        ...current,
+        messages: [...current.messages, assistantMessage],
+      }));
+      return assistantMessage;
+    } catch (reason) {
+      const detail =
+        reason instanceof Error
+          ? reason.message
+          : 'Lokalny model językowy jest obecnie niedostępny.';
+      const errorMessage: ChatMessage = {
+        id: transientMessageId(),
+        conversationId,
+        role: 'assistant',
+        content: `Nie udało się uzyskać odpowiedzi: ${detail}`,
+        sequenceNo: nextSequence + 1,
+        createdAt: new Date().toISOString(),
+      };
+      setSession((current) => ({
+        ...current,
+        messages: [...current.messages, errorMessage],
+      }));
+      throw reason;
+    }
   };
 
   const updateUser = async (
@@ -299,7 +348,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     selectConversation,
     renameConversation,
     deleteConversation,
-    addMessage,
+    sendChatMessage,
     updateUser,
     recordInteraction,
     removeInteraction,

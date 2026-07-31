@@ -7,6 +7,7 @@ app_name = "api"
 
 urlpatterns = [
     path("health/", views.health, name="health"),
+    path("chat/", views.stateless_chat, name="chat"),
     path("bootstrap/", views.bootstrap, name="bootstrap"),
     path("contents/", views.contents, name="contents"),
     path("contents/upcoming/", views.upcoming_contents, name="upcoming-contents"),

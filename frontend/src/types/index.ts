@@ -57,6 +57,16 @@ export interface ChatMessage {
   createdAt: string;
 }
 
+export interface StatelessChatResponse {
+  message: string;
+  model: string;
+  usage: {
+    promptTokens: number | null;
+    generatedTokens: number | null;
+    totalDurationNs: number | null;
+  };
+}
+
 export interface RecommendationRequestRecord {
   id: DatabaseId;
   conversationId: DatabaseId;

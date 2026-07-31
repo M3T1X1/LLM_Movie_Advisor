@@ -4,10 +4,21 @@ from django.db import DatabaseError
 from django.urls import reverse
 from redis.exceptions import RedisError
 
+from backend.ollama import OllamaUnavailableError
 from backend.test.integration.api_base import ApiIntegrationTestCase
 
 
 class HealthApiTests(ApiIntegrationTestCase):
+    def setUp(self):
+        super().setUp()
+        ollama_patcher = patch("backend.api.views.get_ollama_client")
+        self.addCleanup(ollama_patcher.stop)
+        self.mocked_get_ollama_client = ollama_patcher.start()
+        self.mocked_ollama_client = (
+            self.mocked_get_ollama_client.return_value
+        )
+        self.mocked_ollama_client.has_configured_model.return_value = True
+
     @patch("backend.api.views.redis_client.ping", return_value=True)
     def test_health_check_is_public_and_checks_database(self, mocked_redis_ping):
         self.client.logout()
@@ -22,10 +33,12 @@ class HealthApiTests(ApiIntegrationTestCase):
                 "services": {
                     "database": "ok",
                     "redis": "ok",
+                    "ollama": "ok",
                 },
             },
         )
         mocked_redis_ping.assert_called_once_with()
+        self.mocked_ollama_client.has_configured_model.assert_called_once_with()
 
     @patch(
         "backend.api.views.connection.ensure_connection",
@@ -47,6 +60,7 @@ class HealthApiTests(ApiIntegrationTestCase):
                 "services": {
                     "database": "unavailable",
                     "redis": "ok",
+                    "ollama": "ok",
                 },
             },
         )
@@ -72,8 +86,58 @@ class HealthApiTests(ApiIntegrationTestCase):
                 "services": {
                     "database": "ok",
                     "redis": "unavailable",
+                    "ollama": "ok",
                 },
             },
         )
         self.assertNotIn("tajny adres Redisa", response.content.decode())
+        mocked_redis_ping.assert_called_once_with()
+
+    @patch("backend.api.views.redis_client.ping", return_value=True)
+    def test_health_check_is_degraded_when_model_is_missing(
+        self,
+        mocked_redis_ping,
+    ):
+        self.mocked_ollama_client.has_configured_model.return_value = False
+
+        response = self.client.get(reverse("api:health"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json(),
+            {
+                "status": "degraded",
+                "services": {
+                    "database": "ok",
+                    "redis": "ok",
+                    "ollama": "model_missing",
+                },
+            },
+        )
+        mocked_redis_ping.assert_called_once_with()
+
+    @patch("backend.api.views.redis_client.ping", return_value=True)
+    def test_health_check_sanitizes_ollama_connection_failure(
+        self,
+        mocked_redis_ping,
+    ):
+        self.mocked_ollama_client.has_configured_model.side_effect = (
+            OllamaUnavailableError("tajny adres Ollamy")
+        )
+
+        response = self.client.get(reverse("api:health"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json(),
+            {
+                "status": "degraded",
+                "services": {
+                    "database": "ok",
+                    "redis": "ok",
+                    "ollama": "unavailable",
+                },
+            },
+        )
+        self.assertNotIn("tajny adres Ollamy", response.content.decode())
         mocked_redis_ping.assert_called_once_with()

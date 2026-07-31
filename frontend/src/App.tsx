@@ -1,4 +1,4 @@
-import { Bookmark, ChevronRight, MessageSquareText, Plus, Sparkles } from 'lucide-react';
+import { Bookmark, ChevronRight, Sparkles } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { AnalyticsView } from './components/AnalyticsView';
 import { CatalogCard, CatalogView } from './components/CatalogView';
@@ -12,16 +12,12 @@ import { ProfileView } from './components/ProfileView';
 import { RegisterView } from './components/RegisterView';
 import { TrendsView } from './components/TrendsView';
 import { UpcomingReleasesView } from './components/UpcomingReleasesView';
-import { useSession } from './context/SessionContext';
+import {
+  TRANSIENT_CHAT_CONVERSATION_ID,
+  useSession,
+} from './context/SessionContext';
 import { getCatalogContent, getContentByIds } from './services/api';
-import type { AgentStep, AppView, CatalogPage, CatalogQuery, Content } from './types';
-
-const inactiveAgentSteps: AgentStep[] = [
-  { key: 'profiling', name: 'Agent Profilowania', activity: 'Integracja oczekuje na uruchomienie systemu rekomendacji', status: 'pending' },
-  { key: 'retrieval', name: 'Agent Danych', activity: 'Integracja oczekuje na uruchomienie systemu rekomendacji', status: 'pending' },
-  { key: 'ranking', name: 'Agent Rankingu', activity: 'Integracja oczekuje na uruchomienie systemu rekomendacji', status: 'pending' },
-  { key: 'explanation', name: 'Agent Wyjaśnień', activity: 'Integracja oczekuje na uruchomienie systemu rekomendacji', status: 'pending' },
-];
+import type { AppView, CatalogPage, CatalogQuery, Content } from './types';
 
 const initialCatalogQuery: CatalogQuery = {
   page: 1,
@@ -87,7 +83,7 @@ export default function App() {
     selectConversation,
     renameConversation,
     deleteConversation: deleteStoredConversation,
-    addMessage,
+    sendChatMessage,
     updateUser,
     recordInteraction: storeInteraction,
     removeInteraction: removeStoredInteraction,
@@ -197,14 +193,14 @@ export default function App() {
   };
 
   const handlePrompt = async (query: string) => {
-    if (isProcessing || !currentConversationId) return;
+    if (isProcessing) return;
 
     navigateTo('recommendations');
     setIsProcessing(true);
     try {
-      await addMessage('user', query);
+      await sendChatMessage(query);
     } catch {
-      // The chat keeps the typed value in the component when persistence fails.
+      // SessionContext displays a transient error message in the chat.
     } finally {
       setIsProcessing(false);
     }
@@ -419,18 +415,16 @@ export default function App() {
                 />
 
                 <div className="grid min-w-0 items-start gap-6 2xl:grid-cols-[minmax(500px,1.08fr)_minmax(420px,0.92fr)]">
-                  {currentConversationId ? (
-                    <ChatInterface
-                      messages={messages.filter(
-                        (message) => message.conversationId === currentConversationId,
-                      )}
-                      agentSteps={inactiveAgentSteps}
-                      isProcessing={isProcessing}
-                      onSubmit={handlePrompt}
-                    />
-                  ) : (
-                    <ConversationWorkspaceEmpty onCreate={handleCreateConversation} />
-                  )}
+                  <ChatInterface
+                    messages={messages.filter(
+                      (message) =>
+                        message.conversationId ===
+                        (currentConversationId ?? TRANSIENT_CHAT_CONVERSATION_ID),
+                    )}
+                    agentSteps={[]}
+                    isProcessing={isProcessing}
+                    onSubmit={handlePrompt}
+                  />
 
                   <section
                     aria-labelledby="recommendations-title"
@@ -442,7 +436,7 @@ export default function App() {
                       }`}
                       aria-live="polite"
                     >
-                      <RecommendationEmptyState isProcessing={false} />
+                      <RecommendationEmptyState isProcessing={isProcessing} />
                     </div>
                   </section>
                 </div>
@@ -485,39 +479,17 @@ function PageHeading({ eyebrow, title, description, icon }: PageHeadingProps) {
   );
 }
 
-function ConversationWorkspaceEmpty({ onCreate }: { onCreate: () => void }) {
-  return (
-    <section className="flex min-h-[680px] flex-col items-center justify-center rounded-lg border border-dashed border-white/[0.14] bg-ink-900 px-6 text-center xl:sticky xl:top-[88px] xl:h-[calc(100vh-7rem)] xl:min-h-[700px]">
-      <span className="mb-5 flex h-11 w-11 items-center justify-center border border-white/[0.1] text-slate-500">
-        <MessageSquareText className="h-5 w-5" />
-      </span>
-      <h2 className="text-sm font-semibold text-white">Wybierz lub rozpocznij rozmowę</h2>
-      <p className="mt-2 max-w-sm text-xs leading-5 text-slate-500">
-        Rozpocznij wątek i zapisz kontekst poszukiwań w jednym miejscu.
-      </p>
-      <button
-        type="button"
-        onClick={onCreate}
-        className="mt-5 flex h-9 items-center gap-2 rounded-md bg-violet-600 px-3 text-xs font-medium text-white transition hover:bg-violet-500"
-      >
-        <Plus className="h-3.5 w-3.5" />
-        Nowa rozmowa
-      </button>
-    </section>
-  );
-}
-
 function RecommendationEmptyState({ isProcessing }: { isProcessing: boolean }) {
   return (
     <div className="flex h-full min-h-56 flex-col items-center justify-center rounded-lg border border-dashed border-white/[0.12] bg-ink-900 px-6 text-center">
       <Sparkles className={`mb-3 h-5 w-5 ${isProcessing ? 'animate-pulse text-violet-400' : 'text-slate-700'}`} />
       <p className="text-xs font-medium text-slate-400">
-        {isProcessing ? 'Zapisuję wiadomość…' : 'System rekomendacji nie jest jeszcze aktywny'}
+        {isProcessing ? 'Model przygotowuje odpowiedź…' : 'Karty rekomendacji nie są jeszcze aktywne'}
       </p>
       <p className="mt-2 max-w-xs text-[10px] leading-5 text-slate-600">
         {isProcessing
-          ? 'Wiadomość jest zapisywana w PostgreSQL.'
-          : 'Po uruchomieniu doradcy zobaczysz uzasadnioną, krótką listę tytułów dopasowanych do rozmowy.'}
+          ? 'Prompt jest przetwarzany przez lokalną Ollamę i nie trafia do historii w PostgreSQL.'
+          : 'Czat odpowiada już przez lokalny model. W kolejnym etapie pojawi się lista tytułów z katalogu.'}
       </p>
     </div>
   );

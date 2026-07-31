@@ -11,6 +11,7 @@ import {
   getUpcomingReleases,
   login,
   register,
+  requestStatelessChat,
   renameConversation,
   updateProfile,
 } from '../services/api';
@@ -65,6 +66,25 @@ describe('backend API service', () => {
     expect(updatedUser.username).toBe('nowa-nazwa');
     expect(renamed.title).toBe('Nowy tytuł');
     expect(message.content).toBe('Trwała wiadomość');
+  });
+
+  it('sends transient chat history to the stateless Ollama endpoint', async () => {
+    const response = await requestStatelessChat(
+      'Poleć thriller',
+      [{ role: 'assistant', content: 'Jaki klimat?' }],
+    );
+
+    expect(response).toMatchObject({
+      message: 'Wstępna odpowiedź modelu na: Poleć thriller',
+      model: 'llama3.1:8b',
+    });
+    const fetchMock = vi.mocked(fetch);
+    const [url, options] = fetchMock.mock.calls[fetchMock.mock.calls.length - 1];
+    expect(String(url)).toBe('/api/chat/');
+    expect(JSON.parse(String(options?.body))).toEqual({
+      message: 'Poleć thriller',
+      history: [{ role: 'assistant', content: 'Jaki klimat?' }],
+    });
   });
 
   it('validates ratings before sending a request', async () => {

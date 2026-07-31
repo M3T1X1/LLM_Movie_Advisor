@@ -14,6 +14,7 @@ class ApiAccessControlTests(ApiIntegrationTestCase):
             ("get", reverse("api:bootstrap")),
             ("get", reverse("api:contents")),
             ("get", reverse("api:conversations")),
+            ("post", reverse("api:chat")),
             ("post", reverse("api:interactions")),
         )
 
@@ -41,6 +42,7 @@ class ApiAccessControlTests(ApiIntegrationTestCase):
         ).json()["id"]
         cases = (
             ("post", reverse("api:health")),
+            ("get", reverse("api:chat")),
             ("post", reverse("api:bootstrap")),
             ("post", reverse("api:contents")),
             ("post", reverse("api:upcoming-contents")),
@@ -87,6 +89,7 @@ class ApiAccessControlTests(ApiIntegrationTestCase):
                 {"username": "csrf", "email": "csrf@example.com"},
             ),
             ("post", reverse("api:conversations"), {}),
+            ("post", reverse("api:chat"), {"message": "CSRF"}),
             (
                 "patch",
                 reverse(

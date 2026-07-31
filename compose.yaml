@@ -35,6 +35,12 @@ services:
       OLLAMA_BASE_URL: http://ollama:11434
       OLLAMA_CHAT_MODEL: ${OLLAMA_CHAT_MODEL:-llama3.1:8b}
       OLLAMA_REQUEST_TIMEOUT_SECONDS: ${OLLAMA_REQUEST_TIMEOUT_SECONDS:-120}
+      OLLAMA_HEALTH_TIMEOUT_SECONDS: ${OLLAMA_HEALTH_TIMEOUT_SECONDS:-2}
+      OLLAMA_TEMPERATURE: ${OLLAMA_TEMPERATURE:-0.4}
+      OLLAMA_TOP_P: ${OLLAMA_TOP_P:-}
+      OLLAMA_TOP_K: ${OLLAMA_TOP_K:-}
+      OLLAMA_NUM_PREDICT: ${OLLAMA_NUM_PREDICT:-}
+      OLLAMA_REPEAT_PENALTY: ${OLLAMA_REPEAT_PENALTY:-}
       SEED_USER_PASSWORD: ${SEED_USER_PASSWORD:-}
     command:
       - /bin/sh
@@ -44,6 +50,7 @@ services:
         exec gunicorn backend.wsgi:application
         --bind 0.0.0.0:8000
         --workers ${GUNICORN_WORKERS:-3}
+        --timeout ${GUNICORN_TIMEOUT:-180}
         --access-logfile -
         --error-logfile -
     ports:
