@@ -49,6 +49,17 @@ def catalog_search_cache_key(params: dict, *, version: int) -> str:
     return f"catalog:search:v{version}:{digest}"
 
 
+def llm_catalog_context_cache_key(params: dict, *, version: int) -> str:
+    payload = json.dumps(
+        params,
+        sort_keys=True,
+        ensure_ascii=True,
+        separators=(",", ":"),
+    )
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    return f"llm:catalog-context:v{version}:{digest}"
+
+
 def get_cached_catalog_search(params: dict) -> tuple[str, dict | None]:
     try:
         version = cache.get(CATALOG_SEARCH_VERSION_KEY)
@@ -76,6 +87,39 @@ def set_cached_catalog_search(
         cache.set(key, payload, timeout=timeout)
     except RedisError as error:
         logger.warning("Catalog cache write failed! %s", error)
+
+
+def get_cached_llm_catalog_context(params: dict) -> tuple[str, list[dict] | None]:
+    try:
+        version = cache.get(CATALOG_SEARCH_VERSION_KEY)
+        if not isinstance(version, int) or version < 1:
+            version = DEFAULT_CATALOG_SEARCH_VERSION
+        key = llm_catalog_context_cache_key(params, version=version)
+        payload = cache.get(key)
+    except RedisError as error:
+        logger.warning("LLM catalog context cache read failed! %s", error)
+        key = llm_catalog_context_cache_key(
+            params,
+            version=DEFAULT_CATALOG_SEARCH_VERSION,
+        )
+        return key, None
+    if not isinstance(payload, list) or not all(
+        isinstance(item, dict) for item in payload
+    ):
+        return key, None
+    return key, payload
+
+
+def set_cached_llm_catalog_context(
+    key: str,
+    payload: list[dict],
+    *,
+    timeout: int | None = None,
+) -> None:
+    try:
+        cache.set(key, payload, timeout=timeout)
+    except RedisError as error:
+        logger.warning("LLM catalog context cache write failed! %s", error)
 
 
 def invalidate_catalog_search_cache() -> int | None:

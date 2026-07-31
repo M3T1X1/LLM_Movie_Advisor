@@ -65,6 +65,11 @@ export interface StatelessChatResponse {
     generatedTokens: number | null;
     totalDurationNs: number | null;
   };
+  grounding: {
+    catalogCandidateIds: DatabaseId[];
+    profileApplied: boolean;
+    catalogCacheHit: boolean;
+  };
 }
 
 export interface RecommendationRequestRecord {

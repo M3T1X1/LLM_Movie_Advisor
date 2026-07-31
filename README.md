@@ -12,10 +12,11 @@ an AMD ROCm-backed Ollama runtime, and automated tests.
 
 The database schema and frontend contain the foundations for an LLM-based
 recommendation workflow. Docker Compose runs Ollama and downloads Llama 3.1
-8B into a persistent volume, but the recommendation pipeline itself is not yet
-implemented. The React chat can exchange temporary messages with the local
-model through Django, but it does not yet retrieve catalog-backed
-recommendations or run recommendation agents.
+8B into a persistent volume. The React chat exchanges temporary messages with
+the local model through Django. Django grounds the model with catalog, profile,
+preference, and interaction data from PostgreSQL and caches catalog candidates
+in Redis. Structured recommendation runs, vector search, and recommendation
+agents are not yet implemented.
 
 ## Application screenshots
 
@@ -409,6 +410,14 @@ destination. Use <http://localhost:8000> on the machine running Compose.
 | `OLLAMA_TOP_K` | empty | optional size of the token candidate pool |
 | `OLLAMA_NUM_PREDICT` | empty | optional generated-token limit |
 | `OLLAMA_REPEAT_PENALTY` | empty | optional repetition penalty |
+| `LLM_CATALOG_CONTEXT_CACHE_TIMEOUT` | `300` | Redis TTL for catalog candidates passed to the model |
+| `LLM_CATALOG_CANDIDATE_LIMIT` | `12` | maximum catalog candidates included in model context |
+| `LLM_CATALOG_OVERVIEW_MAX_LENGTH` | `600` | maximum overview characters per candidate |
+| `LLM_CATALOG_SEARCH_TERM_LIMIT` | `10` | maximum relational search terms |
+| `LLM_USER_PREFERENCE_LIMIT` | `20` | maximum user preferences included in context |
+| `LLM_USER_INTERACTION_LIMIT` | `20` | maximum recent user interactions included in context |
+| `LLM_PROFILE_SUMMARY_MAX_LENGTH` | `1500` | maximum semantic-profile characters included in context |
+| `LLM_PREFERENCE_VALUE_MAX_LENGTH` | `300` | maximum characters included for one preference |
 
 Compose supplies `OLLAMA_BASE_URL=http://ollama:11434` directly to the
 application container. The hostname is only meaningful on the Compose network
@@ -446,9 +455,13 @@ configured model, and exits. Ollama stores downloaded layers in the
 
 Django includes a minimal HTTP client for model discovery and non-streaming
 chat calls. The application chat sends its current prompt and up to ten recent
-messages to `POST /api/chat/`. The prompt and response remain only in React
-memory and disappear after a page reload; this preliminary flow does not
-create `message`, `recommendation_request`, or `recommendation_run` records.
+messages to `POST /api/chat/`. Before calling Ollama, Django loads the signed-in
+user's profile, preferences, recent interactions, and a bounded candidate list
+from PostgreSQL. Candidate lists are cached in Redis and invalidated through
+the existing catalog version. Redis failures fall back to PostgreSQL. The
+prompt and response remain only in React memory and disappear after a page
+reload; this preliminary flow does not create `message`,
+`recommendation_request`, or `recommendation_run` records.
 
 Check the complete application health response:
 
@@ -1122,7 +1135,7 @@ the workflow requires:
 - using the existing Ollama client in the recommendation workflow;
 - defining validated input and output contracts;
 - populating and versioning 768-dimensional catalog embeddings;
-- implementing relational and vector retrieval;
+- replacing the preliminary relational candidate retrieval with vector search;
 - implementing ranking, rejection thresholds, and deterministic validation;
 - adding a recommendation API with errors, cancellation, retries, and
   optional streaming;
@@ -1137,7 +1150,7 @@ hardware, license, and multilingual-support evaluation.
 
 ## Known limitations
 
-- no catalog-grounded recommendation-generation endpoint;
+- catalog grounding uses keyword/relational retrieval rather than embeddings;
 - the preliminary Ollama chat does not persist messages or recommendation
   runs and loses its temporary messages after a page reload;
 - no LangChain or LangGraph integration;

@@ -17,6 +17,7 @@ from django.views.decorators.http import require_http_methods
 from redis.exceptions import RedisError
 
 from backend.accounts.services import get_business_user_id, sync_business_user
+from backend.ai_context import build_llm_application_context
 from backend.api.catalog_sync import upsert_catalog
 from backend.api.models import (
     Content,
@@ -53,11 +54,12 @@ MAX_CHAT_HISTORY_MESSAGES = 10
 MAX_CHAT_HISTORY_CONTENT_LENGTH = 4000
 CHAT_SYSTEM_PROMPT = (
     "Jesteś FilmiQ, polskojęzycznym doradcą pomagającym wybierać filmy i "
-    "seriale. Odpowiadaj konkretnie, naturalnie i zwięźle. Możesz korzystać "
-    "wyłącznie ze swojej wiedzy ogólnej: nie masz jeszcze dostępu do katalogu "
-    "aplikacji, profilu użytkownika ani aktualnych danych TMDB. Jeśli nie "
-    "masz pewności, powiedz o tym wprost. Gdy prośba jest zbyt ogólna, zadaj "
-    "jedno krótkie pytanie doprecyzowujące."
+    "seriale. Odpowiadaj konkretnie, naturalnie i zwięźle. Korzystaj wyłącznie "
+    "z kontekstu aplikacji dołączonego w osobnej wiadomości systemowej. "
+    "Kontekst może zawierać profil użytkownika, jego preferencje, interakcje "
+    "oraz kandydatów z katalogu. Jeśli danych nie wystarcza, powiedz o tym "
+    "wprost. Gdy prośba jest zbyt ogólna, zadaj jedno krótkie pytanie "
+    "doprecyzowujące."
 )
 CATALOG_DEFAULT_PAGE_SIZE = 20
 CATALOG_MAX_PAGE_SIZE = 50
@@ -298,13 +300,24 @@ def stateless_chat(request: HttpRequest) -> JsonResponse:
                 {"detail": "Skonfigurowany lokalny model nie jest jeszcze pobrany."},
                 status=503,
             )
+        application_context = build_llm_application_context(request.user, prompt)
         response = client.chat(
             [
                 {"role": "system", "content": CHAT_SYSTEM_PROMPT},
+                {
+                    "role": "system",
+                    "content": application_context.system_message,
+                },
                 *history,
                 {"role": "user", "content": prompt},
             ],
             options=settings.OLLAMA_CHAT_OPTIONS,
+        )
+    except DatabaseError:
+        logger.exception("Stateless chat could not load application context.")
+        return JsonResponse(
+            {"detail": "Nie udało się pobrać danych potrzebnych do rekomendacji."},
+            status=503,
         )
     except (OllamaUnavailableError, OllamaConfigurationError):
         logger.warning("Stateless chat could not reach Ollama.")
@@ -327,6 +340,14 @@ def stateless_chat(request: HttpRequest) -> JsonResponse:
                 "promptTokens": response.prompt_eval_count,
                 "generatedTokens": response.eval_count,
                 "totalDurationNs": response.total_duration_ns,
+            },
+            "grounding": {
+                "catalogCandidateIds": [
+                    str(candidate_id)
+                    for candidate_id in application_context.candidate_ids
+                ],
+                "profileApplied": application_context.profile_applied,
+                "catalogCacheHit": application_context.catalog_cache_hit,
             },
         }
     )

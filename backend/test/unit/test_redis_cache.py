@@ -6,9 +6,12 @@ from redis.exceptions import RedisError
 from backend.redis import (
     catalog_search_cache_key,
     get_cached_catalog_search,
+    get_cached_llm_catalog_context,
     get_cached_tmdb,
     invalidate_catalog_search_cache,
+    llm_catalog_context_cache_key,
     set_cached_catalog_search,
+    set_cached_llm_catalog_context,
     tmdb_cache_key,
 )
 
@@ -145,3 +148,50 @@ class CatalogSearchCacheTests(SimpleTestCase):
         self.assertEqual(version, 8)
         mocked_cache.add.assert_called_once()
         mocked_cache.incr.assert_called_once()
+
+
+class LlmCatalogContextCacheTests(SimpleTestCase):
+    def test_context_key_is_stable_and_uses_catalog_version(self):
+        params = {"terms": ["thriller", "mroczny"], "limit": 12}
+
+        first = llm_catalog_context_cache_key(params, version=3)
+        same = llm_catalog_context_cache_key(
+            {"limit": 12, "terms": ["thriller", "mroczny"]},
+            version=3,
+        )
+        refreshed = llm_catalog_context_cache_key(params, version=4)
+
+        self.assertEqual(first, same)
+        self.assertNotEqual(first, refreshed)
+        self.assertTrue(first.startswith("llm:catalog-context:v3:"))
+
+    @patch("backend.redis.cache")
+    def test_context_cache_reads_and_writes_candidate_list(self, mocked_cache):
+        candidates = [{"id": 1, "title": "Labirynt"}]
+        mocked_cache.get.side_effect = [7, candidates]
+
+        key, payload = get_cached_llm_catalog_context({"terms": ["thriller"]})
+        set_cached_llm_catalog_context(key, candidates, timeout=300)
+
+        self.assertEqual(payload, candidates)
+        self.assertEqual(
+            key,
+            llm_catalog_context_cache_key(
+                {"terms": ["thriller"]},
+                version=7,
+            ),
+        )
+        mocked_cache.set.assert_called_once_with(key, candidates, timeout=300)
+
+    @patch("backend.redis.cache")
+    def test_context_cache_failure_falls_back_without_raising(self, mocked_cache):
+        mocked_cache.get.side_effect = RedisError("redis unavailable")
+        mocked_cache.set.side_effect = RedisError("redis unavailable")
+
+        with self.assertLogs("backend.redis", level="WARNING") as captured_logs:
+            key, payload = get_cached_llm_catalog_context({"terms": ["dramat"]})
+            set_cached_llm_catalog_context(key, [{"id": 1}])
+
+        self.assertIsNone(payload)
+        self.assertIn("context cache read failed", captured_logs.output[0])
+        self.assertIn("context cache write failed", captured_logs.output[1])

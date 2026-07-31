@@ -2,8 +2,10 @@ import json
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from django.db import DatabaseError
 from django.test import RequestFactory, SimpleTestCase, override_settings
 
+from backend.ai_context import LlmApplicationContext
 from backend.api.views import CHAT_SYSTEM_PROMPT, stateless_chat
 from backend.ollama import (
     OllamaChatResponse,
@@ -15,6 +17,17 @@ from backend.ollama import (
 class StatelessChatApiTests(SimpleTestCase):
     def setUp(self):
         self.factory = RequestFactory()
+        context_patcher = patch(
+            "backend.api.views.build_llm_application_context",
+            return_value=LlmApplicationContext(
+                system_message="Kontekst z PostgreSQL i Redis.",
+                candidate_ids=(11, 12),
+                catalog_cache_hit=True,
+                profile_applied=True,
+            ),
+        )
+        self.addCleanup(context_patcher.stop)
+        self.mocked_context_builder = context_patcher.start()
 
     def request(self, payload, *, authenticated=True):
         request = self.factory.post(
@@ -74,11 +87,20 @@ class StatelessChatApiTests(SimpleTestCase):
                     "generatedTokens": 8,
                     "totalDurationNs": 123,
                 },
+                "grounding": {
+                    "catalogCandidateIds": ["11", "12"],
+                    "profileApplied": True,
+                    "catalogCacheHit": True,
+                },
             },
         )
         client.chat.assert_called_once_with(
             [
                 {"role": "system", "content": CHAT_SYSTEM_PROMPT},
+                {
+                    "role": "system",
+                    "content": "Kontekst z PostgreSQL i Redis.",
+                },
                 {"role": "user", "content": "Lubię zagadki."},
                 {"role": "assistant", "content": "Wolisz film czy serial?"},
                 {"role": "user", "content": "Poleć thriller."},
@@ -89,6 +111,10 @@ class StatelessChatApiTests(SimpleTestCase):
                 "num_predict": 200,
             },
         )
+        self.mocked_context_builder.assert_called_once()
+        context_user, context_prompt = self.mocked_context_builder.call_args.args
+        self.assertTrue(context_user.is_authenticated)
+        self.assertEqual(context_prompt, "Poleć thriller.")
 
     @patch("backend.api.views.get_ollama_client")
     def test_rejects_invalid_input_before_contacting_ollama(
@@ -123,6 +149,7 @@ class StatelessChatApiTests(SimpleTestCase):
                 self.assertEqual(response.status_code, 400)
 
         mocked_get_client.assert_not_called()
+        self.mocked_context_builder.assert_not_called()
 
     @patch("backend.api.views.get_ollama_client")
     def test_requires_authentication(self, mocked_get_client):
@@ -132,6 +159,7 @@ class StatelessChatApiTests(SimpleTestCase):
 
         self.assertEqual(response.status_code, 401)
         mocked_get_client.assert_not_called()
+        self.mocked_context_builder.assert_not_called()
 
     @patch("backend.api.views.get_ollama_client")
     def test_reports_missing_model(self, mocked_get_client):
@@ -141,6 +169,18 @@ class StatelessChatApiTests(SimpleTestCase):
 
         self.assertEqual(response.status_code, 503)
         self.assertIn("nie jest jeszcze pobrany", json.loads(response.content)["detail"])
+        self.mocked_context_builder.assert_not_called()
+
+    @patch("backend.api.views.get_ollama_client")
+    def test_sanitizes_database_context_failure(self, mocked_get_client):
+        mocked_get_client.return_value.has_configured_model.return_value = True
+        self.mocked_context_builder.side_effect = DatabaseError("tajny adres bazy")
+
+        response = stateless_chat(self.request({"message": "Poleć dramat"}))
+
+        self.assertEqual(response.status_code, 503)
+        self.assertNotIn("tajny adres bazy", response.content.decode())
+        mocked_get_client.return_value.chat.assert_not_called()
 
     @patch("backend.api.views.get_ollama_client")
     def test_sanitizes_ollama_failures(self, mocked_get_client):

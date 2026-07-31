@@ -57,6 +57,11 @@ export function installApiMock() {
           generatedTokens: 12,
           totalDurationNs: 123456,
         },
+        grounding: {
+          catalogCandidateIds: ['1', '2'],
+          profileApplied: true,
+          catalogCacheHit: false,
+        },
       });
     }
     if (path === '/api/contents/') {
