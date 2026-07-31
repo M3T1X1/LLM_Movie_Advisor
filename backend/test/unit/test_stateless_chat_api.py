@@ -6,7 +6,11 @@ from django.db import DatabaseError
 from django.test import RequestFactory, SimpleTestCase, override_settings
 
 from backend.ai_context import LlmApplicationContext
-from backend.api.views import CHAT_SYSTEM_PROMPT, stateless_chat
+from backend.api.views import (
+    CHAT_SYSTEM_PROMPT,
+    INITIAL_RECOMMENDATION_SYSTEM_PROMPT,
+    stateless_chat,
+)
 from backend.ollama import (
     OllamaChatResponse,
     OllamaResponseError,
@@ -29,6 +33,24 @@ class StatelessChatApiTests(SimpleTestCase):
         )
         self.addCleanup(context_patcher.stop)
         self.mocked_context_builder = context_patcher.start()
+
+    def test_system_prompt_restricts_assistant_to_recommendations(self):
+        self.assertIn("jedynym zakresem", CHAT_SYSTEM_PROMPT)
+        self.assertIn("Nie odpowiadaj na pytania z innych dziedzin", CHAT_SYSTEM_PROMPT)
+        self.assertIn("krótko odmów", CHAT_SYSTEM_PROMPT)
+        self.assertIn("nie podawaj nawet części odpowiedzi", CHAT_SYSTEM_PROMPT)
+        self.assertIn("możesz pisać szerzej", CHAT_SYSTEM_PROMPT)
+        self.assertIn("nie zdradzaj istotnych zwrotów akcji", CHAT_SYSTEM_PROMPT)
+        self.assertIn("jawna prośba użytkownika ma pierwszeństwo", CHAT_SYSTEM_PROMPT)
+        self.assertIn("miękkie wskazówki, nigdy jako zakazy", CHAT_SYSTEM_PROMPT)
+        self.assertIn("uprzedź o konflikcie", CHAT_SYSTEM_PROMPT)
+        self.assertIn("Nie wolno Ci odmówić rekomendacji", CHAT_SYSTEM_PROMPT)
+        self.assertIn("prosi o gore horror", CHAT_SYSTEM_PROMPT)
+
+    def test_initial_prompt_requires_three_distinct_recommendations(self):
+        self.assertIn("dokładnie 3 różne tytuły", INITIAL_RECOMMENDATION_SYSTEM_PROMPT)
+        self.assertIn("numerowaną listę 1–3", INITIAL_RECOMMENDATION_SYSTEM_PROMPT)
+        self.assertIn("nadal uwzględnij ją w tej trójce", INITIAL_RECOMMENDATION_SYSTEM_PROMPT)
 
     def request(self, payload, *, authenticated=True):
         request = self.factory.post(
@@ -126,6 +148,50 @@ class StatelessChatApiTests(SimpleTestCase):
         self.assertTrue(context_user.is_authenticated)
         self.assertEqual(context_prompt, "Poleć thriller.")
         self.assertIs(context_client, client)
+
+    @patch("backend.api.views.get_ollama_client")
+    def test_first_message_receives_initial_recommendation_instruction(
+        self,
+        mocked_get_client,
+    ):
+        client = mocked_get_client.return_value
+        client.model = "llama3.1:8b"
+        client.embedding_model = "nomic-embed-text:latest"
+        client.list_models.return_value = (
+            "llama3.1:8b",
+            "nomic-embed-text:latest",
+        )
+        client.is_model_available.return_value = True
+        client.chat.return_value = OllamaChatResponse(
+            content="1. Film A\n2. Film B\n3. Film C",
+            model="llama3.1:8b",
+            done_reason="stop",
+            total_duration_ns=123,
+            prompt_eval_count=30,
+            eval_count=20,
+        )
+
+        response = stateless_chat(
+            self.request({"message": "Poleć mocny horror", "history": []})
+        )
+
+        self.assertEqual(response.status_code, 200)
+        messages = client.chat.call_args.args[0]
+        self.assertEqual(
+            messages,
+            [
+                {"role": "system", "content": CHAT_SYSTEM_PROMPT},
+                {
+                    "role": "system",
+                    "content": "Kontekst z PostgreSQL i Redis.",
+                },
+                {
+                    "role": "system",
+                    "content": INITIAL_RECOMMENDATION_SYSTEM_PROMPT,
+                },
+                {"role": "user", "content": "Poleć mocny horror"},
+            ],
+        )
 
     @patch("backend.api.views.get_ollama_client")
     def test_rejects_invalid_input_before_contacting_ollama(

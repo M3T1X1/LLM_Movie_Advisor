@@ -38,16 +38,22 @@ class AiCatalogContextTests(SimpleTestCase):
         mocked_keyword_search,
         mocked_cache_set,
     ):
+        client = MagicMock()
         candidates, cache_hit, mode = _catalog_candidates(
             "mroczny thriller",
             ["zagadki"],
-            MagicMock(),
+            client,
         )
 
         self.assertEqual(candidates, [{"id": 7, "title": "Fallback"}])
         self.assertFalse(cache_hit)
         self.assertEqual(mode, "keyword_fallback")
-        mocked_semantic_search.assert_called_once()
+        mocked_semantic_search.assert_called_once_with(
+            "mroczny thriller",
+            [],
+            limit=12,
+            client=client,
+        )
         mocked_keyword_search.assert_called_once()
         cached_payload = mocked_cache_set.call_args.args[1]
         self.assertEqual(cached_payload["retrieval_mode"], "keyword_fallback")
@@ -84,3 +90,31 @@ class AiCatalogContextTests(SimpleTestCase):
         mocked_semantic_search.assert_not_called()
         mocked_keyword_search.assert_not_called()
         mocked_cache_set.assert_not_called()
+
+    @patch("backend.ai_context.set_cached_llm_catalog_context")
+    @patch(
+        "backend.ai_context._query_catalog_candidates",
+        return_value=[{"id": 8, "title": "Profilowy wybór"}],
+    )
+    @patch("backend.ai_context.semantic_content_search", return_value=[])
+    @patch(
+        "backend.ai_context.get_cached_llm_catalog_context",
+        return_value=("cache-key", None),
+    )
+    def test_vague_request_can_use_positive_profile_hints(
+        self,
+        mocked_cache_get,
+        mocked_semantic_search,
+        mocked_keyword_search,
+        mocked_cache_set,
+    ):
+        client = MagicMock()
+
+        _catalog_candidates("Poleć coś", ["Science Fiction"], client)
+
+        mocked_semantic_search.assert_called_once_with(
+            "Poleć coś",
+            ["Science Fiction"],
+            limit=12,
+            client=client,
+        )

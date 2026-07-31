@@ -56,6 +56,14 @@ class LlmContextApiIntegrationTests(ApiIntegrationTestCase):
             weight=0.9,
             confidence=0.8,
         )
+        UserPreference.objects.create(
+            user_id=self.business_user_id,
+            preference_type="content_warning",
+            preference_value="Unikanie gore",
+            polarity=-1,
+            weight=1.0,
+            confidence=0.9,
+        )
         Interaction.objects.create(
             user_id=self.business_user_id,
             content_id=content_id,
@@ -103,8 +111,21 @@ class LlmContextApiIntegrationTests(ApiIntegrationTestCase):
         self.assertEqual(first_response.status_code, 200)
         self.assertIn("Mroczny Labirynt", context_message)
         self.assertIn("Thriller", context_message)
+        self.assertIn("Unikanie gore", context_message)
+        self.assertIn('"handling":"warning_only"', context_message)
+        self.assertIn('"hard_constraint":false', context_message)
+        self.assertIn(
+            '"current_request_overrides_profile":true',
+            context_message,
+        )
         self.assertIn("Lubię niejednoznaczne historie", context_message)
         self.assertIn('"type":"liked"', context_message)
+        self.assertIn(
+            "Aktualna prośba użytkownika ma nad nimi pierwszeństwo",
+            context_message,
+        )
+        self.assertIn("krótko wskaż konflikt", context_message)
+        self.assertIn("Profil nigdy nie jest powodem odmowy", context_message)
         self.assertNotIn("PRYWATNY PROFIL", context_message)
         self.assertNotIn("PRYWATNA PREFERENCJA", context_message)
         self.assertEqual(
