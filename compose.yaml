@@ -5,7 +5,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: llm-movie-advisor-app:local
     environment:
       DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?Set DJANGO_SECRET_KEY in .env}
       DJANGO_DEBUG: ${DJANGO_DEBUG:-False}
@@ -33,6 +32,9 @@ services:
       CATALOG_SEARCH_CACHE_TIMEOUT: ${CATALOG_SEARCH_CACHE_TIMEOUT:-600}
       TMDB_API_KEY: ${TMDB_API_KEY:-}
       TMDB_API_TOKEN: ${TMDB_API_TOKEN:-}
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_CHAT_MODEL: ${OLLAMA_CHAT_MODEL:-llama3.1:8b}
+      OLLAMA_REQUEST_TIMEOUT_SECONDS: ${OLLAMA_REQUEST_TIMEOUT_SECONDS:-120}
       SEED_USER_PASSWORD: ${SEED_USER_PASSWORD:-}
     command:
       - /bin/sh
@@ -45,7 +47,7 @@ services:
         --access-logfile -
         --error-logfile -
     ports:
-      - "${APP_PORT:-8000}:8000"
+      - "127.0.0.1:${APP_PORT:-8000}:8000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -63,8 +65,43 @@ services:
       start_period: 30s
     restart: unless-stopped
 
+  ollama:
+    image: ollama/ollama:${OLLAMA_IMAGE_TAG:-0.32.3-rocm}
+    environment:
+      OLLAMA_HOST: 0.0.0.0:11434
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-10m}
+      OLLAMA_CONTEXT_LENGTH: ${OLLAMA_CONTEXT_LENGTH:-8192}
+      OLLAMA_MAX_LOADED_MODELS: ${OLLAMA_MAX_LOADED_MODELS:-1}
+      OLLAMA_NUM_PARALLEL: ${OLLAMA_NUM_PARALLEL:-1}
+    devices:
+      - /dev/kfd:/dev/kfd
+      - /dev/dri:/dev/dri
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: [CMD, ollama, list]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    restart: unless-stopped
+
+  ollama-init:
+    image: ollama/ollama:${OLLAMA_IMAGE_TAG:-0.32.3-rocm}
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    command:
+      - pull
+      - ${OLLAMA_CHAT_MODEL:-llama3.1:8b}
+    depends_on:
+      ollama:
+        condition: service_healthy
+    restart: "no"
+
   catalog-sync:
-    image: llm-movie-advisor-app:local
+    build:
+      context: .
+      dockerfile: Dockerfile
     environment:
       DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?Set DJANGO_SECRET_KEY in .env}
       DJANGO_DEBUG: "False"
@@ -99,6 +136,38 @@ services:
       app:
         condition: service_healthy
     restart: unless-stopped
+
+  demo-seed:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?Set DJANGO_SECRET_KEY in .env}
+      DJANGO_DEBUG: "True"
+      POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB in .env}
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_CONN_MAX_AGE: ${POSTGRES_CONN_MAX_AGE:-60}
+      SEED_USER_PASSWORD: ${SEED_USER_PASSWORD:?Set SEED_USER_PASSWORD in .env}
+    command:
+      - /bin/sh
+      - -c
+      - >-
+        until python manage.py shell -c
+        "from backend.api.models import Content; raise SystemExit(0 if Content.objects.count() >= 3 else 1)";
+        do
+          echo "Waiting for at least 3 catalog items before seeding demo data...";
+          sleep 5;
+        done;
+        exec python manage.py seed_demo_data
+    depends_on:
+      app:
+        condition: service_healthy
+      catalog-sync:
+        condition: service_started
+    restart: "no"
 
   postgres:
     image: pgvector/pgvector:0.8.2-pg17-bookworm
@@ -140,3 +209,4 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  ollama_data:

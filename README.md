@@ -8,12 +8,13 @@ and stores application data in PostgreSQL.
 The implemented application includes a React frontend, a Django backend,
 session-based authentication, TMDB catalog synchronization, user profiles,
 conversations, interactions, PostgreSQL with pgvector, Redis, Docker Compose,
-and automated tests.
+an AMD ROCm-backed Ollama runtime, and automated tests.
 
 The database schema and frontend contain the foundations for an LLM-based
-recommendation workflow. The LLM recommendation pipeline itself is outside the
-implemented runtime: the application does not run Ollama, LangChain,
-LangGraph, or recommendation agents, and it does not generate recommendations.
+recommendation workflow. Docker Compose runs Ollama and downloads Llama 3.1
+8B into a persistent volume, but the recommendation pipeline itself is not yet
+implemented: Django does not call Ollama or recommendation agents and does not
+generate recommendations.
 
 ## Application screenshots
 
@@ -54,6 +55,7 @@ open it at full resolution.
 - [Technology stack](#technology-stack)
 - [Quick start with Docker Compose](#quick-start-with-docker-compose)
 - [Environment configuration](#environment-configuration)
+- [Ollama runtime](#ollama-runtime)
 - [TMDB catalog](#tmdb-catalog)
 - [Demo data](#demo-data)
 - [Backend and API](#backend-and-api)
@@ -104,11 +106,14 @@ open it at full resolution.
 - catalog and TMDB response caching;
 - Redis-backed Django sessions with a persistent PostgreSQL fallback;
 - a distributed catalog synchronization lock;
-- four Docker Compose services;
+- an AMD ROCm-backed Ollama service with persistent model storage;
+- an idempotent one-shot service that downloads the configured LLM;
+- seven Docker Compose services, including one-shot model and demo-data
+  initializers;
 - a multi-stage application image;
 - Gunicorn and WhiteNoise;
 - an unprivileged `app` user in the application container;
-- health checks for PostgreSQL, Redis, and the application.
+- health checks for PostgreSQL, Redis, Ollama, and the application.
 
 ### Quality
 
@@ -128,12 +133,18 @@ flowchart LR
     Sync["Catalog synchronization every 6 hours"]
     Database["PostgreSQL 17 with pgvector"]
     Cache["Redis"]
+    Ollama["Ollama with AMD ROCm"]
+    ModelInit["One-shot model download"]
+    DemoSeed["One-shot demo seeder"]
     TMDB["TMDB API"]
     CDN["TMDB image CDN"]
 
     Browser -->|HTTP requests| App
     App -->|Catalog queries and persistent data| Database
     App -->|Cached catalog pages and sessions| Cache
+    App -.->|Future recommendation requests| Ollama
+    ModelInit -->|Pull Llama 3.1 8B| Ollama
+    DemoSeed -->|Demo users and activity| Database
     App -->|Upcoming release refresh| TMDB
     Sync -->|Metadata requests| TMDB
     Sync -->|Catalog updates| Database
@@ -145,14 +156,17 @@ Docker Compose runs these services:
 
 | Service | Responsibility | Host access |
 |---|---|---|
-| `app` | Django, Gunicorn, API, and the built React frontend | port `8000` by default |
+| `app` | Django, Gunicorn, API, and the built React frontend | `127.0.0.1:8000` by default |
 | `catalog-sync` | initial catalog population and periodic TMDB synchronization | no public port |
 | `postgres` | persistent application data and pgvector | Compose network only |
 | `redis` | ready-to-display catalog page cache, TMDB response cache, synchronization locks, and fast session reads | Compose network only |
+| `ollama` | local LLM runtime accelerated through AMD ROCm | Compose network only |
+| `ollama-init` | one-shot download of the configured chat model | no public port; exits after completion |
+| `demo-seed` | waits for the catalog and idempotently prepares demo users and activity on every Compose start | no public port; exits after completion |
 
-PostgreSQL and Redis use the named volumes `postgres_data` and `redis_data`.
-Recreating containers preserves their data unless the volumes are explicitly
-removed.
+PostgreSQL, Redis, and Ollama use the named volumes `postgres_data`,
+`redis_data`, and `ollama_data`. Recreating containers preserves their data
+and downloaded models unless the volumes are explicitly removed.
 
 ## Technology stack
 
@@ -182,6 +196,8 @@ removed.
 - PostgreSQL 17;
 - `pgvector/pgvector:0.8.2-pg17-bookworm`;
 - Redis 8.2.8 Alpine;
+- Ollama 0.32.3 ROCm;
+- Llama 3.1 8B, downloaded at runtime;
 - Docker and Docker Compose;
 - TMDB API.
 
@@ -193,11 +209,15 @@ The host needs:
 
 - Docker Engine;
 - the Docker Compose plugin;
+- an AMD GPU supported by Ollama through ROCm;
+- working host AMD GPU drivers exposing `/dev/kfd` and `/dev/dri`;
 - the project source code;
 - a TMDB API key or access token.
 
-PostgreSQL, Redis, Python, and Node.js run in containers and do not need to be
-installed directly on the host.
+PostgreSQL, Redis, Ollama, Python, and Node.js run in containers and do not
+need to be installed directly on the host. This Compose configuration targets
+an AMD ROCm host; CPU-only and NVIDIA hosts require a different Ollama service
+configuration.
 
 ### 1. Configure the environment
 
@@ -215,14 +235,14 @@ DJANGO_ALLOWED_HOSTS="localhost,127.0.0.1,[::1]"
 POSTGRES_DB="movie_advisor"
 POSTGRES_USER="movie_advisor"
 POSTGRES_PASSWORD="a-strong-password"
+SEED_USER_PASSWORD="a-strong-demo-account-password"
 
 TMDB_API_KEY="your-tmdb-key"
 ```
 
-`SEED_USER_PASSWORD` is only used when creating demo accounts. Replace the
-`123` placeholder from `.env.example` with a strong password before running
-the seeder, or pass a valid password through the command's `--password`
-option.
+`SEED_USER_PASSWORD` is required by the automatic `demo-seed` service. Replace
+the placeholder from `.env.example` with a strong password before starting
+Compose.
 
 ### 2. Validate the Compose configuration
 
@@ -243,16 +263,19 @@ On a new environment, Compose:
 
 1. builds the frontend in a Node.js image;
 2. builds the Django image on Python 3.13;
-3. starts PostgreSQL and Redis;
-4. initializes the business schema on a new PostgreSQL volume;
-5. applies Django migrations;
-6. starts Gunicorn;
-7. starts `catalog-sync` after the application becomes healthy;
-8. populates at least 2,000 released movies and 2,000 released TV shows;
-9. synchronizes recent and upcoming releases.
+3. starts PostgreSQL, Redis, and the ROCm-backed Ollama server;
+4. downloads `llama3.1:8b` into the persistent `ollama_data` volume;
+5. initializes the business schema on a new PostgreSQL volume;
+6. applies Django migrations;
+7. starts Gunicorn;
+8. starts `catalog-sync` after the application becomes healthy;
+9. populates at least 2,000 released movies and 2,000 released TV shows;
+10. synchronizes recent and upcoming releases;
+11. runs `demo-seed` after at least three catalog items are available.
 
-The initial catalog import makes many TMDB requests and can take longer than a
-regular synchronization cycle.
+The first model download is approximately 4.9 GB. The initial catalog import
+also makes many TMDB requests. Both operations can take longer than subsequent
+starts.
 
 ### 4. Check service health
 
@@ -260,12 +283,17 @@ regular synchronization cycle.
 docker compose ps
 docker compose logs --tail=100 app
 docker compose logs --tail=100 catalog-sync
+docker compose logs --tail=100 demo-seed
+docker compose logs --tail=100 ollama
+docker compose logs --tail=100 ollama-init
 ```
 
 Expected state:
 
-- `app`, `postgres`, and `redis` are healthy;
+- `app`, `postgres`, `redis`, and `ollama` are healthy;
 - `catalog-sync` is running;
+- `demo-seed` has exited successfully with code `0`;
+- `ollama-init` has exited successfully with code `0`;
 - the application responds on port `8000`.
 
 Health endpoint:
@@ -288,7 +316,8 @@ Example response:
 
 A `degraded` status means Redis is unavailable while PostgreSQL remains
 available. An unavailable PostgreSQL instance produces HTTP `503` with an
-`unavailable` status.
+`unavailable` status. The Django health endpoint does not yet call Ollama;
+inspect the `ollama` Compose health status separately.
 
 ### 5. Application URLs
 
@@ -302,6 +331,9 @@ available. An unavailable PostgreSQL instance produces HTTP `503` with an
 - profile: <http://localhost:8000/profile>;
 - Django admin: <http://localhost:8000/admin/>;
 - health endpoint: <http://localhost:8000/api/health/>.
+
+`0.0.0.0` is the server bind address rather than the preferred browser
+destination. Use <http://localhost:8000> on the machine running Compose.
 
 ## Environment configuration
 
@@ -358,13 +390,29 @@ available. An unavailable PostgreSQL instance produces HTTP `503` with an
 | `TMDB_UPCOMING_DAYS_AHEAD` | `365` | upcoming movie window |
 | `TMDB_UPCOMING_MAX_PAGES` | `10` | upcoming movie page limit |
 
+### Ollama
+
+| Variable | Default | Purpose |
+|---|---:|---|
+| `OLLAMA_IMAGE_TAG` | `0.32.3-rocm` | pinned Ollama image variant for AMD ROCm |
+| `OLLAMA_CHAT_MODEL` | `llama3.1:8b` | model downloaded by `ollama-init` and selected by Django |
+| `OLLAMA_KEEP_ALIVE` | `10m` | time an idle model remains loaded |
+| `OLLAMA_CONTEXT_LENGTH` | `8192` | default context window and associated VRAM allocation |
+| `OLLAMA_MAX_LOADED_MODELS` | `1` | maximum simultaneously loaded models |
+| `OLLAMA_NUM_PARALLEL` | `1` | parallel requests processed by one model |
+| `OLLAMA_REQUEST_TIMEOUT_SECONDS` | `120` | future Django-to-Ollama request timeout |
+
+Compose supplies `OLLAMA_BASE_URL=http://ollama:11434` directly to the
+application container. The hostname is only meaningful on the Compose network
+and does not need to be added to `.env`.
+
 ### Application process
 
 | Variable | Default | Purpose |
 |---|---:|---|
-| `APP_PORT` | `8000` | application port exposed on the host |
+| `APP_PORT` | `8000` | application port exposed on the host loopback interface |
 | `GUNICORN_WORKERS` | `3` | Gunicorn worker count |
-| `SEED_USER_PASSWORD` | empty in Compose when unset | demo account password |
+| `SEED_USER_PASSWORD` | required | demo account password used by `demo-seed` |
 | `VITE_API_BASE_URL` | `/api` | frontend API base path selected at build time |
 
 Do not commit secrets. Git and the Docker build context ignore `.env` files.
@@ -372,6 +420,45 @@ Do not commit secrets. Git and the Docker build context ignore `.env` files.
 `VITE_API_BASE_URL` is evaluated while Vite builds the frontend. The current
 Dockerfile and Compose configuration use `/api` and do not forward this
 variable from the root `.env` file into the image build.
+
+## Ollama runtime
+
+The `ollama` service uses the official ROCm image and receives the host GPU
+through `/dev/kfd` and `/dev/dri`. It has no published host port; Django and
+`ollama-init` reach it over the private Compose network.
+
+The `ollama-init` service waits for Ollama to become healthy, requests the
+configured model, and exits. Ollama stores downloaded layers in the
+`ollama_data` volume, so an unchanged model is reused on later starts.
+
+List downloaded models:
+
+```bash
+docker compose exec ollama ollama list
+```
+
+Run a minimal generation before the Django recommendation pipeline exists:
+
+```bash
+docker compose exec ollama \
+  ollama run llama3.1:8b "Odpowiedz jednym słowem: działa?"
+```
+
+While the model is loaded, verify GPU offloading:
+
+```bash
+docker compose exec ollama ollama ps
+```
+
+The `PROCESSOR` column should report `100% GPU`. Ollama logs should identify
+the RX 9070 XT as `gfx1201`. A CPU value means that GPU devices, host drivers,
+or container permissions need attention before recommendation integration.
+
+To download a changed `OLLAMA_CHAT_MODEL` without restarting the full stack:
+
+```bash
+docker compose run --rm ollama-init
+```
 
 ## TMDB catalog
 
@@ -492,6 +579,15 @@ https://image.tmdb.org/t/p/w780/<poster_path>
 
 ## Demo data
 
+`docker compose up --build` starts the one-shot `demo-seed` service every
+time. It waits until migrations are complete and the TMDB catalog contains at
+least three items, runs the idempotent seeder with `DJANGO_DEBUG=True`, and
+then exits successfully. Follow its progress with:
+
+```bash
+docker compose logs -f demo-seed
+```
+
 ```bash
 python manage.py seed_demo_data
 ```
@@ -527,7 +623,8 @@ docker compose exec -e DJANGO_DEBUG=True app \
   python manage.py seed_demo_data --users 2
 ```
 
-The seeder is restricted to `DEBUG=True`.
+The seeder is restricted to `DEBUG=True`; only the isolated `demo-seed`
+container overrides this setting automatically.
 
 ## Backend and API
 
@@ -975,7 +1072,7 @@ The schema provides `recommendation_request`, `recommendation_run`,
 `run_candidate`, and `agent_execution` for storing this workflow. Implementing
 the workflow requires:
 
-- selecting and integrating a local LLM runtime;
+- connecting Django to the configured Ollama runtime;
 - defining validated input and output contracts;
 - populating and versioning 768-dimensional catalog embeddings;
 - implementing relational and vector retrieval;
@@ -987,14 +1084,14 @@ the workflow requires:
 - evaluating recommendation accuracy, diversity, novelty, catalog coverage,
   latency, and hardware requirements.
 
-The repository does not select a specific LLM or embedding model. Model names
-and versions require quality, performance, hardware, license, and
-multilingual-support evaluation.
+The configured chat model is Llama 3.1 8B. The repository does not yet select
+an embedding model. Model changes still require quality, performance,
+hardware, license, and multilingual-support evaluation.
 
 ## Known limitations
 
 - no recommendation-generation endpoint;
-- no local LLM or Ollama service in Compose;
+- the containerized Ollama runtime is not yet called by Django;
 - no LangChain or LangGraph integration;
 - no generated catalog embeddings or semantic search;
 - no automatic semantic-profile updates;
@@ -1013,8 +1110,11 @@ multilingual-support evaluation.
 ```bash
 docker compose logs -f app
 docker compose logs -f catalog-sync
+docker compose logs -f demo-seed
 docker compose logs -f postgres
 docker compose logs -f redis
+docker compose logs -f ollama
+docker compose logs -f ollama-init
 ```
 
 ### Restart services
@@ -1022,6 +1122,7 @@ docker compose logs -f redis
 ```bash
 docker compose restart app
 docker compose restart catalog-sync
+docker compose restart ollama
 ```
 
 Restarting `catalog-sync` starts synchronization immediately; the process
@@ -1061,7 +1162,7 @@ docker compose up -d --build
 ```
 
 > **Warning:** `down --volumes` permanently deletes this project's PostgreSQL
-> and Redis data.
+> and Redis data as well as every model downloaded into `ollama_data`.
 
 ### Back up PostgreSQL
 

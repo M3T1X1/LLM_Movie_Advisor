@@ -136,6 +136,15 @@ CATALOG_SEARCH_CACHE_TIMEOUT = int(
     os.environ.get('CATALOG_SEARCH_CACHE_TIMEOUT', 600)
 )
 
+OLLAMA_BASE_URL = os.environ.get(
+    'OLLAMA_BASE_URL',
+    'http://127.0.0.1:11434',
+).rstrip('/')
+OLLAMA_CHAT_MODEL = os.environ.get('OLLAMA_CHAT_MODEL', 'llama3.1:8b')
+OLLAMA_REQUEST_TIMEOUT_SECONDS = int(
+    os.environ.get('OLLAMA_REQUEST_TIMEOUT_SECONDS', 120)
+)
+
 SESSION_ENGINE = "backend.sessions"
 SESSION_CACHE_ALIAS = "default"
 
