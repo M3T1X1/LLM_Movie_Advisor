@@ -207,6 +207,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
     const history = conversationMessages
       .filter((message) => message.role === 'user' || message.role === 'assistant')
+      .filter(
+        (message) =>
+          !(
+            message.role === 'assistant' &&
+            message.content.startsWith('Nie udało się uzyskać odpowiedzi:')
+          ),
+      )
       .slice(-10)
       .map((message) => ({
         role: message.role,
