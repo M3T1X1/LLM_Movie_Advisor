@@ -20,7 +20,7 @@ class OllamaHealthViewTests(SimpleTestCase):
         mocked_redis_ping,
         mocked_connection,
     ):
-        mocked_get_client.return_value.has_configured_model.return_value = True
+        mocked_get_client.return_value.missing_configured_models.return_value = ()
 
         response = health(self.request)
 
@@ -48,7 +48,9 @@ class OllamaHealthViewTests(SimpleTestCase):
         mocked_redis_ping,
         mocked_connection,
     ):
-        mocked_get_client.return_value.has_configured_model.return_value = False
+        mocked_get_client.return_value.missing_configured_models.return_value = (
+            "nomic-embed-text:latest",
+        )
 
         response = health(self.request)
 
@@ -74,7 +76,7 @@ class OllamaHealthViewTests(SimpleTestCase):
         mocked_redis_ping,
         mocked_connection,
     ):
-        mocked_get_client.return_value.has_configured_model.side_effect = (
+        mocked_get_client.return_value.missing_configured_models.side_effect = (
             OllamaUnavailableError("tajny adres")
         )
 

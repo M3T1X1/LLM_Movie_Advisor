@@ -167,13 +167,16 @@ class LlmCatalogContextCacheTests(SimpleTestCase):
 
     @patch("backend.redis.cache")
     def test_context_cache_reads_and_writes_candidate_list(self, mocked_cache):
-        candidates = [{"id": 1, "title": "Labirynt"}]
-        mocked_cache.get.side_effect = [7, candidates]
+        cached_context = {
+            "candidates": [{"id": 1, "title": "Labirynt"}],
+            "retrieval_mode": "semantic",
+        }
+        mocked_cache.get.side_effect = [7, cached_context]
 
         key, payload = get_cached_llm_catalog_context({"terms": ["thriller"]})
-        set_cached_llm_catalog_context(key, candidates, timeout=300)
+        set_cached_llm_catalog_context(key, cached_context, timeout=300)
 
-        self.assertEqual(payload, candidates)
+        self.assertEqual(payload, cached_context)
         self.assertEqual(
             key,
             llm_catalog_context_cache_key(
@@ -181,7 +184,7 @@ class LlmCatalogContextCacheTests(SimpleTestCase):
                 version=7,
             ),
         )
-        mocked_cache.set.assert_called_once_with(key, candidates, timeout=300)
+        mocked_cache.set.assert_called_once_with(key, cached_context, timeout=300)
 
     @patch("backend.redis.cache")
     def test_context_cache_failure_falls_back_without_raising(self, mocked_cache):
@@ -190,7 +193,7 @@ class LlmCatalogContextCacheTests(SimpleTestCase):
 
         with self.assertLogs("backend.redis", level="WARNING") as captured_logs:
             key, payload = get_cached_llm_catalog_context({"terms": ["dramat"]})
-            set_cached_llm_catalog_context(key, [{"id": 1}])
+            set_cached_llm_catalog_context(key, {"candidates": [{"id": 1}]})
 
         self.assertIsNone(payload)
         self.assertIn("context cache read failed", captured_logs.output[0])

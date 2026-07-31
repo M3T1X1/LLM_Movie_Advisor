@@ -69,6 +69,7 @@ export interface StatelessChatResponse {
     catalogCandidateIds: DatabaseId[];
     profileApplied: boolean;
     catalogCacheHit: boolean;
+    retrievalMode: 'semantic' | 'keyword' | 'keyword_fallback';
   };
 }
 

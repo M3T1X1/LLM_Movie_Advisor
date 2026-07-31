@@ -201,7 +201,7 @@ def health(request: HttpRequest) -> JsonResponse:
         services["redis"] = "unavailable"
 
     try:
-        if not get_ollama_client().has_configured_model():
+        if get_ollama_client().missing_configured_models():
             services["ollama"] = "model_missing"
     except OllamaError:
         logger.warning("Ollama health check failed.")
@@ -295,12 +295,26 @@ def stateless_chat(request: HttpRequest) -> JsonResponse:
 
     try:
         client = get_ollama_client()
-        if not client.has_configured_model():
+        available_models = client.list_models()
+        if not client.is_model_available(client.model, available_models):
             return JsonResponse(
                 {"detail": "Skonfigurowany lokalny model nie jest jeszcze pobrany."},
                 status=503,
             )
-        application_context = build_llm_application_context(request.user, prompt)
+        embedding_client = (
+            client
+            if client.embedding_model
+            and client.is_model_available(
+                client.embedding_model,
+                available_models,
+            )
+            else None
+        )
+        application_context = build_llm_application_context(
+            request.user,
+            prompt,
+            embedding_client,
+        )
         response = client.chat(
             [
                 {"role": "system", "content": CHAT_SYSTEM_PROMPT},
@@ -348,6 +362,7 @@ def stateless_chat(request: HttpRequest) -> JsonResponse:
                 ],
                 "profileApplied": application_context.profile_applied,
                 "catalogCacheHit": application_context.catalog_cache_hit,
+                "retrievalMode": application_context.retrieval_mode,
             },
         }
     )

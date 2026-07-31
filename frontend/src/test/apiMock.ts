@@ -61,6 +61,7 @@ export function installApiMock() {
           catalogCandidateIds: ['1', '2'],
           profileApplied: true,
           catalogCacheHit: false,
+          retrievalMode: 'semantic',
         },
       });
     }

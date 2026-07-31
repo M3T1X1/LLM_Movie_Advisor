@@ -34,6 +34,8 @@ services:
       TMDB_API_TOKEN: ${TMDB_API_TOKEN:-}
       OLLAMA_BASE_URL: http://ollama:11434
       OLLAMA_CHAT_MODEL: ${OLLAMA_CHAT_MODEL:-llama3.1:8b}
+      OLLAMA_EMBEDDING_MODEL: ${OLLAMA_EMBEDDING_MODEL:-nomic-embed-text:latest}
+      OLLAMA_EMBEDDING_DIMENSIONS: ${OLLAMA_EMBEDDING_DIMENSIONS:-768}
       OLLAMA_REQUEST_TIMEOUT_SECONDS: ${OLLAMA_REQUEST_TIMEOUT_SECONDS:-120}
       OLLAMA_HEALTH_TIMEOUT_SECONDS: ${OLLAMA_HEALTH_TIMEOUT_SECONDS:-2}
       OLLAMA_TEMPERATURE: ${OLLAMA_TEMPERATURE:-0.4}
@@ -49,6 +51,12 @@ services:
       LLM_USER_INTERACTION_LIMIT: ${LLM_USER_INTERACTION_LIMIT:-20}
       LLM_PROFILE_SUMMARY_MAX_LENGTH: ${LLM_PROFILE_SUMMARY_MAX_LENGTH:-1500}
       LLM_PREFERENCE_VALUE_MAX_LENGTH: ${LLM_PREFERENCE_VALUE_MAX_LENGTH:-300}
+      LLM_EMBEDDING_MODEL_VERSION: ${LLM_EMBEDDING_MODEL_VERSION:-v1}
+      LLM_EMBEDDING_SOURCE_LANGUAGE: ${LLM_EMBEDDING_SOURCE_LANGUAGE:-pl-PL}
+      LLM_EMBEDDING_BATCH_SIZE: ${LLM_EMBEDDING_BATCH_SIZE:-32}
+      LLM_EMBEDDING_SYNC_LOCK_TIMEOUT: ${LLM_EMBEDDING_SYNC_LOCK_TIMEOUT:-3600}
+      LLM_SEMANTIC_SEARCH_ENABLED: ${LLM_SEMANTIC_SEARCH_ENABLED:-True}
+      LLM_SEMANTIC_MIN_SIMILARITY: ${LLM_SEMANTIC_MIN_SIMILARITY:-0.2}
       SEED_USER_PASSWORD: ${SEED_USER_PASSWORD:-}
     command:
       - /bin/sh
@@ -86,7 +94,7 @@ services:
       OLLAMA_HOST: 0.0.0.0:11434
       OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-10m}
       OLLAMA_CONTEXT_LENGTH: ${OLLAMA_CONTEXT_LENGTH:-8192}
-      OLLAMA_MAX_LOADED_MODELS: ${OLLAMA_MAX_LOADED_MODELS:-1}
+      OLLAMA_MAX_LOADED_MODELS: ${OLLAMA_MAX_LOADED_MODELS:-2}
       OLLAMA_NUM_PARALLEL: ${OLLAMA_NUM_PARALLEL:-1}
     devices:
       - /dev/kfd:/dev/kfd
@@ -113,6 +121,18 @@ services:
         condition: service_healthy
     restart: "no"
 
+  ollama-embed-init:
+    image: ollama/ollama:${OLLAMA_IMAGE_TAG:-0.32.3-rocm}
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    command:
+      - pull
+      - ${OLLAMA_EMBEDDING_MODEL:-nomic-embed-text:latest}
+    depends_on:
+      ollama:
+        condition: service_healthy
+    restart: "no"
+
   catalog-sync:
     build:
       context: .
@@ -132,6 +152,16 @@ services:
       TMDB_CATALOG_LOCK_TIMEOUT: ${TMDB_CATALOG_LOCK_TIMEOUT:-1800}
       TMDB_API_KEY: ${TMDB_API_KEY:-}
       TMDB_API_TOKEN: ${TMDB_API_TOKEN:-}
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_CHAT_MODEL: ${OLLAMA_CHAT_MODEL:-llama3.1:8b}
+      OLLAMA_EMBEDDING_MODEL: ${OLLAMA_EMBEDDING_MODEL:-nomic-embed-text:latest}
+      OLLAMA_EMBEDDING_DIMENSIONS: ${OLLAMA_EMBEDDING_DIMENSIONS:-768}
+      OLLAMA_REQUEST_TIMEOUT_SECONDS: ${OLLAMA_REQUEST_TIMEOUT_SECONDS:-120}
+      OLLAMA_HEALTH_TIMEOUT_SECONDS: ${OLLAMA_HEALTH_TIMEOUT_SECONDS:-2}
+      LLM_EMBEDDING_MODEL_VERSION: ${LLM_EMBEDDING_MODEL_VERSION:-v1}
+      LLM_EMBEDDING_SOURCE_LANGUAGE: ${LLM_EMBEDDING_SOURCE_LANGUAGE:-pl-PL}
+      LLM_EMBEDDING_BATCH_SIZE: ${LLM_EMBEDDING_BATCH_SIZE:-32}
+      LLM_EMBEDDING_SYNC_LOCK_TIMEOUT: ${LLM_EMBEDDING_SYNC_LOCK_TIMEOUT:-3600}
       TMDB_BASELINE_MOVIES: ${TMDB_BASELINE_MOVIES:-2000}
       TMDB_BASELINE_TV_SHOWS: ${TMDB_BASELINE_TV_SHOWS:-2000}
       TMDB_SYNC_INTERVAL_SECONDS: ${TMDB_SYNC_INTERVAL_SECONDS:-21600}
@@ -145,11 +175,14 @@ services:
       - >-
         while true; do
           python manage.py sync_tmdb_catalog;
+          python manage.py sync_content_embeddings;
           sleep "$${TMDB_SYNC_INTERVAL_SECONDS}";
         done
     depends_on:
       app:
         condition: service_healthy
+      ollama-embed-init:
+        condition: service_completed_successfully
     restart: unless-stopped
 
   demo-seed:

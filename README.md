@@ -399,9 +399,11 @@ destination. Use <http://localhost:8000> on the machine running Compose.
 |---|---:|---|
 | `OLLAMA_IMAGE_TAG` | `0.32.3-rocm` | pinned Ollama image variant for AMD ROCm |
 | `OLLAMA_CHAT_MODEL` | `llama3.1:8b` | model downloaded by `ollama-init` and selected by Django |
+| `OLLAMA_EMBEDDING_MODEL` | `nomic-embed-text:latest` | 768-dimensional model downloaded by `ollama-embed-init` |
+| `OLLAMA_EMBEDDING_DIMENSIONS` | `768` | dimensions required by the current pgvector schema |
 | `OLLAMA_KEEP_ALIVE` | `10m` | time an idle model remains loaded |
 | `OLLAMA_CONTEXT_LENGTH` | `8192` | default context window and associated VRAM allocation |
-| `OLLAMA_MAX_LOADED_MODELS` | `1` | maximum simultaneously loaded models |
+| `OLLAMA_MAX_LOADED_MODELS` | `2` | maximum simultaneously loaded chat and embedding models |
 | `OLLAMA_NUM_PARALLEL` | `1` | parallel requests processed by one model |
 | `OLLAMA_REQUEST_TIMEOUT_SECONDS` | `120` | Django-to-Ollama chat request timeout |
 | `OLLAMA_HEALTH_TIMEOUT_SECONDS` | `2` | short timeout used when checking Ollama and the selected model |
@@ -418,6 +420,12 @@ destination. Use <http://localhost:8000> on the machine running Compose.
 | `LLM_USER_INTERACTION_LIMIT` | `20` | maximum recent user interactions included in context |
 | `LLM_PROFILE_SUMMARY_MAX_LENGTH` | `1500` | maximum semantic-profile characters included in context |
 | `LLM_PREFERENCE_VALUE_MAX_LENGTH` | `300` | maximum characters included for one preference |
+| `LLM_EMBEDDING_MODEL_VERSION` | `v1` | version of the embedding text-construction pipeline |
+| `LLM_EMBEDDING_SOURCE_LANGUAGE` | `pl-PL` | embedding source language label |
+| `LLM_EMBEDDING_BATCH_SIZE` | `32` | texts sent in one Ollama embed request |
+| `LLM_EMBEDDING_SYNC_LOCK_TIMEOUT` | `3600` | Redis lock duration for one embedding sync |
+| `LLM_SEMANTIC_SEARCH_ENABLED` | `True` | enable pgvector retrieval for chat grounding |
+| `LLM_SEMANTIC_MIN_SIMILARITY` | `0.2` | minimum cosine similarity for semantic candidates |
 
 Compose supplies `OLLAMA_BASE_URL=http://ollama:11434` directly to the
 application container. The hostname is only meaningful on the Compose network
@@ -449,15 +457,18 @@ The `ollama` service uses the official ROCm image and receives the host GPU
 through `/dev/kfd` and `/dev/dri`. It has no published host port; Django and
 `ollama-init` reach it over the private Compose network.
 
-The `ollama-init` service waits for Ollama to become healthy, requests the
-configured model, and exits. Ollama stores downloaded layers in the
-`ollama_data` volume, so an unchanged model is reused on later starts.
+The `ollama-init` and `ollama-embed-init` services wait for Ollama to become
+healthy, pull the chat and embedding models, and exit. Ollama stores downloaded
+layers in the `ollama_data` volume, so unchanged models are reused on later
+starts.
 
 Django includes a minimal HTTP client for model discovery and non-streaming
 chat calls. The application chat sends its current prompt and up to ten recent
 messages to `POST /api/chat/`. Before calling Ollama, Django loads the signed-in
-user's profile, preferences, recent interactions, and a bounded candidate list
-from PostgreSQL. Candidate lists are cached in Redis and invalidated through
+user's profile, preferences, and recent interactions from PostgreSQL. It embeds
+the query with Ollama and retrieves a bounded candidate list through pgvector
+cosine distance and the HNSW index. Keyword retrieval fills missing results and
+acts as a fallback. Candidate lists are cached in Redis and invalidated through
 the existing catalog version. Redis failures fall back to PostgreSQL. The
 prompt and response remain only in React memory and disappear after a page
 reload; this preliminary flow does not create `message`,
@@ -509,6 +520,12 @@ To download a changed `OLLAMA_CHAT_MODEL` without restarting the full stack:
 docker compose run --rm ollama-init
 ```
 
+Pull a changed embedding model:
+
+```bash
+docker compose run --rm ollama-embed-init
+```
+
 ## TMDB catalog
 
 Catalog synchronization is implemented by:
@@ -516,7 +533,9 @@ Catalog synchronization is implemented by:
 - `backend/tmdb.py` — TMDB client and response normalization;
 - `backend/api/catalog_sync.py` — PostgreSQL persistence;
 - `sync_tmdb_catalog` — Django synchronization command;
-- `catalog-sync` — periodic Compose service.
+- `sync_content_embeddings` — incremental Ollama/pgvector synchronization;
+- `catalog-sync` — periodic Compose service that runs catalog and embedding
+  synchronization.
 
 ### Catalog display flow
 
@@ -839,8 +858,11 @@ Only a `rated` interaction accepts a rating, and its value must be between
 0 and 10.
 
 The `content_embedding` table and an HNSW index are present in the schema.
-The `embedding` column uses `vector(768)`. The application does not populate
-this table or perform semantic search.
+The `embedding` column uses `vector(768)`. `sync_content_embeddings` builds a
+stable source text, hashes it, generates missing or stale vectors through
+Ollama, and stores them with model, pipeline-version, and language metadata.
+Chat queries use pgvector cosine distance and fall back to relational search
+when semantic retrieval is disabled or unavailable.
 
 ## Redis and caching
 
@@ -853,7 +875,9 @@ Redis provides:
 - complete, ready-to-display `/api/contents/` responses containing catalog
   items, pagination metadata, and available genres;
 - version-based catalog cache invalidation;
+- cached LLM candidate contexts, including semantic retrieval mode;
 - a shared TMDB synchronization lock;
+- a shared embedding synchronization lock;
 - fast reads for Django sessions;
 - PostgreSQL session fallback when the cache is unavailable.
 
@@ -862,7 +886,9 @@ Key formats:
 ```text
 apiTMDB:response:<sha256>
 catalog:search:v<version>:<sha256>
+llm:catalog-context:v<version>:<sha256>
 lock:tmdb:catalog
+lock:embeddings:catalog
 ```
 
 The catalog key includes query parameters and the current date. A successful
@@ -1134,8 +1160,6 @@ the workflow requires:
 
 - using the existing Ollama client in the recommendation workflow;
 - defining validated input and output contracts;
-- populating and versioning 768-dimensional catalog embeddings;
-- replacing the preliminary relational candidate retrieval with vector search;
 - implementing ranking, rejection thresholds, and deterministic validation;
 - adding a recommendation API with errors, cancellation, retries, and
   optional streaming;
@@ -1144,17 +1168,18 @@ the workflow requires:
 - evaluating recommendation accuracy, diversity, novelty, catalog coverage,
   latency, and hardware requirements.
 
-The configured chat model is Llama 3.1 8B. The repository does not yet select
-an embedding model. Model changes still require quality, performance,
-hardware, license, and multilingual-support evaluation.
+The configured chat model is Llama 3.1 8B and the embedding model is
+`nomic-embed-text:latest`. Changing to a model with dimensions other than 768
+requires a coordinated PostgreSQL schema and index migration. Model changes
+still require quality, performance, hardware, license, and multilingual-support
+evaluation.
 
 ## Known limitations
 
-- catalog grounding uses keyword/relational retrieval rather than embeddings;
+- semantic retrieval has not yet been evaluated against a labeled relevance set;
 - the preliminary Ollama chat does not persist messages or recommendation
   runs and loses its temporary messages after a page reload;
 - no LangChain or LangGraph integration;
-- no generated catalog embeddings or semantic search;
 - no automatic semantic-profile updates;
 - recommendation trends depend on stored records, which can be demo data;
 - recommendation and agent-status components have no live pipeline;

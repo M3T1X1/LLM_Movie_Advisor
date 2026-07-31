@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 import os
 from pathlib import Path
 
+from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv
 
 
@@ -141,6 +142,13 @@ OLLAMA_BASE_URL = os.environ.get(
     'http://127.0.0.1:11434',
 ).rstrip('/')
 OLLAMA_CHAT_MODEL = os.environ.get('OLLAMA_CHAT_MODEL', 'llama3.1:8b')
+OLLAMA_EMBEDDING_MODEL = os.environ.get(
+    'OLLAMA_EMBEDDING_MODEL',
+    'nomic-embed-text:latest',
+)
+OLLAMA_EMBEDDING_DIMENSIONS = int(
+    os.environ.get('OLLAMA_EMBEDDING_DIMENSIONS', 768)
+)
 OLLAMA_REQUEST_TIMEOUT_SECONDS = int(
     os.environ.get('OLLAMA_REQUEST_TIMEOUT_SECONDS', 120)
 )
@@ -198,6 +206,34 @@ LLM_PROFILE_SUMMARY_MAX_LENGTH = int(
 LLM_PREFERENCE_VALUE_MAX_LENGTH = int(
     os.environ.get('LLM_PREFERENCE_VALUE_MAX_LENGTH', 300)
 )
+LLM_EMBEDDING_MODEL_VERSION = os.environ.get(
+    'LLM_EMBEDDING_MODEL_VERSION',
+    'v1',
+)
+LLM_EMBEDDING_SOURCE_LANGUAGE = os.environ.get(
+    'LLM_EMBEDDING_SOURCE_LANGUAGE',
+    'pl-PL',
+)
+LLM_EMBEDDING_BATCH_SIZE = int(
+    os.environ.get('LLM_EMBEDDING_BATCH_SIZE', 32)
+)
+LLM_EMBEDDING_SYNC_LOCK_TIMEOUT = int(
+    os.environ.get('LLM_EMBEDDING_SYNC_LOCK_TIMEOUT', 3600)
+)
+LLM_SEMANTIC_SEARCH_ENABLED = env_bool('LLM_SEMANTIC_SEARCH_ENABLED', True)
+LLM_SEMANTIC_MIN_SIMILARITY = float(
+    os.environ.get('LLM_SEMANTIC_MIN_SIMILARITY', 0.2)
+)
+if OLLAMA_EMBEDDING_DIMENSIONS != 768:
+    raise ImproperlyConfigured(
+        'OLLAMA_EMBEDDING_DIMENSIONS must be 768 for the current pgvector schema.'
+    )
+if LLM_EMBEDDING_BATCH_SIZE < 1:
+    raise ImproperlyConfigured('LLM_EMBEDDING_BATCH_SIZE must be positive.')
+if not 0 <= LLM_SEMANTIC_MIN_SIMILARITY <= 1:
+    raise ImproperlyConfigured(
+        'LLM_SEMANTIC_MIN_SIMILARITY must be between 0 and 1.'
+    )
 
 SESSION_ENGINE = "backend.sessions"
 SESSION_CACHE_ALIAS = "default"

@@ -1,4 +1,5 @@
 import json
+import math
 from dataclasses import dataclass
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -33,6 +34,15 @@ class OllamaChatResponse:
     eval_count: int | None
 
 
+@dataclass(frozen=True)
+class OllamaEmbeddingResponse:
+    embeddings: tuple[tuple[float, ...], ...]
+    model: str
+    total_duration_ns: int | None
+    load_duration_ns: int | None
+    prompt_eval_count: int | None
+
+
 class OllamaClient:
     def __init__(
         self,
@@ -41,11 +51,15 @@ class OllamaClient:
         model: str,
         request_timeout: float,
         health_timeout: float,
+        embedding_model: str = "",
+        embedding_dimensions: int = 768,
     ):
         self.base_url = base_url.rstrip("/")
         self.model = model.strip()
         self.request_timeout = request_timeout
         self.health_timeout = health_timeout
+        self.embedding_model = embedding_model.strip()
+        self.embedding_dimensions = embedding_dimensions
         if not self.base_url:
             raise OllamaConfigurationError("Ollama base URL cannot be empty.")
         if not self.model:
@@ -53,6 +67,10 @@ class OllamaClient:
         if self.request_timeout <= 0 or self.health_timeout <= 0:
             raise OllamaConfigurationError(
                 "Ollama timeouts must be greater than zero."
+            )
+        if self.embedding_dimensions <= 0:
+            raise OllamaConfigurationError(
+                "Ollama embedding dimensions must be greater than zero."
             )
 
     def list_models(self) -> tuple[str, ...]:
@@ -71,10 +89,28 @@ class OllamaClient:
         return tuple(dict.fromkeys(names))
 
     def has_configured_model(self) -> bool:
-        expected_names = {self.model}
-        if ":" not in self.model:
-            expected_names.add(f"{self.model}:latest")
-        return bool(expected_names.intersection(self.list_models()))
+        return self.is_model_available(self.model, self.list_models())
+
+    def has_configured_embedding_model(self) -> bool:
+        if not self.embedding_model:
+            return False
+        return self.is_model_available(self.embedding_model, self.list_models())
+
+    def missing_configured_models(self) -> tuple[str, ...]:
+        available_models = self.list_models()
+        configured_models = (self.model, self.embedding_model)
+        return tuple(
+            model
+            for model in configured_models
+            if model and not self.is_model_available(model, available_models)
+        )
+
+    @staticmethod
+    def is_model_available(model: str, available_models: tuple[str, ...]) -> bool:
+        expected_names = {model}
+        if ":" not in model:
+            expected_names.add(f"{model}:latest")
+        return bool(expected_names.intersection(available_models))
 
     def chat(
         self,
@@ -121,6 +157,63 @@ class OllamaClient:
             total_duration_ns=self._optional_int(payload.get("total_duration")),
             prompt_eval_count=self._optional_int(payload.get("prompt_eval_count")),
             eval_count=self._optional_int(payload.get("eval_count")),
+        )
+
+    def embed(self, texts: list[str]) -> OllamaEmbeddingResponse:
+        if not self.embedding_model:
+            raise OllamaConfigurationError(
+                "Ollama embedding model cannot be empty."
+            )
+        normalized_texts = self._validate_embedding_texts(texts)
+        payload = self._request(
+            "POST",
+            "/api/embed",
+            payload={
+                "model": self.embedding_model,
+                "input": normalized_texts,
+                "truncate": True,
+            },
+            timeout=self.request_timeout,
+        )
+        raw_embeddings = payload.get("embeddings")
+        if not isinstance(raw_embeddings, list) or len(raw_embeddings) != len(
+            normalized_texts
+        ):
+            raise OllamaResponseError(
+                "Ollama returned an invalid embedding batch."
+            )
+
+        embeddings: list[tuple[float, ...]] = []
+        for raw_embedding in raw_embeddings:
+            if not isinstance(raw_embedding, list) or len(
+                raw_embedding
+            ) != self.embedding_dimensions:
+                raise OllamaResponseError(
+                    "Ollama returned an embedding with invalid dimensions."
+                )
+            embedding: list[float] = []
+            for value in raw_embedding:
+                if isinstance(value, bool) or not isinstance(value, (int, float)):
+                    raise OllamaResponseError(
+                        "Ollama returned a non-numeric embedding."
+                    )
+                normalized_value = float(value)
+                if not math.isfinite(normalized_value):
+                    raise OllamaResponseError(
+                        "Ollama returned a non-finite embedding."
+                    )
+                embedding.append(normalized_value)
+            embeddings.append(tuple(embedding))
+
+        response_model = payload.get("model")
+        if not isinstance(response_model, str) or not response_model.strip():
+            response_model = self.embedding_model
+        return OllamaEmbeddingResponse(
+            embeddings=tuple(embeddings),
+            model=response_model,
+            total_duration_ns=self._optional_int(payload.get("total_duration")),
+            load_duration_ns=self._optional_int(payload.get("load_duration")),
+            prompt_eval_count=self._optional_int(payload.get("prompt_eval_count")),
         )
 
     def _request(
@@ -185,6 +278,17 @@ class OllamaClient:
         return normalized
 
     @staticmethod
+    def _validate_embedding_texts(texts: list[str]) -> list[str]:
+        if not isinstance(texts, list) or not texts:
+            raise ValueError("At least one embedding text is required.")
+        normalized: list[str] = []
+        for text in texts:
+            if not isinstance(text, str) or not text.strip():
+                raise ValueError("Embedding text cannot be empty.")
+            normalized.append(text.strip())
+        return normalized
+
+    @staticmethod
     def _optional_int(value: Any) -> int | None:
         if isinstance(value, bool) or not isinstance(value, int):
             return None
@@ -195,6 +299,8 @@ def get_ollama_client() -> OllamaClient:
     return OllamaClient(
         base_url=settings.OLLAMA_BASE_URL,
         model=settings.OLLAMA_CHAT_MODEL,
+        embedding_model=settings.OLLAMA_EMBEDDING_MODEL,
+        embedding_dimensions=settings.OLLAMA_EMBEDDING_DIMENSIONS,
         request_timeout=settings.OLLAMA_REQUEST_TIMEOUT_SECONDS,
         health_timeout=settings.OLLAMA_HEALTH_TIMEOUT_SECONDS,
     )

@@ -24,6 +24,7 @@ class StatelessChatApiTests(SimpleTestCase):
                 candidate_ids=(11, 12),
                 catalog_cache_hit=True,
                 profile_applied=True,
+                retrieval_mode="semantic",
             ),
         )
         self.addCleanup(context_patcher.stop)
@@ -51,7 +52,13 @@ class StatelessChatApiTests(SimpleTestCase):
         mocked_get_client,
     ):
         client = mocked_get_client.return_value
-        client.has_configured_model.return_value = True
+        client.model = "llama3.1:8b"
+        client.embedding_model = "nomic-embed-text:latest"
+        client.list_models.return_value = (
+            "llama3.1:8b",
+            "nomic-embed-text:latest",
+        )
+        client.is_model_available.return_value = True
         client.chat.return_value = OllamaChatResponse(
             content="Spróbuj filmu Labirynt.",
             model="llama3.1:8b",
@@ -91,6 +98,7 @@ class StatelessChatApiTests(SimpleTestCase):
                     "catalogCandidateIds": ["11", "12"],
                     "profileApplied": True,
                     "catalogCacheHit": True,
+                    "retrievalMode": "semantic",
                 },
             },
         )
@@ -112,9 +120,12 @@ class StatelessChatApiTests(SimpleTestCase):
             },
         )
         self.mocked_context_builder.assert_called_once()
-        context_user, context_prompt = self.mocked_context_builder.call_args.args
+        context_user, context_prompt, context_client = (
+            self.mocked_context_builder.call_args.args
+        )
         self.assertTrue(context_user.is_authenticated)
         self.assertEqual(context_prompt, "Poleć thriller.")
+        self.assertIs(context_client, client)
 
     @patch("backend.api.views.get_ollama_client")
     def test_rejects_invalid_input_before_contacting_ollama(
@@ -163,7 +174,11 @@ class StatelessChatApiTests(SimpleTestCase):
 
     @patch("backend.api.views.get_ollama_client")
     def test_reports_missing_model(self, mocked_get_client):
-        mocked_get_client.return_value.has_configured_model.return_value = False
+        client = mocked_get_client.return_value
+        client.model = "llama3.1:8b"
+        client.embedding_model = "nomic-embed-text:latest"
+        client.list_models.return_value = ()
+        client.is_model_available.return_value = False
 
         response = stateless_chat(self.request({"message": "Test"}))
 
@@ -173,7 +188,14 @@ class StatelessChatApiTests(SimpleTestCase):
 
     @patch("backend.api.views.get_ollama_client")
     def test_sanitizes_database_context_failure(self, mocked_get_client):
-        mocked_get_client.return_value.has_configured_model.return_value = True
+        client = mocked_get_client.return_value
+        client.model = "llama3.1:8b"
+        client.embedding_model = "nomic-embed-text:latest"
+        client.list_models.return_value = (
+            "llama3.1:8b",
+            "nomic-embed-text:latest",
+        )
+        client.is_model_available.return_value = True
         self.mocked_context_builder.side_effect = DatabaseError("tajny adres bazy")
 
         response = stateless_chat(self.request({"message": "Poleć dramat"}))
@@ -185,7 +207,7 @@ class StatelessChatApiTests(SimpleTestCase):
     @patch("backend.api.views.get_ollama_client")
     def test_sanitizes_ollama_failures(self, mocked_get_client):
         client = mocked_get_client.return_value
-        client.has_configured_model.side_effect = OllamaUnavailableError(
+        client.list_models.side_effect = OllamaUnavailableError(
             "tajny adres"
         )
 
@@ -196,8 +218,14 @@ class StatelessChatApiTests(SimpleTestCase):
         self.assertEqual(unavailable_response.status_code, 503)
         self.assertNotIn("tajny adres", unavailable_response.content.decode())
 
-        client.has_configured_model.side_effect = None
-        client.has_configured_model.return_value = True
+        client.list_models.side_effect = None
+        client.model = "llama3.1:8b"
+        client.embedding_model = "nomic-embed-text:latest"
+        client.list_models.return_value = (
+            "llama3.1:8b",
+            "nomic-embed-text:latest",
+        )
+        client.is_model_available.return_value = True
         client.chat.side_effect = OllamaResponseError("tajna odpowiedź")
 
         invalid_response = stateless_chat(self.request({"message": "Test"}))

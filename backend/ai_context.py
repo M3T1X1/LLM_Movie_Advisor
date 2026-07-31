@@ -1,19 +1,24 @@
 import json
+import logging
 import re
 from dataclasses import dataclass
 from datetime import date
 
 from django.conf import settings
+from django.db import DatabaseError
 from django.db.models import Q
 
 from backend.accounts.services import get_business_user_id
 from backend.api.models import Content, Interaction, UserPreference, UserProfile
+from backend.embeddings import semantic_content_search
+from backend.ollama import OllamaClient, OllamaError
 from backend.redis import (
     get_cached_llm_catalog_context,
     set_cached_llm_catalog_context,
 )
 
 
+logger = logging.getLogger(__name__)
 WORD_PATTERN = re.compile(r"[^\W_]+", re.UNICODE)
 SEARCH_STOP_WORDS = {
     "albo",
@@ -50,7 +55,7 @@ SEARCH_STOP_WORDS = {
     "trochę",
     "ale",
     "bo",
-    "ponieważ"
+    "ponieważ",
 }
 SEARCH_ALIASES = {
     "sci-fi": ("science", "fiction"),
@@ -64,6 +69,7 @@ class LlmApplicationContext:
     candidate_ids: tuple[int, ...]
     catalog_cache_hit: bool
     profile_applied: bool
+    retrieval_mode: str
 
 
 def _search_terms(prompt: str, preference_hints: list[str]) -> list[str]:
@@ -80,7 +86,11 @@ def _search_terms(prompt: str, preference_hints: list[str]) -> list[str]:
     return list(dict.fromkeys(terms))[: settings.LLM_CATALOG_SEARCH_TERM_LIMIT]
 
 
-def _serialize_candidate(item: Content) -> dict:
+def _serialize_candidate(
+    item: Content,
+    *,
+    semantic_score: float | None = None,
+) -> dict:
     overview = (item.overview or "").strip()
     return {
         "id": item.pk,
@@ -95,14 +105,24 @@ def _serialize_candidate(item: Content) -> dict:
             float(item.vote_average) if item.vote_average is not None else None
         ),
         "overview": overview[: settings.LLM_CATALOG_OVERVIEW_MAX_LENGTH],
+        "semantic_score": (
+            round(semantic_score, 6) if semantic_score is not None else None
+        ),
     }
 
 
-def _query_catalog_candidates(terms: list[str]) -> list[dict]:
-    limit = settings.LLM_CATALOG_CANDIDATE_LIMIT
+def _query_catalog_candidates(
+    terms: list[str],
+    *,
+    limit: int | None = None,
+    exclude_ids: list[int] | None = None,
+) -> list[dict]:
+    resolved_limit = limit or settings.LLM_CATALOG_CANDIDATE_LIMIT
     base_queryset = Content.objects.prefetch_related("genres").filter(
         Q(release_date__lte=date.today()) | Q(release_date__isnull=True)
     )
+    if exclude_ids:
+        base_queryset = base_queryset.exclude(pk__in=exclude_ids)
 
     matched_items: list[Content] = []
     if terms:
@@ -117,15 +137,15 @@ def _query_catalog_candidates(terms: list[str]) -> list[dict]:
         matched_items = list(
             base_queryset.filter(search_filter)
             .distinct()
-            .order_by("-popularity", "-vote_average", "id")[:limit]
+            .order_by("-popularity", "-vote_average", "id")[:resolved_limit]
         )
 
-    if len(matched_items) < limit:
+    if len(matched_items) < resolved_limit:
         matched_ids = [item.pk for item in matched_items]
         fallback_items = list(
             base_queryset.exclude(pk__in=matched_ids)
             .order_by("-popularity", "-vote_average", "id")[
-                : limit - len(matched_items)
+                : resolved_limit - len(matched_items)
             ]
         )
         matched_items.extend(fallback_items)
@@ -136,30 +156,99 @@ def _query_catalog_candidates(terms: list[str]) -> list[dict]:
 def _catalog_candidates(
     prompt: str,
     preference_hints: list[str],
-) -> tuple[list[dict], bool]:
+    embedding_client: OllamaClient | None,
+) -> tuple[list[dict], bool, str]:
     terms = _search_terms(prompt, preference_hints)
+    semantic_enabled = bool(
+        settings.LLM_SEMANTIC_SEARCH_ENABLED and embedding_client is not None
+    )
     cache_params = {
+        "mode": "semantic" if semantic_enabled else "keyword",
+        "query": normalize_embedding_query(prompt, preference_hints),
         "terms": terms,
         "limit": settings.LLM_CATALOG_CANDIDATE_LIMIT,
         "overview_length": settings.LLM_CATALOG_OVERVIEW_MAX_LENGTH,
+        "embedding_model": settings.OLLAMA_EMBEDDING_MODEL,
+        "embedding_version": settings.LLM_EMBEDDING_MODEL_VERSION,
+        "embedding_language": settings.LLM_EMBEDDING_SOURCE_LANGUAGE,
+        "minimum_similarity": settings.LLM_SEMANTIC_MIN_SIMILARITY,
     }
-    cache_key, cached_candidates = get_cached_llm_catalog_context(cache_params)
-    if cached_candidates is not None and all(
-        isinstance(item.get("id"), int) and isinstance(item.get("title"), str)
-        for item in cached_candidates
+    cache_key, cached_context = get_cached_llm_catalog_context(cache_params)
+    cached_candidates = (
+        cached_context.get("candidates")
+        if isinstance(cached_context, dict)
+        else None
+    )
+    cached_mode = (
+        cached_context.get("retrieval_mode")
+        if isinstance(cached_context, dict)
+        else None
+    )
+    if (
+        isinstance(cached_candidates, list)
+        and isinstance(cached_mode, str)
+        and all(
+            isinstance(item.get("id"), int)
+            and isinstance(item.get("title"), str)
+            for item in cached_candidates
+        )
     ):
-        return cached_candidates, True
+        return cached_candidates, True, cached_mode
 
-    candidates = _query_catalog_candidates(terms)
+    candidates: list[dict] = []
+    retrieval_mode = "keyword"
+    if semantic_enabled and embedding_client is not None:
+        try:
+            matches = semantic_content_search(
+                prompt,
+                preference_hints,
+                limit=settings.LLM_CATALOG_CANDIDATE_LIMIT,
+                client=embedding_client,
+            )
+            candidates = [
+                _serialize_candidate(
+                    match.content,
+                    semantic_score=match.similarity,
+                )
+                for match in matches
+            ]
+            retrieval_mode = "semantic" if candidates else "keyword_fallback"
+        except (OllamaError, DatabaseError) as error:
+            logger.warning(
+                "Semantic catalog search failed; using keywords: %s",
+                error,
+            )
+            retrieval_mode = "keyword_fallback"
+
+    if len(candidates) < settings.LLM_CATALOG_CANDIDATE_LIMIT:
+        candidates.extend(
+            _query_catalog_candidates(
+                terms,
+                limit=settings.LLM_CATALOG_CANDIDATE_LIMIT - len(candidates),
+                exclude_ids=[item["id"] for item in candidates],
+            )
+        )
     set_cached_llm_catalog_context(
         cache_key,
-        candidates,
+        {
+            "candidates": candidates,
+            "retrieval_mode": retrieval_mode,
+        },
         timeout=settings.LLM_CATALOG_CONTEXT_CACHE_TIMEOUT,
     )
-    return candidates, False
+    return candidates, False, retrieval_mode
 
 
-def build_llm_application_context(user, prompt: str) -> LlmApplicationContext:
+def normalize_embedding_query(prompt: str, preference_hints: list[str]) -> str:
+    values = [prompt, *preference_hints[:5]]
+    return " | ".join(" ".join(value.casefold().split()) for value in values)
+
+
+def build_llm_application_context(
+    user,
+    prompt: str,
+    embedding_client: OllamaClient | None = None,
+) -> LlmApplicationContext:
     user_id = get_business_user_id(user)
     profile = UserProfile.objects.filter(user_id=user_id).first()
     preferences = list(
@@ -206,7 +295,11 @@ def build_llm_application_context(user, prompt: str) -> LlmApplicationContext:
         for item in interactions
     ]
 
-    candidates, cache_hit = _catalog_candidates(prompt, preference_hints)
+    candidates, cache_hit, retrieval_mode = _catalog_candidates(
+        prompt,
+        preference_hints,
+        embedding_client,
+    )
     semantic_summary = (
         profile.semantic_summary.strip()[: settings.LLM_PROFILE_SUMMARY_MAX_LENGTH]
         if profile and profile.semantic_summary
@@ -219,6 +312,7 @@ def build_llm_application_context(user, prompt: str) -> LlmApplicationContext:
             "recent_interactions": interaction_payload,
         },
         "catalog_candidates": candidates,
+        "retrieval_mode": retrieval_mode,
     }
     system_message = (
         "KONTEKST APLIKACJI:\n"
@@ -237,4 +331,5 @@ def build_llm_application_context(user, prompt: str) -> LlmApplicationContext:
         profile_applied=bool(
             semantic_summary or preference_payload or interaction_payload
         ),
+        retrieval_mode=retrieval_mode,
     )

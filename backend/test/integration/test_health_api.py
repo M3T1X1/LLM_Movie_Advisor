@@ -17,7 +17,7 @@ class HealthApiTests(ApiIntegrationTestCase):
         self.mocked_ollama_client = (
             self.mocked_get_ollama_client.return_value
         )
-        self.mocked_ollama_client.has_configured_model.return_value = True
+        self.mocked_ollama_client.missing_configured_models.return_value = ()
 
     @patch("backend.api.views.redis_client.ping", return_value=True)
     def test_health_check_is_public_and_checks_database(self, mocked_redis_ping):
@@ -38,7 +38,7 @@ class HealthApiTests(ApiIntegrationTestCase):
             },
         )
         mocked_redis_ping.assert_called_once_with()
-        self.mocked_ollama_client.has_configured_model.assert_called_once_with()
+        self.mocked_ollama_client.missing_configured_models.assert_called_once_with()
 
     @patch(
         "backend.api.views.connection.ensure_connection",
@@ -98,7 +98,9 @@ class HealthApiTests(ApiIntegrationTestCase):
         self,
         mocked_redis_ping,
     ):
-        self.mocked_ollama_client.has_configured_model.return_value = False
+        self.mocked_ollama_client.missing_configured_models.return_value = (
+            "nomic-embed-text:latest",
+        )
 
         response = self.client.get(reverse("api:health"))
 
@@ -121,7 +123,7 @@ class HealthApiTests(ApiIntegrationTestCase):
         self,
         mocked_redis_ping,
     ):
-        self.mocked_ollama_client.has_configured_model.side_effect = (
+        self.mocked_ollama_client.missing_configured_models.side_effect = (
             OllamaUnavailableError("tajny adres Ollamy")
         )
 

@@ -18,6 +18,8 @@ class OllamaClientTests(SimpleTestCase):
         self.client = OllamaClient(
             base_url="http://ollama:11434/",
             model="llama3.1:8b",
+            embedding_model="nomic-embed-text:latest",
+            embedding_dimensions=768,
             request_timeout=120,
             health_timeout=2,
         )
@@ -90,6 +92,14 @@ class OllamaClientTests(SimpleTestCase):
 
         self.assertTrue(client.has_configured_model())
 
+    def test_reports_missing_chat_and_embedding_models_from_one_model_list(self):
+        self.client.list_models = MagicMock(return_value=("llama3.1:8b",))
+
+        missing = self.client.missing_configured_models()
+
+        self.assertEqual(missing, ("nomic-embed-text:latest",))
+        self.client.list_models.assert_called_once_with()
+
     @patch("backend.ollama.urlopen")
     def test_sends_non_streaming_chat_and_returns_metrics(self, mocked_urlopen):
         mocked_urlopen.return_value = self.response(
@@ -146,6 +156,62 @@ class OllamaClientTests(SimpleTestCase):
             with self.subTest(messages=messages):
                 with self.assertRaises(ValueError):
                     self.client.chat(messages)
+
+    @patch("backend.ollama.urlopen")
+    def test_sends_embedding_batch_and_validates_dimensions(self, mocked_urlopen):
+        client = OllamaClient(
+            base_url="http://ollama:11434",
+            model="llama3.1:8b",
+            embedding_model="embedding-model",
+            embedding_dimensions=3,
+            request_timeout=120,
+            health_timeout=2,
+        )
+        mocked_urlopen.return_value = self.response(
+            {
+                "model": "embedding-model:latest",
+                "embeddings": [[0.1, 0.2, 0.3], [1, 0, -1]],
+                "total_duration": 123,
+                "load_duration": 10,
+                "prompt_eval_count": 8,
+            }
+        )
+
+        result = client.embed([" Pierwszy tekst ", "Drugi tekst"])
+
+        self.assertEqual(
+            result.embeddings,
+            ((0.1, 0.2, 0.3), (1.0, 0.0, -1.0)),
+        )
+        self.assertEqual(result.model, "embedding-model:latest")
+        self.assertEqual(result.prompt_eval_count, 8)
+        request = mocked_urlopen.call_args.args[0]
+        self.assertEqual(request.full_url, "http://ollama:11434/api/embed")
+        self.assertEqual(
+            json.loads(request.data.decode("utf-8")),
+            {
+                "model": "embedding-model",
+                "input": ["Pierwszy tekst", "Drugi tekst"],
+                "truncate": True,
+            },
+        )
+
+    @patch("backend.ollama.urlopen")
+    def test_rejects_embedding_with_wrong_dimensions(self, mocked_urlopen):
+        client = OllamaClient(
+            base_url="http://ollama:11434",
+            model="llama3.1:8b",
+            embedding_model="embedding-model",
+            embedding_dimensions=3,
+            request_timeout=120,
+            health_timeout=2,
+        )
+        mocked_urlopen.return_value = self.response(
+            {"embeddings": [[0.1, 0.2]]}
+        )
+
+        with self.assertRaisesMessage(OllamaResponseError, "invalid dimensions"):
+            client.embed(["Test"])
 
     @patch("backend.ollama.urlopen")
     def test_reports_unavailable_service_without_leaking_transport_error(

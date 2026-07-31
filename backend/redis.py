@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 CATALOG_SEARCH_VERSION_KEY = "catalog:search:version"
 DEFAULT_CATALOG_SEARCH_VERSION = 1
 TMDB_CATALOG_LOCK_KEY = "lock:tmdb:catalog"
+EMBEDDING_SYNC_LOCK_KEY = "lock:embeddings:catalog"
 
 redis_client = Redis.from_url(
     settings.REDIS_URL,
@@ -89,7 +90,7 @@ def set_cached_catalog_search(
         logger.warning("Catalog cache write failed! %s", error)
 
 
-def get_cached_llm_catalog_context(params: dict) -> tuple[str, list[dict] | None]:
+def get_cached_llm_catalog_context(params: dict) -> tuple[str, dict | None]:
     try:
         version = cache.get(CATALOG_SEARCH_VERSION_KEY)
         if not isinstance(version, int) or version < 1:
@@ -103,16 +104,12 @@ def get_cached_llm_catalog_context(params: dict) -> tuple[str, list[dict] | None
             version=DEFAULT_CATALOG_SEARCH_VERSION,
         )
         return key, None
-    if not isinstance(payload, list) or not all(
-        isinstance(item, dict) for item in payload
-    ):
-        return key, None
-    return key, payload
+    return key, payload if isinstance(payload, dict) else None
 
 
 def set_cached_llm_catalog_context(
     key: str,
-    payload: list[dict],
+    payload: dict,
     *,
     timeout: int | None = None,
 ) -> None:
