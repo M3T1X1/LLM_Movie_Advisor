@@ -204,9 +204,6 @@ export function ConversationManager({
         <div className="flex flex-1 flex-col items-center justify-center px-5 py-8 text-center">
           <MessageSquareText className="mb-3 h-5 w-5 text-slate-700" />
           <p className="text-xs font-medium text-slate-400">Brak rozmów</p>
-          <p className="mt-1 text-[10px] leading-4 text-slate-600">
-            Rozpocznij rozmowę, aby wysłać pierwszy prompt.
-          </p>
         </div>
       )}
     </aside>

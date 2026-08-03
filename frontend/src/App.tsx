@@ -494,7 +494,8 @@ function RecommendationEmptyState({ isProcessing }: { isProcessing: boolean }) {
     <div className="flex h-full min-h-56 flex-col items-center justify-center rounded-lg border border-dashed border-white/[0.12] bg-ink-900 px-6 text-center">
       <Sparkles className={`mb-3 h-5 w-5 ${isProcessing ? 'animate-pulse text-violet-400' : 'text-slate-700'}`} />
       <p className="text-xs font-medium text-slate-400">
-        {isProcessing ? 'Model przygotowuje odpowiedź…' : 'Karty rekomendacji nie są jeszcze aktywne'}
+        {isProcessing ? 'Model przygotowuje odpowiedź…'
+            : 'Karty rekomendacji nie są jeszcze aktywne'}
       </p>
       <p className="mt-2 max-w-xs text-[10px] leading-5 text-slate-600">
         {isProcessing

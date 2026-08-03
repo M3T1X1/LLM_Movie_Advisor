@@ -2,11 +2,6 @@ import { ArrowUp, Bot, CornerDownLeft } from 'lucide-react';
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import type { AgentStep, ChatMessage } from '../types';
 
-const promptSuggestions = [
-  'Coś mrocznego z twistem, bez happy endu',
-  'Lekki serial na dwa wieczory',
-  'Ambitne sci-fi, które daje do myślenia',
-];
 import { AgentStatus } from './AgentStatus';
 
 interface ChatInterfaceProps {
@@ -94,7 +89,7 @@ export function ChatInterface({
 
         {isProcessing && (
           <div className="max-w-[82%]">
-            <p className="mb-1.5 text-[10px] font-medium text-slate-500">Scene</p>
+            <p className="mb-1.5 text-[10px] font-medium text-slate-500">Filmiq</p>
             <div className="flex w-fit gap-1 rounded-lg border border-white/[0.06] bg-white/[0.025] px-3.5 py-3.5">
               {[0, 1, 2].map((dot) => (
                 <span
@@ -113,21 +108,6 @@ export function ChatInterface({
       {isProcessing && agentSteps.length > 0 && <AgentStatus steps={agentSteps} />}
 
       <div className="border-t border-white/[0.06] p-4 sm:p-5">
-        {messages.length < 3 && (
-          <div className="mb-3 flex gap-2 overflow-x-auto [scrollbar-width:none]">
-            {promptSuggestions.map((suggestion) => (
-              <button
-                key={suggestion}
-                type="button"
-                disabled={isProcessing}
-                onClick={() => setInput(suggestion)}
-                className="shrink-0 rounded-md border border-white/[0.08] px-2.5 py-1.5 text-[10px] text-slate-500 transition hover:border-white/15 hover:text-slate-300 disabled:opacity-50"
-              >
-                {suggestion}
-              </button>
-            ))}
-          </div>
-        )}
         <form onSubmit={handleSubmit}>
           <div className="rounded-md border border-white/[0.14] bg-ink-950 p-2 transition focus-within:border-violet-400">
             <textarea
