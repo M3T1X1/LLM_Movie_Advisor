@@ -1,4 +1,4 @@
-import { Clapperboard, Sparkles, ThumbsDown, ThumbsUp } from 'lucide-react';
+import { ThumbsDown, ThumbsUp } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import type {
   MoviePreferenceOption,
@@ -76,28 +76,17 @@ export function TasteOnboardingPanel({ options, onSave }: TasteOnboardingPanelPr
   return (
     <section
       aria-labelledby="taste-onboarding-title"
-      className="mx-auto flex min-h-[75vh] w-full max-w-6xl flex-col overflow-hidden rounded-xl border border-violet-400/20 bg-ink-900 shadow-card"
+      className="mx-auto flex min-h-[75vh] w-full max-w-6xl flex-col overflow-hidden rounded-xl border border-white/[0.08] bg-ink-900 shadow-card"
     >
       <div className="relative overflow-hidden border-b border-white/[0.08] px-6 py-7 sm:px-8 lg:px-10">
-        <div className="absolute -right-16 -top-24 h-64 w-64 rounded-full bg-violet-500/10" aria-hidden="true" />
         <div className="relative flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
           <div>
-            <p className="mb-3 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-violet-400">
-              <Sparkles className="h-3.5 w-3.5" />
-              Krok obowiązkowy · personalizacja doradcy
-            </p>
             <h1 id="taste-onboarding-title" className="text-3xl tracking-[-0.035em] text-white sm:text-4xl">
               Ustaw swoje upodobania filmowe
             </h1>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-500">
               Oznacz, co lubisz i czego wolisz unikać. Dzięki temu pierwsze rekomendacje
               będą dopasowane, nawet zanim porozmawiasz z doradcą.
-            </p>
-          </div>
-          <div className="shrink-0 border-l-2 border-violet-400 px-4 py-2">
-            <p className="text-2xl font-semibold text-white">{selectionCount}</p>
-            <p className="mt-1 text-[10px] text-slate-600">
-              wybrane · minimum 3, w tym lubię i nie lubię
             </p>
           </div>
         </div>
@@ -107,7 +96,7 @@ export function TasteOnboardingPanel({ options, onSave }: TasteOnboardingPanelPr
         <PreferenceSection
           title="Gatunki"
           description="Wybierz gatunki, po które sięgasz chętnie, oraz te, których nie lubisz."
-          icon={<Clapperboard className="h-4 w-4" />}
+
         >
           {genreOptions.length ? (
             <ChoiceGrid
@@ -125,7 +114,6 @@ export function TasteOnboardingPanel({ options, onSave }: TasteOnboardingPanelPr
         <PreferenceSection
           title="Klimat i sposób oglądania"
           description="Powiedz doradcy, jakie elementy filmu lub serialu są dla Ciebie ważne."
-          icon={<Sparkles className="h-4 w-4" />}
         >
           <ChoiceGrid
             options={options.traits}
@@ -167,20 +155,15 @@ export function TasteOnboardingPanel({ options, onSave }: TasteOnboardingPanelPr
 function PreferenceSection({
   title,
   description,
-  icon,
   children,
 }: {
   title: string;
   description: string;
-  icon: ReactNode;
   children: ReactNode;
 }) {
   return (
     <div>
       <div className="mb-4 flex items-start gap-3">
-        <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center border border-violet-400/20 bg-violet-500/10 text-violet-300">
-          {icon}
-        </span>
         <div>
           <h2 className="text-sm font-semibold text-white">{title}</h2>
           <p className="mt-1 text-[10px] leading-4 text-slate-600">{description}</p>

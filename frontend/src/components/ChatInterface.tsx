@@ -57,16 +57,6 @@ export function ChatInterface({
 
   return (
     <section className="flex min-h-[680px] flex-col overflow-hidden rounded-lg border border-white/[0.12] bg-ink-900 xl:sticky xl:top-[88px] xl:h-[calc(100vh-7rem)] xl:min-h-[700px]">
-      <div className="flex items-center justify-center gap-3 border-b border-white/[0.06] px-5 py-4 sm:px-6">
-        <span className="relative flex h-8 w-8 items-center justify-center border border-violet-400/30 bg-violet-500/10 text-violet-300">
-          <Bot className="h-4 w-4" />
-          <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-ink-900 bg-emerald-400" />
-        </span>
-        <div>
-          <h2 className="text-sm font-semibold text-white">Filmiq</h2>
-        </div>
-      </div>
-
       <div className="flex-1 space-y-6 overflow-y-auto px-5 py-6 [scrollbar-color:rgba(148,163,184,0.16)_transparent] sm:px-6">
         {messages.length === 0 && !isProcessing && (
           <div className="flex min-h-64 flex-col items-center justify-center text-center">

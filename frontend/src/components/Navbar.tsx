@@ -87,8 +87,6 @@ export function Navbar({ user, activeView, onViewChange, onLogout }: NavbarProps
         </nav>
 
         <div className="ml-auto flex items-center gap-3">
-          <span className="hidden h-5 w-px bg-white/[0.08] sm:block" />
-
           <div ref={menuRef} className="relative">
             <button
               type="button"

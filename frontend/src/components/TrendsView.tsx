@@ -1,4 +1,4 @@
-import {Film, Flame, RefreshCw, Sparkles } from 'lucide-react';
+import {Film, RefreshCw} from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { getRecommendationTrends } from '../services/api';
 import type {
@@ -71,7 +71,6 @@ export function TrendsView({ onOpen }: TrendsViewProps) {
     <div>
       <header className="mb-8 border-b border-white/[0.1] pb-8">
         <p className="mb-3 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-violet-400">
-          <Flame className="h-4 w-4" />
           Popularne w rekomendacjach
         </p>
         <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-end">
@@ -127,7 +126,6 @@ export function TrendsView({ onOpen }: TrendsViewProps) {
                     Najczęściej polecane gatunki
                   </h2>
                 </div>
-                <Sparkles className={"text-violet-500"}></Sparkles>
               </div>
 
               <div className="space-y-5">
@@ -274,7 +272,6 @@ function TrendsLoadingState() {
 function TrendsErrorState({ onRetry }: { onRetry: () => void }) {
   return (
     <div role="alert" className="flex min-h-72 flex-col items-center justify-center rounded-xl border border-red-400/10 bg-red-500/[0.025] px-6 text-center">
-      <Flame className="mb-4 h-6 w-6 text-red-300/60" />
       <h2 className="text-sm font-semibold text-white">Nie udało się pobrać trendów</h2>
       <p className="mt-2 max-w-sm text-xs leading-5 text-slate-600">
         Statystyki rekomendacji są chwilowo niedostępne. Spróbuj ponownie za moment.

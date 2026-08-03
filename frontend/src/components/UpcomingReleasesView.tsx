@@ -1,7 +1,5 @@
 import {
   Bookmark,
-  CalendarDays,
-  Clock3,
   Film,
   RefreshCw,
   Search,
@@ -160,7 +158,6 @@ export function UpcomingReleasesView({
     <div>
       <header className="mb-8 border-b border-white/[0.1] pb-8">
         <p className="mb-3 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-violet-400">
-          <CalendarDays className="h-4 w-4" />
           Kalendarz TMDB
         </p>
         <h1 className="text-4xl tracking-[-0.04em] text-slate-100 sm:text-5xl">
@@ -246,7 +243,6 @@ export function UpcomingReleasesView({
             </div>
           ) : (
             <div className="flex min-h-64 flex-col items-center justify-center rounded-lg border border-dashed border-white/[0.12] bg-ink-900 px-6 text-center">
-              <CalendarDays className="mb-3 h-6 w-6 text-slate-700" />
               <h2 className="text-sm font-semibold text-white">Brak premier dla tych filtrów</h2>
               <p className="mt-2 text-xs text-slate-600">Zmień zakres czasu, miesiąc albo wybrany gatunek.</p>
               {hasActiveFilters && <button type="button" onClick={clearFilters} className="mt-4 text-xs font-medium text-violet-300 transition hover:text-violet-200">Wyczyść filtry</button>}
@@ -293,9 +289,9 @@ function UpcomingReleaseCard({ content, isWatchlisted, onOpen, onWatchlist }: { 
 
       <div className="flex items-center justify-between gap-4 border-t border-white/[0.06] p-4 sm:flex-col sm:items-stretch sm:justify-center sm:border-l sm:border-t-0 sm:p-5">
         <div>
-          <p className="flex items-center gap-2 text-[10px] text-slate-600"><CalendarDays className="h-3.5 w-3.5 text-violet-400" />Data premiery</p>
+          <p className="flex items-center gap-2 text-[10px] text-slate-600">Data premiery</p>
           <time dateTime={releaseDate} className="mt-2 block text-sm font-semibold text-white">{dateFormatter.format(parseReleaseDate(releaseDate))}</time>
-          <p className="mt-1 flex items-center gap-1.5 text-[10px] font-medium text-violet-300"><Clock3 className="h-3 w-3" />{getCountdownLabel(daysUntilRelease)}</p>
+          <p className="mt-1 flex items-center gap-1.5 text-[10px] font-medium text-violet-300">{getCountdownLabel(daysUntilRelease)}</p>
         </div>
         <button type="button" onClick={() => onWatchlist(content)} className={`flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg px-3 text-[10px] font-medium transition ${isWatchlisted ? 'bg-violet-500/15 text-violet-200 hover:bg-red-500/10 hover:text-red-300' : 'bg-white/[0.05] text-slate-400 hover:bg-white/[0.09] hover:text-white'}`}>
           <Bookmark className={`h-3.5 w-3.5 ${isWatchlisted ? 'fill-current' : ''}`} />
@@ -313,7 +309,6 @@ function UpcomingLoadingState() {
 function UpcomingErrorState({ onRetry }: { onRetry: () => void }) {
   return (
     <div role="alert" className="flex min-h-72 flex-col items-center justify-center rounded-xl border border-red-400/10 bg-red-500/[0.025] px-6 text-center">
-      <CalendarDays className="mb-4 h-6 w-6 text-red-300/60" />
       <h2 className="text-sm font-semibold text-white">Nie udało się pobrać premier</h2>
       <p className="mt-2 max-w-sm text-xs leading-5 text-slate-600">Kalendarz TMDB jest chwilowo niedostępny. Spróbuj ponownie za moment.</p>
       <button type="button" onClick={onRetry} className="mt-4 flex h-9 items-center gap-2 rounded-md bg-white/[0.06] px-3 text-xs text-slate-300 transition hover:bg-white/[0.1] hover:text-white"><RefreshCw className="h-3.5 w-3.5" />Spróbuj ponownie</button>

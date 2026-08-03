@@ -6,7 +6,6 @@ import {
   ChevronRight,
   Eye,
   Film,
-  Library,
   Search,
   SlidersHorizontal,
   Star,
@@ -101,7 +100,6 @@ export function CatalogView({
     <div>
       <header className="mb-8 border-b border-white/[0.1] pb-8">
         <p className="mb-3 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-violet-400">
-          <Library className="h-4 w-4" />
           Katalog TMDB
         </p>
         <h1 className="text-4xl tracking-[-0.04em] text-slate-100 sm:text-5xl">
