@@ -5,6 +5,7 @@ import {
   Eye,
   MessageSquareText,
   Pencil,
+  RotateCcw,
   SlidersHorizontal,
   X,
 } from 'lucide-react';
@@ -24,6 +25,7 @@ interface ProfileViewProps {
   savedCount: number;
   watchedCount: number;
   onUpdateUser: (changes: Partial<Pick<AppUser, 'username' | 'email'>>) => Promise<void> | void;
+  onResetPreferences: () => Promise<void> | void;
 }
 
 interface ProfileFormState {
@@ -55,11 +57,16 @@ export function ProfileView({
   savedCount,
   watchedCount,
   onUpdateUser,
+  onResetPreferences,
 }: ProfileViewProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [form, setForm] = useState<ProfileFormState>(() => createFormState(user));
   const [saveError, setSaveError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [isResetConfirming, setIsResetConfirming] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
+  const [resetSuccess, setResetSuccess] = useState(false);
   const initials = user.username.slice(0, 2).toUpperCase();
   const favoriteGenres = preferences
     .filter((preference) => preference.preferenceType === 'genre' && preference.polarity === 1)
@@ -92,6 +99,25 @@ export function ProfileView({
       );
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleResetPreferences = async () => {
+    setResetError(null);
+    setResetSuccess(false);
+    setIsResetting(true);
+    try {
+      await onResetPreferences();
+      setIsResetConfirming(false);
+      setResetSuccess(true);
+    } catch (reason) {
+      setResetError(
+        reason instanceof Error
+          ? reason.message
+          : 'Nie udało się zresetować upodobań filmowych.',
+      );
+    } finally {
+      setIsResetting(false);
     }
   };
 
@@ -201,6 +227,62 @@ export function ProfileView({
                   <p className="text-xs leading-5 text-slate-500">{semanticProfile.semanticSummary}</p>
                 </div>
               )}
+              <div className="mt-5 border-t border-white/[0.06] pt-4">
+                {!isResetConfirming ? (
+                  <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
+                    <div>
+                      <p className="text-xs font-medium text-slate-300">Zacznij budować gust od nowa</p>
+                      <p className="mt-1 text-[10px] leading-4 text-slate-600">
+                        Wyczyść wyuczone preferencje bez usuwania listy, aktywności ani rozmów.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setResetError(null);
+                        setResetSuccess(false);
+                        setIsResetConfirming(true);
+                      }}
+                      className="flex h-9 shrink-0 items-center gap-2 rounded-md border border-red-400/20 px-3 text-xs font-medium text-red-300 transition hover:border-red-400/40 hover:bg-red-500/10"
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" />
+                      Resetuj upodobania filmowe
+                    </button>
+                  </div>
+                ) : (
+                  <div className="rounded-md border border-red-400/15 bg-red-500/[0.04] p-4">
+                    <p className="text-xs font-medium text-red-200">Zresetować upodobania filmowe?</p>
+                    <p className="mt-1 text-[10px] leading-4 text-slate-500">
+                      Usuniemy wyuczone preferencje i podsumowanie profilu. Lista zapisanych tytułów,
+                      aktywność i rozmowy pozostaną bez zmian.
+                    </p>
+                    <div className="mt-3 flex justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setIsResetConfirming(false)}
+                        disabled={isResetting}
+                        className="h-8 px-3 text-[10px] text-slate-500 transition hover:text-white disabled:opacity-50"
+                      >
+                        Anuluj
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleResetPreferences()}
+                        disabled={isResetting}
+                        className="h-8 rounded-md bg-red-500/15 px-3 text-[10px] font-medium text-red-300 transition hover:bg-red-500/25 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {isResetting ? 'Resetowanie…' : 'Tak, resetuj'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {resetError && <p className="mt-3 text-xs text-red-300" role="alert">{resetError}</p>}
+                {resetSuccess && (
+                  <p className="mt-3 text-xs text-emerald-300" role="status">
+                    Upodobania filmowe zostały zresetowane.
+                  </p>
+                )}
+              </div>
             </ProfileSection>
 
             <ProfileSection title="Ostatnia aktywność" icon={<Clock3 className="h-4 w-4" />}>

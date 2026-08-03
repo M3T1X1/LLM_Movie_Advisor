@@ -40,6 +40,12 @@ export interface UserPreference {
   updatedAt: string;
 }
 
+export interface ResetMoviePreferencesResponse {
+  deletedPreferenceCount: number;
+  preferences: UserPreference[];
+  semanticProfile: UserSemanticProfile;
+}
+
 export interface Conversation {
   id: DatabaseId;
   userId: DatabaseId;

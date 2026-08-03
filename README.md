@@ -725,7 +725,8 @@ health endpoint.
 | `GET` | `/api/contents/` | catalog search, filters, sorting, and pagination |
 | `GET` | `/api/contents/upcoming/` | upcoming movie releases |
 | `GET` | `/api/recommendation-trends/?period=...` | aggregate stored candidate data |
-| `PATCH` | `/api/profile/` | update name, email, profile, and preferences |
+| `PATCH` | `/api/profile/` | update username and email |
+| `DELETE` | `/api/profile/preferences/` | clear learned preferences and the semantic profile summary |
 | `GET` | `/api/conversations/` | list conversations |
 | `POST` | `/api/conversations/` | create a conversation |
 | `PATCH` | `/api/conversations/:id/` | rename a conversation |

@@ -10,6 +10,7 @@ import type {
   Interaction,
   InteractionType,
   RecommendationTrends,
+  ResetMoviePreferencesResponse,
   StatelessChatResponse,
   TrendPeriod,
 } from '../types';
@@ -176,6 +177,10 @@ export async function updateProfile(
     jsonRequest('PATCH', changes),
   );
   return response.user;
+}
+
+export async function resetMoviePreferences(): Promise<ResetMoviePreferencesResponse> {
+  return request('/profile/preferences/', { method: 'DELETE' });
 }
 
 export async function createConversation(): Promise<Conversation> {

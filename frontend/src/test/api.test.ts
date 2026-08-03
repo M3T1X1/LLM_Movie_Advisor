@@ -12,6 +12,7 @@ import {
   login,
   register,
   requestStatelessChat,
+  resetMoviePreferences,
   renameConversation,
   updateProfile,
 } from '../services/api';
@@ -66,6 +67,17 @@ describe('backend API service', () => {
     expect(updatedUser.username).toBe('nowa-nazwa');
     expect(renamed.title).toBe('Nowy tytuł');
     expect(message.content).toBe('Trwała wiadomość');
+  });
+
+  it('resets movie preferences through the profile endpoint', async () => {
+    const response = await resetMoviePreferences();
+
+    expect(response.preferences).toEqual([]);
+    expect(response.semanticProfile.semanticSummary).toBeNull();
+    const fetchMock = vi.mocked(fetch);
+    const [url, options] = fetchMock.mock.calls[fetchMock.mock.calls.length - 1];
+    expect(String(url)).toBe('/api/profile/preferences/');
+    expect(options?.method).toBe('DELETE');
   });
 
   it('sends transient chat history to the stateless Ollama endpoint', async () => {

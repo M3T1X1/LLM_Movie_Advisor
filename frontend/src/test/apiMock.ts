@@ -23,6 +23,8 @@ export function installApiMock() {
   let conversations = structuredClone(demoConversations);
   let messages = structuredClone(initialMessages);
   let interactions = structuredClone(demoInteractions);
+  let preferences = structuredClone(demoPreferences);
+  let semanticProfile = structuredClone(demoProfile);
 
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
@@ -41,8 +43,8 @@ export function installApiMock() {
     if (path === '/api/bootstrap/') {
       return json({
         user: demoUser,
-        semanticProfile: demoProfile,
-        preferences: demoPreferences,
+        semanticProfile,
+        preferences,
         conversations,
         messages,
         interactions,
@@ -104,6 +106,18 @@ export function installApiMock() {
     }
     if (path === '/api/profile/' && method === 'PATCH') {
       return json({ user: { ...demoUser, ...body } });
+    }
+    if (path === '/api/profile/preferences/' && method === 'DELETE') {
+      const deletedPreferenceCount = preferences.length;
+      preferences = [];
+      semanticProfile = {
+        ...semanticProfile,
+        semanticSummary: null,
+        version: semanticProfile.version + 1,
+        lastRebuiltAt: null,
+        updatedAt: new Date().toISOString(),
+      };
+      return json({ deletedPreferenceCount, preferences, semanticProfile });
     }
     if (path === '/api/conversations/' && method === 'POST') {
       const timestamp = new Date().toISOString();

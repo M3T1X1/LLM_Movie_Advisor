@@ -16,18 +16,19 @@ class ApiAccessControlTests(ApiIntegrationTestCase):
             ("get", reverse("api:conversations")),
             ("post", reverse("api:chat")),
             ("post", reverse("api:interactions")),
+            ("delete", reverse("api:profile-preferences")),
         )
 
         for method, url in protected_requests:
             with self.subTest(method=method, url=url):
-                if method == "get":
-                    response = self.client.get(url)
-                else:
+                if method == "post":
                     response = self.client.post(
                         url,
                         data="{}",
                         content_type="application/json",
                     )
+                else:
+                    response = getattr(self.client, method)(url)
                 self.assertEqual(response.status_code, 401)
                 self.assertEqual(
                     response.json()["detail"],
@@ -48,6 +49,7 @@ class ApiAccessControlTests(ApiIntegrationTestCase):
             ("post", reverse("api:upcoming-contents")),
             ("post", reverse("api:trends")),
             ("get", reverse("api:profile")),
+            ("post", reverse("api:profile-preferences")),
             (
                 "put",
                 reverse(
@@ -88,6 +90,7 @@ class ApiAccessControlTests(ApiIntegrationTestCase):
                 reverse("api:profile"),
                 {"username": "csrf", "email": "csrf@example.com"},
             ),
+            ("delete", reverse("api:profile-preferences"), None),
             ("post", reverse("api:conversations"), {}),
             ("post", reverse("api:chat"), {"message": "CSRF"}),
             (

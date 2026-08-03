@@ -13,6 +13,11 @@ urlpatterns = [
     path("contents/upcoming/", views.upcoming_contents, name="upcoming-contents"),
     path("recommendation-trends/", views.recommendation_trends, name="trends"),
     path("profile/", views.profile, name="profile"),
+    path(
+        "profile/preferences/",
+        views.profile_preferences,
+        name="profile-preferences",
+    ),
     path("conversations/", views.conversations, name="conversations"),
     path(
         "conversations/<int:conversation_id>/",

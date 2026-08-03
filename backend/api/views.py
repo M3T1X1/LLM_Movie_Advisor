@@ -866,6 +866,53 @@ def profile(request: HttpRequest) -> JsonResponse:
     return JsonResponse({"user": user})
 
 
+@require_http_methods(["DELETE"])
+@authenticated
+def profile_preferences(request: HttpRequest) -> JsonResponse:
+    user_id = get_business_user_id(request.user)
+    now = timezone.now()
+    with transaction.atomic():
+        deleted_count, _ = UserPreference.objects.filter(user_id=user_id).delete()
+        profile_item = (
+            UserProfile.objects.select_for_update().filter(user_id=user_id).first()
+        )
+        if profile_item is None:
+            profile_item = UserProfile.objects.create(
+                user_id=user_id,
+                semantic_summary=None,
+                version=1,
+                last_rebuilt_at=None,
+                updated_at=now,
+            )
+        else:
+            profile_item.semantic_summary = None
+            profile_item.version += 1
+            profile_item.last_rebuilt_at = None
+            profile_item.updated_at = now
+            profile_item.save(
+                update_fields=[
+                    "semantic_summary",
+                    "version",
+                    "last_rebuilt_at",
+                    "updated_at",
+                ]
+            )
+
+    return JsonResponse(
+        {
+            "deletedPreferenceCount": deleted_count,
+            "preferences": [],
+            "semanticProfile": {
+                "userId": str(user_id),
+                "semanticSummary": None,
+                "version": profile_item.version,
+                "lastRebuiltAt": None,
+                "updatedAt": iso(profile_item.updated_at),
+            },
+        }
+    )
+
+
 @require_http_methods(["GET", "POST"])
 @authenticated
 def conversations(request: HttpRequest) -> JsonResponse:

@@ -59,6 +59,7 @@ describe('XSS protections', () => {
         savedCount={0}
         watchedCount={0}
         onUpdateUser={vi.fn()}
+        onResetPreferences={vi.fn()}
       />,
     );
     expectPayloadToRemainText(container);

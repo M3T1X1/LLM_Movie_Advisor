@@ -8,7 +8,7 @@ import { ProfileView } from '../components/ProfileView';
 describe('profile and analytics views', () => {
   it('renders profile preferences as read-only values', async () => {
     const user = userEvent.setup();
-    render(<ProfileView user={demoUser} semanticProfile={demoProfile} preferences={demoPreferences} conversations={demoConversations} savedCount={1} watchedCount={5} onUpdateUser={vi.fn()} />);
+    render(<ProfileView user={demoUser} semanticProfile={demoProfile} preferences={demoPreferences} conversations={demoConversations} savedCount={1} watchedCount={5} onUpdateUser={vi.fn()} onResetPreferences={vi.fn()} />);
     expect(screen.getByText('Twój gust')).toBeInTheDocument();
     expect(screen.getByText('Thriller')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Edytuj profil' }));
@@ -19,7 +19,7 @@ describe('profile and analytics views', () => {
   it('updates editable account data', async () => {
     const user = userEvent.setup();
     const onUpdateUser = vi.fn();
-    render(<ProfileView user={demoUser} semanticProfile={demoProfile} preferences={demoPreferences} conversations={demoConversations} savedCount={1} watchedCount={5} onUpdateUser={onUpdateUser} />);
+    render(<ProfileView user={demoUser} semanticProfile={demoProfile} preferences={demoPreferences} conversations={demoConversations} savedCount={1} watchedCount={5} onUpdateUser={onUpdateUser} onResetPreferences={vi.fn()} />);
     await user.click(screen.getByRole('button', { name: 'Edytuj profil' }));
     const username = screen.getByLabelText('Nazwa użytkownika');
     await user.clear(username);
@@ -31,7 +31,7 @@ describe('profile and analytics views', () => {
   it('cancels profile editing without persisting changes', async () => {
     const user = userEvent.setup();
     const onUpdateUser = vi.fn();
-    render(<ProfileView user={demoUser} semanticProfile={demoProfile} preferences={demoPreferences} conversations={demoConversations} savedCount={1} watchedCount={5} onUpdateUser={onUpdateUser} />);
+    render(<ProfileView user={demoUser} semanticProfile={demoProfile} preferences={demoPreferences} conversations={demoConversations} savedCount={1} watchedCount={5} onUpdateUser={onUpdateUser} onResetPreferences={vi.fn()} />);
 
     await user.click(screen.getByRole('button', { name: 'Edytuj profil' }));
     await user.clear(screen.getByLabelText('Nazwa użytkownika'));
@@ -41,6 +41,22 @@ describe('profile and analytics views', () => {
     expect(onUpdateUser).not.toHaveBeenCalled();
     expect(screen.getByRole('heading', { name: demoUser.username })).toBeInTheDocument();
     expect(screen.queryByLabelText('Nazwa użytkownika')).not.toBeInTheDocument();
+  });
+
+  it('requires confirmation before resetting movie preferences', async () => {
+    const user = userEvent.setup();
+    const onResetPreferences = vi.fn().mockResolvedValue(undefined);
+    render(<ProfileView user={demoUser} semanticProfile={demoProfile} preferences={demoPreferences} conversations={demoConversations} savedCount={1} watchedCount={5} onUpdateUser={vi.fn()} onResetPreferences={onResetPreferences} />);
+
+    await user.click(screen.getByRole('button', { name: 'Resetuj upodobania filmowe' }));
+    expect(onResetPreferences).not.toHaveBeenCalled();
+    expect(screen.getByText('Zresetować upodobania filmowe?')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Tak, resetuj' }));
+    expect(onResetPreferences).toHaveBeenCalledOnce();
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'Upodobania filmowe zostały zresetowane.',
+    );
   });
 
   it('builds analytics from watched interactions', () => {

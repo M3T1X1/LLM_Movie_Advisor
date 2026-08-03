@@ -6,9 +6,66 @@ from django.db import IntegrityError, connection
 from django.urls import reverse
 
 from backend.test.integration.api_base import ApiIntegrationTestCase
+from backend.api.models import BusinessUser, Conversation, UserPreference, UserProfile
 
 
 class ProfileApiTests(ApiIntegrationTestCase):
+    def test_movie_preference_reset_clears_only_authenticated_users_taste_profile(self):
+        profile = UserProfile.objects.get(user_id=self.business_user_id)
+        profile.semantic_summary = "Lubi thrillery i kino science fiction."
+        profile.version = 4
+        profile.save(update_fields=["semantic_summary", "version"])
+        UserPreference.objects.create(
+            user_id=self.business_user_id,
+            preference_type="genre",
+            preference_value="Thriller",
+            polarity=1,
+        )
+        UserPreference.objects.create(
+            user_id=self.business_user_id,
+            preference_type="content_warning",
+            preference_value="Gore",
+            polarity=-1,
+        )
+        conversation = Conversation.objects.create(user_id=self.business_user_id)
+        other_user = BusinessUser.objects.create(
+            username="other-profile-user",
+            email="other-profile@example.com",
+        )
+        other_preference = UserPreference.objects.create(
+            user=other_user,
+            preference_type="genre",
+            preference_value="Komedia",
+            polarity=1,
+        )
+
+        response = self.client.delete(reverse("api:profile-preferences"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["deletedPreferenceCount"], 2)
+        self.assertEqual(response.json()["preferences"], [])
+        self.assertEqual(response.json()["semanticProfile"]["semanticSummary"], None)
+        self.assertEqual(response.json()["semanticProfile"]["version"], 5)
+        self.assertFalse(
+            UserPreference.objects.filter(user_id=self.business_user_id).exists()
+        )
+        profile.refresh_from_db()
+        self.assertIsNone(profile.semantic_summary)
+        self.assertIsNone(profile.last_rebuilt_at)
+        self.assertEqual(profile.version, 5)
+        self.assertTrue(Conversation.objects.filter(pk=conversation.pk).exists())
+        self.assertTrue(UserPreference.objects.filter(pk=other_preference.pk).exists())
+
+    def test_movie_preference_reset_recreates_and_invalidates_a_missing_profile(self):
+        UserProfile.objects.filter(user_id=self.business_user_id).delete()
+
+        response = self.client.delete(reverse("api:profile-preferences"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["deletedPreferenceCount"], 0)
+        self.assertEqual(response.json()["semanticProfile"]["version"], 2)
+        self.assertTrue(UserProfile.objects.filter(user_id=self.business_user_id).exists())
+
     def test_profile_update_preserves_business_identity_and_validates_email(self):
         original_business_id = self.business_user_id
 

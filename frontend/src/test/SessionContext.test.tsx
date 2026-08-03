@@ -31,6 +31,17 @@ describe('SessionContext backend integration', () => {
     expect(result.current.user?.username).toBe('nowa-nazwa');
   });
 
+  it('resets preferences and semantic profile through backend', async () => {
+    const { result } = await renderAuthenticatedSession();
+
+    expect(result.current.preferences.length).toBeGreaterThan(0);
+    expect(result.current.semanticProfile?.semanticSummary).not.toBeNull();
+    await act(() => result.current.resetMoviePreferences());
+
+    expect(result.current.preferences).toEqual([]);
+    expect(result.current.semanticProfile?.semanticSummary).toBeNull();
+  });
+
   it('creates, renames, selects and deletes persistent conversations', async () => {
     const { result } = await renderAuthenticatedSession();
     const originalId = result.current.currentConversationId;

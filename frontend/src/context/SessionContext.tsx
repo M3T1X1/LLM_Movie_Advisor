@@ -10,6 +10,7 @@ import {
   logout as logoutRequest,
   register as registerRequest,
   requestStatelessChat,
+  resetMoviePreferences as resetMoviePreferencesRequest,
   renameConversation as renameConversationRequest,
   updateProfile,
 } from '../services/api';
@@ -51,6 +52,7 @@ interface SessionContextValue extends SessionState {
   updateUser: (
     changes: Partial<Pick<AppUser, 'username' | 'email'>>,
   ) => Promise<void>;
+  resetMoviePreferences: () => Promise<void>;
   recordInteraction: (
     contentId: DatabaseId,
     sourceCandidateId: DatabaseId | null,
@@ -267,6 +269,15 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setSession((current) => ({ ...current, user }));
   };
 
+  const resetMoviePreferences = async () => {
+    const response = await resetMoviePreferencesRequest();
+    setSession((current) => ({
+      ...current,
+      semanticProfile: response.semanticProfile,
+      preferences: response.preferences,
+    }));
+  };
+
   const recordInteraction = async (
     contentId: DatabaseId,
     sourceCandidateId: DatabaseId | null,
@@ -357,6 +368,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     deleteConversation,
     sendChatMessage,
     updateUser,
+    resetMoviePreferences,
     recordInteraction,
     removeInteraction,
   };

@@ -85,6 +85,7 @@ export default function App() {
     deleteConversation: deleteStoredConversation,
     sendChatMessage,
     updateUser,
+    resetMoviePreferences,
     recordInteraction: storeInteraction,
     removeInteraction: removeStoredInteraction,
   } = useSession();
@@ -323,6 +324,7 @@ export default function App() {
               savedCount={watchlistedContentIds.length}
               watchedCount={watchedContentIds.length}
               onUpdateUser={updateUser}
+              onResetPreferences={resetMoviePreferences}
             />
           ) : effectiveView === 'analytics' ? (
             <AnalyticsView
