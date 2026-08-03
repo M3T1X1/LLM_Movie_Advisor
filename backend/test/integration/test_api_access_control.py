@@ -16,6 +16,7 @@ class ApiAccessControlTests(ApiIntegrationTestCase):
             ("get", reverse("api:conversations")),
             ("post", reverse("api:chat")),
             ("post", reverse("api:interactions")),
+            ("post", reverse("api:profile-preferences")),
             ("delete", reverse("api:profile-preferences")),
         )
 
@@ -49,7 +50,7 @@ class ApiAccessControlTests(ApiIntegrationTestCase):
             ("post", reverse("api:upcoming-contents")),
             ("post", reverse("api:trends")),
             ("get", reverse("api:profile")),
-            ("post", reverse("api:profile-preferences")),
+            ("patch", reverse("api:profile-preferences")),
             (
                 "put",
                 reverse(
@@ -91,6 +92,11 @@ class ApiAccessControlTests(ApiIntegrationTestCase):
                 {"username": "csrf", "email": "csrf@example.com"},
             ),
             ("delete", reverse("api:profile-preferences"), None),
+            (
+                "post",
+                reverse("api:profile-preferences"),
+                {"preferences": []},
+            ),
             ("post", reverse("api:conversations"), {}),
             ("post", reverse("api:chat"), {"message": "CSRF"}),
             (

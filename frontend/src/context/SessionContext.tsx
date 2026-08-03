@@ -11,6 +11,7 @@ import {
   register as registerRequest,
   requestStatelessChat,
   resetMoviePreferences as resetMoviePreferencesRequest,
+  saveMoviePreferences as saveMoviePreferencesRequest,
   renameConversation as renameConversationRequest,
   updateProfile,
 } from '../services/api';
@@ -22,6 +23,8 @@ import type {
   DatabaseId,
   Interaction,
   InteractionType,
+  MoviePreferenceOptions,
+  MoviePreferenceSelection,
   UserPreference,
   UserSemanticProfile,
 } from '../types';
@@ -30,6 +33,7 @@ interface SessionState {
   user: AppUser | null;
   semanticProfile: UserSemanticProfile | null;
   preferences: UserPreference[];
+  preferenceOptions: MoviePreferenceOptions;
   conversations: Conversation[];
   currentConversationId: DatabaseId | null;
   messages: ChatMessage[];
@@ -53,6 +57,7 @@ interface SessionContextValue extends SessionState {
     changes: Partial<Pick<AppUser, 'username' | 'email'>>,
   ) => Promise<void>;
   resetMoviePreferences: () => Promise<void>;
+  saveMoviePreferences: (preferences: MoviePreferenceSelection[]) => Promise<void>;
   recordInteraction: (
     contentId: DatabaseId,
     sourceCandidateId: DatabaseId | null,
@@ -69,6 +74,7 @@ const emptySession: SessionState = {
   user: null,
   semanticProfile: null,
   preferences: [],
+  preferenceOptions: { genres: [], traits: [] },
   conversations: [],
   currentConversationId: null,
   messages: [],
@@ -278,6 +284,15 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }));
   };
 
+  const saveMoviePreferences = async (preferences: MoviePreferenceSelection[]) => {
+    const response = await saveMoviePreferencesRequest(preferences);
+    setSession((current) => ({
+      ...current,
+      semanticProfile: response.semanticProfile,
+      preferences: response.preferences,
+    }));
+  };
+
   const recordInteraction = async (
     contentId: DatabaseId,
     sourceCandidateId: DatabaseId | null,
@@ -369,6 +384,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     sendChatMessage,
     updateUser,
     resetMoviePreferences,
+    saveMoviePreferences,
     recordInteraction,
     removeInteraction,
   };

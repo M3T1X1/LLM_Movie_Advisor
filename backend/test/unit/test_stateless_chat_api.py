@@ -38,6 +38,12 @@ class StatelessChatApiTests(SimpleTestCase):
         )
         self.addCleanup(context_patcher.stop)
         self.mocked_context_builder = context_patcher.start()
+        preferences_patcher = patch(
+            "backend.api.views.has_configured_movie_preferences",
+            return_value=True,
+        )
+        self.addCleanup(preferences_patcher.stop)
+        self.mocked_preferences_guard = preferences_patcher.start()
 
     def test_system_prompt_restricts_assistant_to_recommendations(self):
         self.assertIn("jedynym zakresem", CHAT_SYSTEM_PROMPT)
@@ -457,6 +463,20 @@ class StatelessChatApiTests(SimpleTestCase):
         )
 
         self.assertEqual(response.status_code, 401)
+        mocked_get_client.assert_not_called()
+        self.mocked_context_builder.assert_not_called()
+
+    @patch("backend.api.views.get_ollama_client")
+    def test_rejects_chat_until_movie_preferences_are_configured(
+        self,
+        mocked_get_client,
+    ):
+        self.mocked_preferences_guard.return_value = False
+
+        response = stateless_chat(self.request({"message": "Poleć thriller"}))
+
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("co najmniej trzy", json.loads(response.content)["detail"])
         mocked_get_client.assert_not_called()
         self.mocked_context_builder.assert_not_called()
 

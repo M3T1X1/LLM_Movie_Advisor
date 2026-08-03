@@ -726,6 +726,7 @@ health endpoint.
 | `GET` | `/api/contents/upcoming/` | upcoming movie releases |
 | `GET` | `/api/recommendation-trends/?period=...` | aggregate stored candidate data |
 | `PATCH` | `/api/profile/` | update username and email |
+| `POST` | `/api/profile/preferences/` | save at least three cold-start choices, including one liked and one disliked item |
 | `DELETE` | `/api/profile/preferences/` | clear learned preferences and the semantic profile summary |
 | `GET` | `/api/conversations/` | list conversations |
 | `POST` | `/api/conversations/` | create a conversation |
@@ -736,8 +737,10 @@ health endpoint.
 | `DELETE` | `/api/interactions/:id/` | delete the user's interaction |
 
 `GET /api/bootstrap/` provides the frontend with the user, profile,
-preferences, conversations, messages, and interactions. It is unrelated to
-the catalog baseline process and the Bootstrap CSS framework.
+preferences, available onboarding genres and traits, conversations, messages,
+and interactions. A user without preferences must complete the mandatory taste
+onboarding before the chat endpoint accepts recommendation prompts. It is
+unrelated to the catalog baseline process and the Bootstrap CSS framework.
 
 ### Catalog query parameters
 
@@ -793,6 +796,7 @@ same `index.html`.
 | `TrendsView.tsx` | trends based on stored recommendation data |
 | `AnalyticsView.tsx` | user activity statistics |
 | `ProfileView.tsx` | account, profile, and preferences |
+| `TasteOnboardingPanel.tsx` | mandatory cold-start genre and trait selection |
 
 Recommendation generation is designed to begin only after the user
 explicitly submits text. Navigation, filter changes, opening a title, adding

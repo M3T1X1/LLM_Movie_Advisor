@@ -9,8 +9,10 @@ import type {
   DatabaseId,
   Interaction,
   InteractionType,
+  MoviePreferenceSelection,
   RecommendationTrends,
   ResetMoviePreferencesResponse,
+  SaveMoviePreferencesResponse,
   StatelessChatResponse,
   TrendPeriod,
 } from '../types';
@@ -181,6 +183,21 @@ export async function updateProfile(
 
 export async function resetMoviePreferences(): Promise<ResetMoviePreferencesResponse> {
   return request('/profile/preferences/', { method: 'DELETE' });
+}
+
+export async function saveMoviePreferences(
+  preferences: MoviePreferenceSelection[],
+): Promise<SaveMoviePreferencesResponse> {
+  return request(
+    '/profile/preferences/',
+    jsonRequest('POST', {
+      preferences: preferences.map((preference) => ({
+        preference_type: preference.preferenceType,
+        preference_value: preference.preferenceValue,
+        polarity: preference.polarity,
+      })),
+    }),
+  );
 }
 
 export async function createConversation(): Promise<Conversation> {

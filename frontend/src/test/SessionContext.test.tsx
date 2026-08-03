@@ -42,6 +42,25 @@ describe('SessionContext backend integration', () => {
     expect(result.current.semanticProfile?.semanticSummary).toBeNull();
   });
 
+  it('saves cold-start preferences and unlocks a populated taste profile', async () => {
+    const { result } = await renderAuthenticatedSession();
+    await act(() => result.current.resetMoviePreferences());
+
+    await act(() => result.current.saveMoviePreferences([
+      { preferenceType: 'genre', preferenceValue: 'Thriller', polarity: 1 },
+      { preferenceType: 'mood', preferenceValue: 'Mroczny klimat', polarity: 1 },
+      { preferenceType: 'violence', preferenceValue: 'Gore', polarity: -1 },
+    ]));
+
+    expect(result.current.preferences).toHaveLength(3);
+    expect(result.current.preferences).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ preferenceValue: 'Thriller', polarity: 1 }),
+        expect.objectContaining({ preferenceValue: 'Gore', polarity: -1 }),
+      ]),
+    );
+  });
+
   it('creates, renames, selects and deletes persistent conversations', async () => {
     const { result } = await renderAuthenticatedSession();
     const originalId = result.current.currentConversationId;

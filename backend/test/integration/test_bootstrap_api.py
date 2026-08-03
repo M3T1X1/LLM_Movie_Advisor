@@ -48,6 +48,10 @@ class BootstrapApiTests(ApiIntegrationTestCase):
         self.assertEqual(payload["preferences"][0]["preferenceValue"], "Thriller")
         self.assertEqual(payload["conversations"][0]["title"], "Rozmowa API")
         self.assertEqual(payload["messages"][0]["content"], "Treść wiadomości")
+        self.assertEqual(
+            payload["preferenceOptions"]["traits"][0],
+            {"preferenceType": "pacing", "label": "Szybka akcja"},
+        )
 
     def test_bootstrap_empty_state_and_interaction_isolation(self):
         other_user = get_user_model().objects.create_user(

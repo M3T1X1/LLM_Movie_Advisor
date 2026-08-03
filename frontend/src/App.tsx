@@ -11,6 +11,7 @@ import { Navbar } from './components/Navbar';
 import { ProfileView } from './components/ProfileView';
 import { RegisterView } from './components/RegisterView';
 import { TrendsView } from './components/TrendsView';
+import { TasteOnboardingPanel } from './components/TasteOnboardingPanel';
 import { UpcomingReleasesView } from './components/UpcomingReleasesView';
 import {
   TRANSIENT_CHAT_CONVERSATION_ID,
@@ -69,6 +70,7 @@ export default function App() {
     user,
     semanticProfile,
     preferences,
+    preferenceOptions,
     interactions,
     messages,
     conversations,
@@ -86,6 +88,7 @@ export default function App() {
     sendChatMessage,
     updateUser,
     resetMoviePreferences,
+    saveMoviePreferences,
     recordInteraction: storeInteraction,
     removeInteraction: removeStoredInteraction,
   } = useSession();
@@ -392,6 +395,11 @@ export default function App() {
                 <EmptyState onDiscover={() => navigateTo('recommendations')} />
               )}
             </div>
+          ) : preferences.length === 0 ? (
+            <TasteOnboardingPanel
+              options={preferenceOptions}
+              onSave={saveMoviePreferences}
+            />
           ) : (
             <>
               <div className="mb-8 border-b border-white/[0.1] pb-8">

@@ -6,6 +6,7 @@ import type {
   Content,
   Conversation,
   Interaction,
+  MoviePreferenceOptions,
   RecommendationTrends,
   RecommendationRequestRecord,
   RecommendationRun,
@@ -46,6 +47,29 @@ export const demoPreferences: UserPreference[] = [
   createPreference('7', 'humor', 'Slapstick', -1, 0.88),
   createPreference('8', 'violence', 'Nadmierny gore', -1, 0.8),
 ];
+
+export const demoPreferenceOptions: MoviePreferenceOptions = {
+  genres: [
+    'Akcja',
+    'Dramat',
+    'Komedia',
+    'Kryminał',
+    'Przygodowy',
+    'Science Fiction',
+    'Tajemnica',
+    'Thriller',
+  ],
+  traits: [
+    { preferenceType: 'pacing', label: 'Szybka akcja' },
+    { preferenceType: 'mood', label: 'Mroczny klimat' },
+    { preferenceType: 'humor', label: 'Humor' },
+    { preferenceType: 'romance', label: 'Wątki romantyczne' },
+    { preferenceType: 'narrative', label: 'Skomplikowana fabuła' },
+    { preferenceType: 'violence', label: 'Gore' },
+    { preferenceType: 'runtime', label: 'Krótkie seanse' },
+    { preferenceType: 'format', label: 'Seriale' },
+  ],
+};
 
 export const demoConversations: Conversation[] = [
   {

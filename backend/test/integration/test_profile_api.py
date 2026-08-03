@@ -6,10 +6,154 @@ from django.db import IntegrityError, connection
 from django.urls import reverse
 
 from backend.test.integration.api_base import ApiIntegrationTestCase
-from backend.api.models import BusinessUser, Conversation, UserPreference, UserProfile
+from backend.api.models import (
+    BusinessUser,
+    Conversation,
+    Genre,
+    UserPreference,
+    UserProfile,
+)
 
 
 class ProfileApiTests(ApiIntegrationTestCase):
+    def test_movie_preference_onboarding_saves_three_valid_choices(self):
+        content_id = self.insert_content()
+        genre = Genre.objects.create(tmdb_genre_id=53, name="Thriller")
+        genre.contents.add(content_id)
+
+        response = self.client.post(
+            reverse("api:profile-preferences"),
+            data=json.dumps(
+                {
+                    "preferences": [
+                        {
+                            "preference_type": "genre",
+                            "preference_value": "Thriller",
+                            "polarity": 1,
+                        },
+                        {
+                            "preference_type": "mood",
+                            "preference_value": "Mroczny klimat",
+                            "polarity": 1,
+                        },
+                        {
+                            "preference_type": "violence",
+                            "preference_value": "Gore",
+                            "polarity": -1,
+                        },
+                    ]
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(len(response.json()["preferences"]), 3)
+        self.assertEqual(
+            UserPreference.objects.filter(user_id=self.business_user_id).count(),
+            3,
+        )
+        profile = UserProfile.objects.get(user_id=self.business_user_id)
+        self.assertEqual(profile.version, 2)
+        self.assertIsNone(profile.semantic_summary)
+
+    def test_movie_preference_onboarding_rejects_invalid_selections(self):
+        invalid_payloads = (
+            {
+                "preferences": [
+                    {"preference_type": "mood", "preference_value": "Mroczny klimat", "polarity": 1},
+                    {"preference_type": "humor", "preference_value": "Humor", "polarity": -1},
+                ]
+            },
+            {
+                "preferences": [
+                    {"preference_type": "mood", "preference_value": "Mroczny klimat", "polarity": 1},
+                    {"preference_type": "mood", "preference_value": "Mroczny klimat", "polarity": -1},
+                    {"preference_type": "humor", "preference_value": "Humor", "polarity": 1},
+                ]
+            },
+            {
+                "preferences": [
+                    {"preference_type": "unknown", "preference_value": "Nieznana cecha", "polarity": 1},
+                    {"preference_type": "mood", "preference_value": "Mroczny klimat", "polarity": 1},
+                    {"preference_type": "humor", "preference_value": "Humor", "polarity": 1},
+                ]
+            },
+            {
+                "preferences": [
+                    {"preference_type": "genre", "preference_value": "Nieznany gatunek", "polarity": 1},
+                    {"preference_type": "mood", "preference_value": "Mroczny klimat", "polarity": 1},
+                    {"preference_type": "humor", "preference_value": "Humor", "polarity": 1},
+                ]
+            },
+            {
+                "preferences": [
+                    {"preference_type": "mood", "preference_value": "Mroczny klimat", "polarity": 0},
+                    {"preference_type": "humor", "preference_value": "Humor", "polarity": 1},
+                    {"preference_type": "runtime", "preference_value": "Krótkie seanse", "polarity": 1},
+                ]
+            },
+            {
+                "preferences": [
+                    {"preference_type": "mood", "preference_value": "Mroczny klimat", "polarity": 1},
+                    {"preference_type": "humor", "preference_value": "Humor", "polarity": 1},
+                    {"preference_type": "runtime", "preference_value": "Krótkie seanse", "polarity": 1},
+                ]
+            },
+            {
+                "preferences": [
+                    {"preference_type": "mood", "preference_value": "Mroczny klimat", "polarity": -1},
+                    {"preference_type": "humor", "preference_value": "Humor", "polarity": -1},
+                    {"preference_type": "runtime", "preference_value": "Krótkie seanse", "polarity": -1},
+                ]
+            },
+        )
+
+        for payload in invalid_payloads:
+            with self.subTest(payload=payload):
+                response = self.client.post(
+                    reverse("api:profile-preferences"),
+                    data=json.dumps(payload),
+                    content_type="application/json",
+                )
+                self.assertEqual(response.status_code, 400)
+                self.assertFalse(
+                    UserPreference.objects.filter(
+                        user_id=self.business_user_id
+                    ).exists()
+                )
+
+    def test_movie_preference_onboarding_does_not_overwrite_existing_choices(self):
+        UserPreference.objects.create(
+            user_id=self.business_user_id,
+            preference_type="mood",
+            preference_value="Mroczny klimat",
+            polarity=1,
+        )
+
+        response = self.client.post(
+            reverse("api:profile-preferences"),
+            data=json.dumps(
+                {
+                    "preferences": [
+                        {"preference_type": "humor", "preference_value": "Humor", "polarity": 1},
+                        {"preference_type": "runtime", "preference_value": "Krótkie seanse", "polarity": 1},
+                        {"preference_type": "format", "preference_value": "Seriale", "polarity": -1},
+                    ]
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(
+            list(
+                UserPreference.objects.filter(user_id=self.business_user_id)
+                .values_list("preference_value", flat=True)
+            ),
+            ["Mroczny klimat"],
+        )
+
     def test_movie_preference_reset_clears_only_authenticated_users_taste_profile(self):
         profile = UserProfile.objects.get(user_id=self.business_user_id)
         profile.semantic_summary = "Lubi thrillery i kino science fiction."

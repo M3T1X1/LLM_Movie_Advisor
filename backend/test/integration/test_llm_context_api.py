@@ -36,6 +36,12 @@ class LlmContextApiIntegrationTests(ApiIntegrationTestCase):
     def setUp(self):
         super().setUp()
         cache.clear()
+        UserPreference.objects.create(
+            user_id=self.business_user_id,
+            preference_type="format",
+            preference_value="Seriale",
+            polarity=1,
+        )
 
     @patch("backend.api.views.get_ollama_client")
     def test_chat_grounds_model_in_postgres_context_and_reuses_redis_cache(

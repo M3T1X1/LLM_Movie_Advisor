@@ -140,6 +140,16 @@ CONVERSATION_MEMORY_SYSTEM_PROMPT = (
 CATALOG_DEFAULT_PAGE_SIZE = 20
 CATALOG_MAX_PAGE_SIZE = 50
 UPCOMING_CACHE_TTL_SECONDS = 60 * 60
+ONBOARDING_TRAIT_OPTIONS = (
+    {"preferenceType": "pacing", "label": "Szybka akcja"},
+    {"preferenceType": "mood", "label": "Mroczny klimat"},
+    {"preferenceType": "humor", "label": "Humor"},
+    {"preferenceType": "romance", "label": "Wątki romantyczne"},
+    {"preferenceType": "narrative", "label": "Skomplikowana fabuła"},
+    {"preferenceType": "violence", "label": "Gore"},
+    {"preferenceType": "runtime", "label": "Krótkie seanse"},
+    {"preferenceType": "format", "label": "Seriale"},
+)
 CATALOG_SORTS = {
     "popularity": (F("popularity").desc(nulls_last=True), "id"),
     "rating": (F("vote_average").desc(nulls_last=True), "id"),
@@ -156,6 +166,11 @@ def authenticated(view):
         return view(request, *args, **kwargs)
 
     return wrapped
+
+
+def has_configured_movie_preferences(user) -> bool:
+    user_id = get_business_user_id(user)
+    return UserPreference.objects.filter(user_id=user_id).exists()
 
 
 def request_data(request: HttpRequest) -> dict | None:
@@ -251,6 +266,30 @@ def serialize_interaction(item: Interaction) -> dict:
         "rating": float(item.rating) if item.rating is not None else None,
         "metadata": json_object(item.metadata),
         "createdAt": iso(item.created_at),
+    }
+
+
+def serialize_preference(item: UserPreference) -> dict:
+    return {
+        "id": str(item.pk),
+        "userId": str(item.user_id),
+        "preferenceType": item.preference_type,
+        "preferenceValue": item.preference_value,
+        "polarity": item.polarity,
+        "weight": float(item.weight),
+        "confidence": float(item.confidence),
+        "createdAt": iso(item.created_at),
+        "updatedAt": iso(item.updated_at),
+    }
+
+
+def serialize_semantic_profile(user_id: int, profile: UserProfile | None) -> dict:
+    return {
+        "userId": str(user_id),
+        "semanticSummary": profile.semantic_summary if profile else None,
+        "version": profile.version if profile else 1,
+        "lastRebuiltAt": iso(profile.last_rebuilt_at) if profile else None,
+        "updatedAt": iso(profile.updated_at) if profile else iso(timezone.now()),
     }
 
 
@@ -380,6 +419,16 @@ def stateless_chat(request: HttpRequest) -> JsonResponse:
         logger.warning("Unsafe or failed entries removed from client chat history.")
 
     try:
+        if not has_configured_movie_preferences(request.user):
+            return JsonResponse(
+                {
+                    "detail": (
+                        "Ustaw co najmniej trzy upodobania filmowe, "
+                        "aby skorzystać z doradcy."
+                    )
+                },
+                status=409,
+            )
         client = get_ollama_client()
         available_models = client.list_models()
         if not client.is_model_available(client.model, available_models):
@@ -498,32 +547,22 @@ def bootstrap(request: HttpRequest) -> JsonResponse:
         "created_at", "id"
     )
 
-    profile_data = {
-        "userId": str(user_id),
-        "semanticSummary": profile.semantic_summary if profile else None,
-        "version": profile.version if profile else 1,
-        "lastRebuiltAt": iso(profile.last_rebuilt_at) if profile else None,
-        "updatedAt": iso(profile.updated_at) if profile else iso(timezone.now()),
-    }
-    preference_data = [
-        {
-            "id": str(item.pk),
-            "userId": str(item.user_id),
-            "preferenceType": item.preference_type,
-            "preferenceValue": item.preference_value,
-            "polarity": item.polarity,
-            "weight": float(item.weight),
-            "confidence": float(item.confidence),
-            "createdAt": iso(item.created_at),
-            "updatedAt": iso(item.updated_at),
-        }
-        for item in preferences
-    ]
+    profile_data = serialize_semantic_profile(user_id, profile)
+    preference_data = [serialize_preference(item) for item in preferences]
     return JsonResponse(
         {
             "user": user,
             "semanticProfile": profile_data,
             "preferences": preference_data,
+            "preferenceOptions": {
+                "genres": list(
+                    Genre.objects.filter(contents__isnull=False)
+                    .order_by("name")
+                    .values_list("name", flat=True)
+                    .distinct()
+                ),
+                "traits": ONBOARDING_TRAIT_OPTIONS,
+            },
             "conversations": [serialize_conversation(item) for item in conversations],
             "messages": [serialize_message(item) for item in messages],
             "interactions": [serialize_interaction(item) for item in interactions],
@@ -866,11 +905,154 @@ def profile(request: HttpRequest) -> JsonResponse:
     return JsonResponse({"user": user})
 
 
-@require_http_methods(["DELETE"])
+@require_http_methods(["POST", "DELETE"])
 @authenticated
 def profile_preferences(request: HttpRequest) -> JsonResponse:
     user_id = get_business_user_id(request.user)
     now = timezone.now()
+
+    if request.method == "POST":
+        data = request_data(request)
+        raw_preferences = data.get("preferences") if data is not None else None
+        if not isinstance(raw_preferences, list):
+            return JsonResponse(
+                {"detail": "Preferences must be a list."},
+                status=400,
+            )
+        if not 3 <= len(raw_preferences) <= 50:
+            return JsonResponse(
+                {"detail": "Select between 3 and 50 preferences."},
+                status=400,
+            )
+
+        allowed_traits = {
+            (item["preferenceType"], item["label"])
+            for item in ONBOARDING_TRAIT_OPTIONS
+        }
+        cleaned_preferences: list[tuple[str, str, int]] = []
+        unique_choices: set[tuple[str, str]] = set()
+        requested_genres: set[str] = set()
+        for raw_preference in raw_preferences:
+            if not isinstance(raw_preference, dict):
+                return JsonResponse(
+                    {"detail": "Every preference must be an object."},
+                    status=400,
+                )
+            preference_type = raw_preference.get("preference_type")
+            preference_value = raw_preference.get("preference_value")
+            polarity = raw_preference.get("polarity")
+            if (
+                not isinstance(preference_type, str)
+                or not isinstance(preference_value, str)
+                or type(polarity) is not int
+            ):
+                return JsonResponse(
+                    {"detail": "Preference fields have invalid types."},
+                    status=400,
+                )
+            preference_type = preference_type.strip()
+            preference_value = preference_value.strip()
+            choice_key = (preference_type, preference_value.casefold())
+            if (
+                not preference_type
+                or not preference_value
+                or len(preference_value) > 100
+                or polarity not in (-1, 1)
+                or choice_key in unique_choices
+            ):
+                return JsonResponse(
+                    {"detail": "Preference selection is invalid."},
+                    status=400,
+                )
+            unique_choices.add(choice_key)
+            cleaned_preferences.append(
+                (preference_type, preference_value, polarity)
+            )
+            if preference_type == "genre":
+                requested_genres.add(preference_value)
+            elif (preference_type, preference_value) not in allowed_traits:
+                return JsonResponse(
+                    {"detail": "Unknown preference option."},
+                    status=400,
+                )
+
+        selected_polarities = {
+            polarity for _, _, polarity in cleaned_preferences
+        }
+        if selected_polarities != {-1, 1}:
+            return JsonResponse(
+                {
+                    "detail": (
+                        "Select at least one liked and one disliked preference."
+                    )
+                },
+                status=400,
+            )
+
+        known_genres = set(
+            Genre.objects.filter(
+                name__in=requested_genres,
+                contents__isnull=False,
+            )
+            .values_list("name", flat=True)
+            .distinct()
+        )
+        if known_genres != requested_genres:
+            return JsonResponse({"detail": "Unknown genre option."}, status=400)
+
+        with transaction.atomic():
+            profile_item = UserProfile.objects.select_for_update().get(
+                user_id=user_id
+            )
+            if UserPreference.objects.filter(user_id=user_id).exists():
+                return JsonResponse(
+                    {"detail": "Movie preferences are already configured."},
+                    status=409,
+                )
+            UserPreference.objects.bulk_create(
+                [
+                    UserPreference(
+                        user_id=user_id,
+                        preference_type=preference_type,
+                        preference_value=preference_value,
+                        polarity=polarity,
+                        weight=1,
+                        confidence=1,
+                        created_at=now,
+                        updated_at=now,
+                    )
+                    for preference_type, preference_value, polarity in cleaned_preferences
+                ]
+            )
+            profile_item.semantic_summary = None
+            profile_item.version += 1
+            profile_item.last_rebuilt_at = None
+            profile_item.updated_at = now
+            profile_item.save(
+                update_fields=[
+                    "semantic_summary",
+                    "version",
+                    "last_rebuilt_at",
+                    "updated_at",
+                ]
+            )
+            saved_preferences = list(
+                UserPreference.objects.filter(user_id=user_id).order_by(
+                    "-polarity", "-weight", "id"
+                )
+            )
+        return JsonResponse(
+            {
+                "preferences": [
+                    serialize_preference(item) for item in saved_preferences
+                ],
+                "semanticProfile": serialize_semantic_profile(
+                    user_id, profile_item
+                ),
+            },
+            status=201,
+        )
+
     with transaction.atomic():
         deleted_count, _ = UserPreference.objects.filter(user_id=user_id).delete()
         profile_item = (
@@ -902,13 +1084,7 @@ def profile_preferences(request: HttpRequest) -> JsonResponse:
         {
             "deletedPreferenceCount": deleted_count,
             "preferences": [],
-            "semanticProfile": {
-                "userId": str(user_id),
-                "semanticSummary": None,
-                "version": profile_item.version,
-                "lastRebuiltAt": None,
-                "updatedAt": iso(profile_item.updated_at),
-            },
+            "semanticProfile": serialize_semantic_profile(user_id, profile_item),
         }
     )
 

@@ -40,6 +40,27 @@ export interface UserPreference {
   updatedAt: string;
 }
 
+export interface MoviePreferenceOption {
+  preferenceType: string;
+  label: string;
+}
+
+export interface MoviePreferenceOptions {
+  genres: string[];
+  traits: MoviePreferenceOption[];
+}
+
+export interface MoviePreferenceSelection {
+  preferenceType: string;
+  preferenceValue: string;
+  polarity: -1 | 1;
+}
+
+export interface SaveMoviePreferencesResponse {
+  preferences: UserPreference[];
+  semanticProfile: UserSemanticProfile;
+}
+
 export interface ResetMoviePreferencesResponse {
   deletedPreferenceCount: number;
   preferences: UserPreference[];
@@ -244,6 +265,7 @@ export interface AppBootstrap {
   user: AppUser;
   semanticProfile: UserSemanticProfile;
   preferences: UserPreference[];
+  preferenceOptions: MoviePreferenceOptions;
   conversations: Conversation[];
   messages: ChatMessage[];
   interactions: Interaction[];

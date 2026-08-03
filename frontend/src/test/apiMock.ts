@@ -4,6 +4,7 @@ import {
   demoCatalogContent,
   demoConversations,
   demoInteractions,
+  demoPreferenceOptions,
   demoPreferences,
   demoProfile,
   demoRecommendationTrends,
@@ -45,6 +46,7 @@ export function installApiMock() {
         user: demoUser,
         semanticProfile,
         preferences,
+        preferenceOptions: demoPreferenceOptions,
         conversations,
         messages,
         interactions,
@@ -118,6 +120,35 @@ export function installApiMock() {
         updatedAt: new Date().toISOString(),
       };
       return json({ deletedPreferenceCount, preferences, semanticProfile });
+    }
+    if (path === '/api/profile/preferences/' && method === 'POST') {
+      if (preferences.length) {
+        return json({ detail: 'Movie preferences are already configured.' }, 409);
+      }
+      const timestamp = new Date().toISOString();
+      preferences = body.preferences.map((preference: {
+        preference_type: string;
+        preference_value: string;
+        polarity: -1 | 1;
+      }, index: number) => ({
+        id: `onboarding-${index + 1}`,
+        userId: demoUser.id,
+        preferenceType: preference.preference_type,
+        preferenceValue: preference.preference_value,
+        polarity: preference.polarity,
+        weight: 1,
+        confidence: 1,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      }));
+      semanticProfile = {
+        ...semanticProfile,
+        semanticSummary: null,
+        version: semanticProfile.version + 1,
+        lastRebuiltAt: null,
+        updatedAt: timestamp,
+      };
+      return json({ preferences, semanticProfile }, 201);
     }
     if (path === '/api/conversations/' && method === 'POST') {
       const timestamp = new Date().toISOString();

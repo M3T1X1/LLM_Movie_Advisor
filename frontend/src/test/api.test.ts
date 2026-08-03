@@ -13,6 +13,7 @@ import {
   register,
   requestStatelessChat,
   resetMoviePreferences,
+  saveMoviePreferences,
   renameConversation,
   updateProfile,
 } from '../services/api';
@@ -78,6 +79,28 @@ describe('backend API service', () => {
     const [url, options] = fetchMock.mock.calls[fetchMock.mock.calls.length - 1];
     expect(String(url)).toBe('/api/profile/preferences/');
     expect(options?.method).toBe('DELETE');
+  });
+
+  it('saves cold-start preferences using the backend DTO', async () => {
+    await resetMoviePreferences();
+    const response = await saveMoviePreferences([
+      { preferenceType: 'genre', preferenceValue: 'Thriller', polarity: 1 },
+      { preferenceType: 'mood', preferenceValue: 'Mroczny klimat', polarity: 1 },
+      { preferenceType: 'violence', preferenceValue: 'Gore', polarity: -1 },
+    ]);
+
+    expect(response.preferences).toHaveLength(3);
+    const fetchMock = vi.mocked(fetch);
+    const [url, options] = fetchMock.mock.calls[fetchMock.mock.calls.length - 1];
+    expect(String(url)).toBe('/api/profile/preferences/');
+    expect(options?.method).toBe('POST');
+    expect(JSON.parse(String(options?.body))).toEqual({
+      preferences: [
+        { preference_type: 'genre', preference_value: 'Thriller', polarity: 1 },
+        { preference_type: 'mood', preference_value: 'Mroczny klimat', polarity: 1 },
+        { preference_type: 'violence', preference_value: 'Gore', polarity: -1 },
+      ],
+    });
   });
 
   it('sends transient chat history to the stateless Ollama endpoint', async () => {

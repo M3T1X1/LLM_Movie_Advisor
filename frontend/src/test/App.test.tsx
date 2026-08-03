@@ -53,6 +53,32 @@ describe('App routing', () => {
     expect(screen.queryByText('96%')).not.toBeInTheDocument();
   });
 
+  it('blocks the advisor with taste onboarding after preferences are reset', async () => {
+    const user = userEvent.setup();
+    renderApp('/profile');
+
+    await user.click(await screen.findByRole('button', { name: 'Resetuj upodobania filmowe' }));
+    await user.click(screen.getByRole('button', { name: 'Tak, resetuj' }));
+    await screen.findByRole('status');
+    await user.click(screen.getByRole('button', { name: 'System Rekomendacji' }));
+
+    expect(
+      await screen.findByRole('heading', { name: 'Ustaw swoje upodobania filmowe' }),
+    ).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText('Opisz nastrój, tempo albo motyw...')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /pomiń/i })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Lubię: Thriller' }));
+    await user.click(screen.getByRole('button', { name: 'Nie lubię: Gore' }));
+    await user.click(screen.getByRole('button', { name: 'Lubię: Mroczny klimat' }));
+    await user.click(screen.getByRole('button', { name: 'Zapisz i przejdź do doradcy' }));
+
+    expect(
+      await screen.findByRole('heading', { name: 'Dzień dobry, kacper' }),
+    ).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Opisz nastrój, tempo albo motyw...')).toBeInTheDocument();
+  });
+
   it('falls back to login for an unknown route', async () => {
     renderApp('/nie-istnieje');
     expect(
