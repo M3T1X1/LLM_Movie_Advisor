@@ -67,7 +67,6 @@ export function ProfileView({
   const [isResetting, setIsResetting] = useState(false);
   const [resetError, setResetError] = useState<string | null>(null);
   const [resetSuccess, setResetSuccess] = useState(false);
-  const initials = user.username.slice(0, 2).toUpperCase();
   const favoriteGenres = preferences
     .filter((preference) => preference.preferenceType === 'genre' && preference.polarity === 1)
     .map((preference) => preference.preferenceValue);
@@ -128,14 +127,9 @@ export function ProfileView({
           Konto użytkownika
         </p>
         <div className="flex flex-col justify-between gap-5 border-b border-white/[0.1] pb-8 sm:flex-row sm:items-end">
-          <div className="flex items-center gap-4">
-            <span className="flex h-16 w-16 items-center justify-center border border-violet-400/20 bg-violet-500/10 text-lg font-semibold text-violet-200">
-              {initials}
-            </span>
-            <div>
-              <h1 className="text-4xl tracking-tight text-white sm:text-5xl">{user.username}</h1>
-              <p className="mt-1 text-sm text-slate-500">{user.email}</p>
-            </div>
+          <div>
+            <h1 className="text-4xl tracking-tight text-white sm:text-5xl">{user.username}</h1>
+            <p className="mt-1 text-sm text-slate-500">{user.email}</p>
           </div>
           <button
             type="button"

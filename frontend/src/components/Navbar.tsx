@@ -19,7 +19,6 @@ const primaryNavigation: { id: AppView; label: string; shortLabel: string; icon:
 export function Navbar({ user, activeView, onViewChange, onLogout }: NavbarProps) {
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
-  const initials = user.username.slice(0, 2).toUpperCase();
 
   useEffect(() => {
     if (!isUserMenuOpen) return;
@@ -103,7 +102,7 @@ export function Navbar({ user, activeView, onViewChange, onLogout }: NavbarProps
                   : 'border-white/[0.1] bg-white/[0.04] text-slate-300 hover:border-white/20 hover:bg-white/[0.07] hover:text-white'
               }`}
             >
-              {initials}
+              <UserRound className="h-4 w-4" aria-hidden="true" />
               <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-ink-950 bg-emerald-400" aria-hidden="true" />
             </button>
 
@@ -114,14 +113,9 @@ export function Navbar({ user, activeView, onViewChange, onLogout }: NavbarProps
                 className="absolute right-0 top-[calc(100%+0.65rem)] w-64 overflow-hidden rounded-lg border border-white/[0.12] bg-ink-900 shadow-2xl"
               >
                 <div className="border-b border-white/[0.07] px-4 py-4">
-                  <div className="flex items-center gap-3">
-                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-violet-500/15 text-xs font-semibold text-violet-100">
-                      {initials}
-                    </span>
-                    <div className="min-w-0">
-                      <p className="truncate text-xs font-semibold text-white">{user.username}</p>
-                      <p className="mt-1 truncate text-[10px] text-slate-600">{user.email}</p>
-                    </div>
+                  <div className="min-w-0">
+                    <p className="truncate text-xs font-semibold text-white">{user.username}</p>
+                    <p className="mt-1 truncate text-[10px] text-slate-600">{user.email}</p>
                   </div>
                 </div>
                 <div className="p-1.5">
