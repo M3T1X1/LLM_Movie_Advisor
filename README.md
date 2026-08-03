@@ -15,8 +15,9 @@ recommendation workflow. Docker Compose runs Ollama and downloads Llama 3.1
 8B into a persistent volume. The React chat exchanges temporary messages with
 the local model through Django. Django grounds the model with catalog, profile,
 preference, and interaction data from PostgreSQL and caches catalog candidates
-in Redis. Structured recommendation runs, vector search, and recommendation
-agents are not yet implemented.
+in Redis. Semantic catalog retrieval is implemented with Ollama embeddings and
+PostgreSQL/pgvector, with keyword search as a fallback. A live structured
+recommendation pipeline and recommendation agents are not yet implemented.
 
 ## Application screenshots
 
@@ -82,10 +83,12 @@ open it at full resolution.
 - Django sessions with CSRF protection;
 - user profile and preference storage;
 - semantic profile summary storage;
-- conversations and user messages;
-- watchlist and watched-title views;
-- interactions for opening details, liking, disliking, adding to the
-  watchlist, marking as watched, and rating;
+- persistent conversation management and an API for storing user messages;
+- a watchlist view and viewing analytics based on watched titles;
+- frontend actions for opening details, adding to the watchlist, and marking a
+  title as watched;
+- backend interaction support for likes, dislikes, watchlist entries, watched
+  titles, and ratings;
 - Django administration panel.
 
 ### Catalog
@@ -109,9 +112,10 @@ open it at full resolution.
 - Redis-backed Django sessions with a persistent PostgreSQL fallback;
 - a distributed catalog synchronization lock;
 - an AMD ROCm-backed Ollama service with persistent model storage;
-- an idempotent one-shot service that downloads the configured LLM;
-- seven Docker Compose services, including one-shot model and demo-data
-  initializers;
+- idempotent one-shot services that download the configured chat and embedding
+  models;
+- eight Docker Compose services, including chat-model, embedding-model, and
+  demo-data initializers;
 - a multi-stage application image;
 - Gunicorn and WhiteNoise;
 - an unprivileged `app` user in the application container;
@@ -136,7 +140,8 @@ flowchart LR
     Database["PostgreSQL 17 with pgvector"]
     Cache["Redis"]
     Ollama["Ollama with AMD ROCm"]
-    ModelInit["One-shot model download"]
+    ChatModelInit["One-shot chat-model download"]
+    EmbedModelInit["One-shot embedding-model download"]
     DemoSeed["One-shot demo seeder"]
     TMDB["TMDB API"]
     CDN["TMDB image CDN"]
@@ -144,13 +149,15 @@ flowchart LR
     Browser -->|HTTP requests| App
     App -->|Catalog queries and persistent data| Database
     App -->|Cached catalog pages and sessions| Cache
-    App -.->|Future recommendation requests| Ollama
-    ModelInit -->|Pull Llama 3.1 8B| Ollama
+    App -->|Chat and query embeddings| Ollama
+    ChatModelInit -->|Pull Llama 3.1 8B| Ollama
+    EmbedModelInit -->|Pull nomic-embed-text| Ollama
     DemoSeed -->|Demo users and activity| Database
     App -->|Upcoming release refresh| TMDB
     Sync -->|Metadata requests| TMDB
     Sync -->|Catalog updates| Database
     Sync -->|Locks and cache invalidation| Cache
+    Sync -->|Content embeddings| Ollama
     Browser -->|Posters and backdrops| CDN
 ```
 
@@ -164,6 +171,7 @@ Docker Compose runs these services:
 | `redis` | ready-to-display catalog page cache, TMDB response cache, synchronization locks, and fast session reads | Compose network only |
 | `ollama` | local LLM runtime accelerated through AMD ROCm | Compose network only |
 | `ollama-init` | one-shot download of the configured chat model | no public port; exits after completion |
+| `ollama-embed-init` | one-shot download of the configured embedding model | no public port; exits after completion |
 | `demo-seed` | waits for the catalog and idempotently prepares demo users and activity on every Compose start | no public port; exits after completion |
 
 PostgreSQL, Redis, and Ollama use the named volumes `postgres_data`,
@@ -200,6 +208,7 @@ and downloaded models unless the volumes are explicitly removed.
 - Redis 8.2.8 Alpine;
 - Ollama 0.32.3 ROCm;
 - Llama 3.1 8B, downloaded at runtime;
+- `nomic-embed-text:latest` for 768-dimensional catalog and query embeddings;
 - Docker and Docker Compose;
 - TMDB API.
 
@@ -266,7 +275,8 @@ On a new environment, Compose:
 1. builds the frontend in a Node.js image;
 2. builds the Django image on Python 3.13;
 3. starts PostgreSQL, Redis, and the ROCm-backed Ollama server;
-4. downloads `llama3.1:8b` into the persistent `ollama_data` volume;
+4. downloads `llama3.1:8b` and `nomic-embed-text:latest` into the persistent
+   `ollama_data` volume;
 5. initializes the business schema on a new PostgreSQL volume;
 6. applies Django migrations;
 7. starts Gunicorn;
@@ -275,9 +285,10 @@ On a new environment, Compose:
 10. synchronizes recent and upcoming releases;
 11. runs `demo-seed` after at least three catalog items are available.
 
-The first model download is approximately 4.9 GB. The initial catalog import
-also makes many TMDB requests. Both operations can take longer than subsequent
-starts.
+The first chat-model download is approximately 4.9 GB, and the embedding model
+requires an additional download. The initial catalog import also makes many
+TMDB and Ollama embedding requests. These operations can take longer than
+subsequent starts.
 
 ### 4. Check service health
 
@@ -288,6 +299,7 @@ docker compose logs --tail=100 catalog-sync
 docker compose logs --tail=100 demo-seed
 docker compose logs --tail=100 ollama
 docker compose logs --tail=100 ollama-init
+docker compose logs --tail=100 ollama-embed-init
 ```
 
 Expected state:
@@ -296,6 +308,7 @@ Expected state:
 - `catalog-sync` is running;
 - `demo-seed` has exited successfully with code `0`;
 - `ollama-init` has exited successfully with code `0`;
+- `ollama-embed-init` has exited successfully with code `0`;
 - the application responds on port `8000`.
 
 Health endpoint:
@@ -319,8 +332,8 @@ Example response:
 
 A `degraded` status means Redis or Ollama is unavailable while PostgreSQL
 remains available. Ollama reports `model_missing` when its HTTP service works
-but the configured chat model is not downloaded. An unavailable PostgreSQL
-instance produces HTTP `503` with an `unavailable` status.
+but the configured chat or embedding model is not downloaded. An unavailable
+PostgreSQL instance produces HTTP `503` with an `unavailable` status.
 
 ### 5. Application URLs
 
@@ -454,8 +467,9 @@ variable from the root `.env` file into the image build.
 ## Ollama runtime
 
 The `ollama` service uses the official ROCm image and receives the host GPU
-through `/dev/kfd` and `/dev/dri`. It has no published host port; Django and
-`ollama-init` reach it over the private Compose network.
+through `/dev/kfd` and `/dev/dri`. It has no published host port; Django,
+`catalog-sync`, `ollama-init`, and `ollama-embed-init` reach it over the private
+Compose network.
 
 The `ollama-init` and `ollama-embed-init` services wait for Ollama to become
 healthy, pull the chat and embedding models, and exit. Ollama stores downloaded
@@ -760,8 +774,12 @@ unrelated to the catalog baseline process and the Bootstrap CSS framework.
 
 `RecommendationRequest`, `RecommendationRun`, `RunCandidate`, and
 `AgentExecution` provide persistence for recommendation-related data. The API
-does not execute a recommendation pipeline. Posting a message stores it in
-PostgreSQL without fabricating an assistant response.
+does not execute a recommendation pipeline. The dedicated
+`POST /api/conversations/:id/messages/` endpoint stores a user message in
+PostgreSQL without fabricating an assistant response. The current React chat
+uses the separate stateless `/api/chat/` endpoint and does not call the
+persistent-message endpoint, so newly exchanged chat messages disappear after
+a page reload.
 
 ## Frontend
 
@@ -922,7 +940,8 @@ PostgreSQL stores:
 - interactions;
 - demo recommendation data;
 - Django sessions;
-- the schema prepared for content embeddings.
+- content embeddings and their model, pipeline-version, language, and source
+  hash metadata.
 
 For a new Compose volume, PostgreSQL executes:
 
@@ -1110,10 +1129,18 @@ The application implements:
 - an unprivileged application-container user;
 - no public PostgreSQL or Redis ports in Compose;
 - server-side TMDB credentials;
-- frontend XSS tests and React's safe rendering behavior.
+- frontend XSS tests and React's safe rendering behavior;
+- input guards for common prompt-injection and sensitive-data requests;
+- sanitization of untrusted chat history before it reaches the model;
+- output guards that replace responses containing protected prompt, context,
+  account, or database markers;
+- system instructions that keep catalog, profile, and conversation content in
+  an explicitly untrusted data boundary.
 
 The deployment does not include rate limiting, password reset, a Content
-Security Policy, Redis authentication/TLS, or LLM-specific safeguards.
+Security Policy, or Redis authentication/TLS. The implemented LLM safeguards
+are application-level heuristics rather than a formal security boundary and
+still require adversarial testing and monitoring before public deployment.
 
 ## Production deployment
 
@@ -1188,6 +1215,8 @@ evaluation.
 - no automatic semantic-profile updates;
 - recommendation trends depend on stored records, which can be demo data;
 - recommendation and agent-status components have no live pipeline;
+- several frontend tests still expect the removed prompt-suggestion buttons
+  and need to be updated before the frontend suite is green again;
 - upcoming releases cover movies, not future TV seasons;
 - `catalog-sync` uses a shell loop instead of a scheduler with job history;
 - local Redis has no password;
@@ -1206,6 +1235,7 @@ docker compose logs -f postgres
 docker compose logs -f redis
 docker compose logs -f ollama
 docker compose logs -f ollama-init
+docker compose logs -f ollama-embed-init
 ```
 
 ### Restart services

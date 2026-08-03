@@ -1,4 +1,4 @@
-import { Bookmark, Check, Clock3, Eye, Film, Star, X } from 'lucide-react';
+import { Film, Star, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { Content, RunCandidate } from '../types';
 import {
@@ -108,7 +108,6 @@ export function MovieDetailModal({
                     : 'bg-black/40 text-white ring-1 ring-white/15 hover:bg-black/60'
                 }`}
               >
-                <Bookmark className={`h-4 w-4 ${isWatchlisted ? 'fill-current' : ''}`} />
                 {isWatchlisted ? 'Na Twojej liście' : 'Zapisz'}
               </button>
             </div>
@@ -189,12 +188,10 @@ export function MovieDetailModal({
                     : 'border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/[0.07]'
                 }`}
               >
-                {isWatched ? <Check className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 {isWatched ? 'Oznaczono jako obejrzany' : 'Oznacz jako obejrzany'}
               </button>
             </div>
             <div className="mt-3 flex items-center justify-center gap-2 text-[10px] text-slate-700">
-              <Clock3 className="h-3 w-3" />
               Metadane zsynchronizowane z TMDB
             </div>
           </aside>

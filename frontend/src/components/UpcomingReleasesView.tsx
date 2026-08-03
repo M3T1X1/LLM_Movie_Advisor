@@ -1,5 +1,4 @@
 import {
-  Bookmark,
   Film,
   RefreshCw,
   Search,
@@ -294,7 +293,6 @@ function UpcomingReleaseCard({ content, isWatchlisted, onOpen, onWatchlist }: { 
           <p className="mt-1 flex items-center gap-1.5 text-[10px] font-medium text-violet-300">{getCountdownLabel(daysUntilRelease)}</p>
         </div>
         <button type="button" onClick={() => onWatchlist(content)} className={`flex h-9 shrink-0 items-center justify-center gap-2 rounded-lg px-3 text-[10px] font-medium transition ${isWatchlisted ? 'bg-violet-500/15 text-violet-200 hover:bg-red-500/10 hover:text-red-300' : 'bg-white/[0.05] text-slate-400 hover:bg-white/[0.09] hover:text-white'}`}>
-          <Bookmark className={`h-3.5 w-3.5 ${isWatchlisted ? 'fill-current' : ''}`} />
           {isWatchlisted ? 'Zapisano' : 'Zapisz na listę'}
         </button>
       </div>
