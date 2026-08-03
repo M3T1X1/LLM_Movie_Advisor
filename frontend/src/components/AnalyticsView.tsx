@@ -1,11 +1,9 @@
 import {
   Activity,
   BarChart3,
-  Eye,
   Film,
   LayoutDashboard,
   Radar,
-  Star,
   Tv,
 } from 'lucide-react';
 import { useMemo, useState, type ReactNode } from 'react';
@@ -184,27 +182,6 @@ function OverviewDashboard({
 }) {
   return (
     <>
-      <div className="mb-5 grid gap-px overflow-hidden rounded-xl border border-white/[0.08] bg-white/[0.06] sm:grid-cols-3">
-        <StatCard
-          icon={<Eye className="h-4 w-4" />}
-          iconColor="text-violet-400"
-          value={analytics.watchedCount}
-          label="Obejrzane tytuły"
-        />
-        <StatCard
-          icon={<Star className="h-4 w-4" />}
-          iconColor="text-amber-300"
-          value={analytics.averageRating.toFixed(1)}
-          label="Średnia ocena TMDB"
-        />
-        <StatCard
-          icon={<Activity className="h-4 w-4" />}
-          iconColor="text-violet-300"
-          value={analytics.watchlistedCount}
-          label="Na liście"
-        />
-      </div>
-
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
         <ChartPanel title="Najczęściej oglądane gatunki" description="Liczba obejrzanych tytułów">
           <GenreBarChart genres={analytics.genres.slice(0, 6)} />
@@ -492,26 +469,6 @@ function ModeButton({ active, onClick, icon, label }: { active: boolean; onClick
       {icon}
       {label}
     </button>
-  );
-}
-
-function StatCard({
-  icon,
-  iconColor,
-  value,
-  label,
-}: {
-  icon: ReactNode;
-  iconColor: string;
-  value: string | number;
-  label: string;
-}) {
-  return (
-    <div className="bg-ink-900 p-4 sm:p-5">
-      <div className={`mb-4 ${iconColor}`}>{icon}</div>
-      <p className="text-xl font-semibold text-white">{value}</p>
-      <p className="mt-1 text-[10px] text-slate-600">{label}</p>
-    </div>
   );
 }
 

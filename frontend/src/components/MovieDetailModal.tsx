@@ -76,7 +76,7 @@ export function MovieDetailModal({
               <Film className="h-16 w-16 text-white/10" />
             </div>
           )}
-          <div className="absolute inset-0 bg-gradient-to-t from-ink-900 via-ink-900/45 to-black/20" />
+          <div className="absolute inset-0 bg-ink-900/70" />
           <div className="absolute inset-x-0 bottom-0 p-5 sm:p-8 lg:p-10">
             <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-slate-300">
               {matchPercent !== null && (

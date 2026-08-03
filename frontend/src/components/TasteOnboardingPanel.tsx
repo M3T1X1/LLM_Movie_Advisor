@@ -79,7 +79,7 @@ export function TasteOnboardingPanel({ options, onSave }: TasteOnboardingPanelPr
       className="mx-auto flex min-h-[75vh] w-full max-w-6xl flex-col overflow-hidden rounded-xl border border-violet-400/20 bg-ink-900 shadow-card"
     >
       <div className="relative overflow-hidden border-b border-white/[0.08] px-6 py-7 sm:px-8 lg:px-10">
-        <div className="absolute -right-16 -top-24 h-64 w-64 rounded-full bg-violet-500/10 blur-3xl" aria-hidden="true" />
+        <div className="absolute -right-16 -top-24 h-64 w-64 rounded-full bg-violet-500/10" aria-hidden="true" />
         <div className="relative flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
           <div>
             <p className="mb-3 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-violet-400">

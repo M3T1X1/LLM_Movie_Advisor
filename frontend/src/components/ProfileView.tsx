@@ -1,9 +1,5 @@
 import {
-  Bookmark,
   Check,
-  Clock3,
-  Eye,
-  MessageSquareText,
   Pencil,
   RotateCcw,
   SlidersHorizontal,
@@ -40,22 +36,10 @@ function createFormState(user: AppUser): ProfileFormState {
   };
 }
 
-function formatDate(date: string) {
-  return new Intl.DateTimeFormat('pl-PL', {
-    day: 'numeric',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(new Date(date));
-}
-
 export function ProfileView({
   user,
   semanticProfile,
   preferences,
-  conversations,
-  savedCount,
-  watchedCount,
   onUpdateUser,
   onResetPreferences,
 }: ProfileViewProps) {
@@ -141,17 +125,6 @@ export function ProfileView({
           </button>
         </div>
       </div>
-
-      <div className="mb-7 grid grid-cols-3 overflow-hidden border-y border-white/[0.1] bg-ink-900">
-        <ProfileStat icon={<Bookmark className="h-4 w-4" />} value={savedCount} label="Zapisane" />
-        <ProfileStat icon={<Eye className="h-4 w-4" />} value={watchedCount} label="Obejrzane" bordered />
-        <ProfileStat
-          icon={<MessageSquareText className="h-4 w-4" />}
-          value={conversations.length}
-          label="Rozmowy"
-        />
-      </div>
-
       {isEditing ? (
         <form onSubmit={handleSubmit} className="rounded-lg border border-white/[0.1] bg-ink-900 p-5 sm:p-6">
           <div className="mb-6 flex items-center justify-between border-b border-white/[0.06] pb-4">
@@ -278,50 +251,9 @@ export function ProfileView({
                 )}
               </div>
             </ProfileSection>
-
-            <ProfileSection title="Ostatnia aktywność" icon={<Clock3 className="h-4 w-4" />}>
-              {conversations.length ? (
-                <div className="divide-y divide-white/[0.05]">
-                  {conversations.slice(0, 4).map((conversation) => (
-                    <div key={conversation.id} className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0">
-                      <div className="min-w-0">
-                        <p className="truncate text-xs text-slate-300">
-                          {conversation.title ?? 'Rozmowa bez tytułu'}
-                        </p>
-                      </div>
-                      <time className="shrink-0 text-[10px] text-slate-600">
-                        {formatDate(conversation.updatedAt)}
-                      </time>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-xs text-slate-600">Brak zapisanych rozmów.</p>
-              )}
-            </ProfileSection>
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-function ProfileStat({
-  icon,
-  value,
-  label,
-  bordered = false,
-}: {
-  icon: ReactNode;
-  value: number;
-  label: string;
-  bordered?: boolean;
-}) {
-  return (
-    <div className={`p-4 sm:p-5 ${bordered ? 'border-x border-white/[0.06]' : ''}`}>
-      <div className="mb-3 text-slate-600">{icon}</div>
-      <p className="text-xl font-semibold text-white">{value}</p>
-      <p className="mt-1 text-[10px] text-slate-600">{label}</p>
     </div>
   );
 }
