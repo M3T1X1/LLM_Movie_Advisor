@@ -250,19 +250,29 @@ def build_llm_application_context(
     user,
     prompt: str,
     embedding_client: OllamaClient | None = None,
+    *,
+    include_user_context: bool = True,
 ) -> LlmApplicationContext:
     user_id = get_business_user_id(user)
-    profile = UserProfile.objects.filter(user_id=user_id).first()
-    preferences = list(
-        UserPreference.objects.filter(user_id=user_id)
-        .order_by("-weight", "-confidence", "id")
-        .values(
-            "preference_type",
-            "preference_value",
-            "polarity",
-            "weight",
-            "confidence",
-        )[: settings.LLM_USER_PREFERENCE_LIMIT]
+    profile = (
+        UserProfile.objects.filter(user_id=user_id).first()
+        if include_user_context
+        else None
+    )
+    preferences = (
+        list(
+            UserPreference.objects.filter(user_id=user_id)
+            .order_by("-weight", "-confidence", "id")
+            .values(
+                "preference_type",
+                "preference_value",
+                "polarity",
+                "weight",
+                "confidence",
+            )[: settings.LLM_USER_PREFERENCE_LIMIT]
+        )
+        if include_user_context
+        else []
     )
     preference_payload = [
         {
@@ -288,10 +298,14 @@ def build_llm_application_context(
         if item["polarity"] > 0
     ][:5]
 
-    interactions = list(
-        Interaction.objects.filter(user_id=user_id)
-        .select_related("content")
-        .order_by("-created_at", "-id")[: settings.LLM_USER_INTERACTION_LIMIT]
+    interactions = (
+        list(
+            Interaction.objects.filter(user_id=user_id)
+            .select_related("content")
+            .order_by("-created_at", "-id")[: settings.LLM_USER_INTERACTION_LIMIT]
+        )
+        if include_user_context
+        else []
     )
     interaction_payload = [
         {

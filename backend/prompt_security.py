@@ -34,6 +34,9 @@ _PROMPT_INJECTION_PATTERNS = tuple(
         r"<\s*/?\s*(?:system|developer|assistant)\b",
         r"\[\s*(?:system|developer)\s*\]",
         r"(?:^|\s)(?:system|developer)\s*:\s*",
+        r"\b(?:zdekoduj|odkoduj|decode)\b.{0,80}\bbase64\b.{0,120}\b"
+        r"(?:wykonaj|uruchom|execute|follow)\b",
+        r"\bbase64\b.{0,120}\b(?:wykonaj|uruchom|execute|follow)\b",
     )
 )
 _SENSITIVE_DATA_REQUEST_PATTERNS = tuple(
@@ -52,6 +55,28 @@ _SENSITIVE_DATA_REQUEST_PATTERNS = tuple(
         r"psql|pg_dump)\b",
         r"\b(?:hasło|password|secret|token|api key|klucz api)\b.{0,80}\b"
         r"(?:użytkownik\w*|user\w*|baz\w*|database|postgres\w*|redis\w*)\b",
+        r"\b(?:podaj|pokaż|wypisz|zacytuj|opisz|ujawnij|wymień|zwróć)\b"
+        r".{0,120}\b(?:pełn\w* informacj\w*|informacj\w* przechowywan\w*|"
+        r"profil\w* użytkownik\w*|profil\w* konta|ostatni\w* aktywnoś\w*|"
+        r"ostatni\w* interakcj\w*|histori\w* oglądania)\b",
+        r"\b(?:co|jakie informacj\w*)\b.{0,80}\b(?:system|aplikacj\w*)\b"
+        r".{0,80}\b(?:wie|przechowuje|pamięta)\b.{0,60}\b(?:o mnie|o użytkowniku)\b",
+        r"\b(?:co|wszystko)\b.{0,80}\b(?:pamiętasz|wiesz|przechowujesz)\b"
+        r".{0,50}\b(?:o mnie|o użytkownik\w*)\b",
+        r"\b(?:co|wszystko)\b.{0,50}\b(?:o mnie|o użytkownik\w*)\b"
+        r".{0,50}\b(?:pamiętasz|wiesz|przechowujesz)\b",
+        r"\b(?:pokaż|podaj|opisz|wypisz|zacytuj|streść)\b.{0,60}\b"
+        r"(?:mój|moje|moich|użytkownik\w*)\b.{0,40}\b"
+        r"(?:profil\w*|preferencj\w*|aktywnoś\w*|interakcj\w*|histori\w*)\b",
+        r"\bjakie\b.{0,40}\b(?:mam|są moje|moje)\b.{0,40}\b"
+        r"(?:preferencj\w*|aktywnoś\w*|interakcj\w*|dane)\b",
+        r"\b(?:techniczn\w*|wewnętrzn\w*|bazodanow\w*)\b.{0,40}\b"
+        r"(?:id|identyfikator\w*)\b.{0,80}\b(?:kandydat\w*|film\w*|"
+        r"serial\w*|tytuł\w*)\b",
+        r"\b(?:id|identyfikator\w*)\b.{0,80}\b(?:wszystk\w*|rozważan\w*)\b"
+        r".{0,80}\b(?:kandydat\w*|film\w*|serial\w*|tytuł\w*)\b",
+        r"\b(?:film\w*|serial\w*|tytuł\w*|kandydat\w*|rekomendacj\w*|poleć\w*)\b"
+        r".{0,120}\b(?:id|identyfikator\w*|numer\w* rekord\w*)\b",
     )
 )
 _PROTECTED_OUTPUT_MARKERS = (
@@ -77,6 +102,21 @@ _PROTECTED_OUTPUT_PATTERNS = (
                r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
                r"(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+\b"),
     re.compile(r"\b(?:select\s+.+\s+from|insert\s+into|drop\s+table)\b"),
+    re.compile(r"\b(?:content_id|tmdb_id|candidate_id|id)\s*(?::|=|#)?\s*\d+\b"),
+    re.compile(
+        r"\b(?:techniczn\w*|wewnętrzn\w*|bazodanow\w*)\s+"
+        r"identyfikator\w*.{0,30}\b\d+\b"
+    ),
+    re.compile(r"\boto\s+(?:pełn\w*\s+)?informacj\w*\s+o\s+użytkownik\w*\b"),
+    re.compile(r"\bostatnio\s+(?:oglądał|obejrzał|polubił)\b"),
+)
+
+_RECOMMENDATION_SCOPE_PATTERN = re.compile(
+    r"\b(?:film\w*|serial\w*|kino|kinow\w*|seans\w*|obejrz\w*|poleć\w*|"
+    r"rekomend\w*|tytuł\w*|gatun\w*|thriller\w*|horror\w*|komedi\w*|"
+    r"dramat\w*|kryminał\w*|romans\w*|sci[\s-]?fi|science[\s-]?fiction|"
+    r"fantasy|western\w*|anime|animac\w*|dokument\w*|akcj\w*|przygod\w*|"
+    r"fabuł\w*|reżyser\w*|aktor\w*|odcink\w*|sezon\w*|ekranizac\w*)\b"
 )
 
 
@@ -103,6 +143,10 @@ def contains_protected_model_output(value: str) -> bool:
     return any(marker in normalized for marker in _PROTECTED_OUTPUT_MARKERS) or any(
         pattern.search(normalized) for pattern in _PROTECTED_OUTPUT_PATTERNS
     )
+
+
+def has_recommendation_scope(value: str) -> bool:
+    return bool(_RECOMMENDATION_SCOPE_PATTERN.search(normalize_security_text(value)))
 
 
 def sanitize_untrusted_history(

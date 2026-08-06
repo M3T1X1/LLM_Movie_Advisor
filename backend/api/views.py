@@ -42,6 +42,7 @@ from backend.prompt_security import (
     contains_prompt_injection,
     contains_protected_model_output,
     contains_sensitive_data_request,
+    has_recommendation_scope,
     sanitize_untrusted_history,
     serialize_untrusted_history,
 )
@@ -492,6 +493,10 @@ def stateless_chat(request: HttpRequest) -> JsonResponse:
     sanitized_history = sanitize_untrusted_history(history)
     if len(sanitized_history) != len(history):
         logger.warning("Unsafe or failed entries removed from client chat history.")
+    recommendation_scope = has_recommendation_scope(prompt) or any(
+        has_recommendation_scope(item["content"])
+        for item in sanitized_history
+    )
 
     try:
         if not has_configured_movie_preferences(request.user):
@@ -524,6 +529,7 @@ def stateless_chat(request: HttpRequest) -> JsonResponse:
             request.user,
             prompt,
             embedding_client,
+            include_user_context=recommendation_scope,
         )
         model_messages = [
             {"role": "system", "content": CHAT_SYSTEM_PROMPT},
@@ -562,6 +568,8 @@ def stateless_chat(request: HttpRequest) -> JsonResponse:
             response.content,
             application_context.candidate_ids,
         )
+        if not recommendation_scope:
+            selected_recommendations = []
         selected_ids = [
             item["content_id"] for item in selected_recommendations
         ]
@@ -601,7 +609,14 @@ def stateless_chat(request: HttpRequest) -> JsonResponse:
             status=502,
         )
 
-    if contains_protected_model_output(response_content):
+    protected_recommendation_output = any(
+        contains_protected_model_output(item["explanation"])
+        for item in recommendations
+    )
+    if (
+        contains_protected_model_output(response_content)
+        or protected_recommendation_output
+    ):
         logger.warning("Protected prompt or context blocked in model output.")
         response_content = PROTECTED_OUTPUT_REPLACEMENT
         recommendations = []

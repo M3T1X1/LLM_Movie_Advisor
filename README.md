@@ -1137,8 +1137,11 @@ The application implements:
 - frontend XSS tests and React's safe rendering behavior;
 - input guards for common prompt-injection and sensitive-data requests;
 - sanitization of untrusted chat history before it reaches the model;
+- omission of profile, preference, and interaction context when the current
+  conversation has no explicit movie or recommendation scope;
 - output guards that replace responses containing protected prompt, context,
-  account, or database markers;
+  account, database, or technical catalog-identifier markers, including card
+  explanations;
 - system instructions that keep catalog, profile, and conversation content in
   an explicitly untrusted data boundary.
 
