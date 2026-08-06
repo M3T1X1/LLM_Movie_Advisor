@@ -52,7 +52,7 @@ describe('ConversationManager', () => {
     expect(onRename).toHaveBeenCalledWith('1', 'Thrillery na weekend');
   });
 
-  it('requires confirmation before deleting a conversation', async () => {
+  it('deletes a conversation with one trash-button click', async () => {
     const user = userEvent.setup();
     const onDelete = vi.fn();
 
@@ -68,11 +68,9 @@ describe('ConversationManager', () => {
     );
 
     await user.click(screen.getByRole('button', { name: /Usuń rozmowę:/ }));
-    expect(screen.getByText('Usunąć rozmowę i jej wiadomości?')).toBeInTheDocument();
-    expect(onDelete).not.toHaveBeenCalled();
-
-    await user.click(screen.getByRole('button', { name: 'Usuń' }));
+    expect(onDelete).toHaveBeenCalledOnce();
     expect(onDelete).toHaveBeenCalledWith('1');
+    expect(screen.queryByText('Usunąć rozmowę i jej wiadomości?')).not.toBeInTheDocument();
   });
 
   it('shows an empty state without conversations', () => {
@@ -117,10 +115,9 @@ describe('ConversationManager', () => {
     );
   });
 
-  it('cancels renaming and deletion without calling mutations', async () => {
+  it('cancels renaming without calling the mutation', async () => {
     const user = userEvent.setup();
     const onRename = vi.fn();
-    const onDelete = vi.fn();
     render(
       <ConversationManager
         conversations={[demoConversations[0]]}
@@ -128,7 +125,7 @@ describe('ConversationManager', () => {
         onCreate={vi.fn()}
         onSelect={vi.fn()}
         onRename={onRename}
-        onDelete={onDelete}
+        onDelete={vi.fn()}
       />,
     );
 
@@ -136,11 +133,6 @@ describe('ConversationManager', () => {
     await user.click(screen.getByRole('button', { name: 'Anuluj zmianę nazwy' }));
     expect(screen.queryByLabelText('Nazwa rozmowy')).not.toBeInTheDocument();
     expect(onRename).not.toHaveBeenCalled();
-
-    await user.click(screen.getByRole('button', { name: /Usuń rozmowę:/ }));
-    await user.click(screen.getByRole('button', { name: 'Anuluj' }));
-    expect(screen.queryByText('Usunąć rozmowę i jej wiadomości?')).not.toBeInTheDocument();
-    expect(onDelete).not.toHaveBeenCalled();
   });
 
   it('disables conversation mutations while processing', () => {

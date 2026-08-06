@@ -1,4 +1,4 @@
-import { Check, MessageSquareText, Pencil, Plus, Trash2, X } from 'lucide-react';
+import { Check, LoaderCircle, MessageSquareText, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import type { Conversation, DatabaseId } from '../types';
 
@@ -9,7 +9,7 @@ interface ConversationManagerProps {
   onCreate: () => void;
   onSelect: (conversationId: DatabaseId) => void;
   onRename: (conversationId: DatabaseId, title: string) => void;
-  onDelete: (conversationId: DatabaseId) => void;
+  onDelete: (conversationId: DatabaseId) => Promise<void> | void;
 }
 
 function formatConversationDate(date: string) {
@@ -32,14 +32,13 @@ export function ConversationManager({
 }: ConversationManagerProps) {
   const [renamedConversationId, setRenamedConversationId] = useState<DatabaseId | null>(null);
   const [title, setTitle] = useState('');
-  const [deletedConversationId, setDeletedConversationId] = useState<DatabaseId | null>(null);
+  const [deletingConversationId, setDeletingConversationId] = useState<DatabaseId | null>(null);
   const orderedConversations = [...conversations].sort(
     (first, second) =>
       new Date(second.updatedAt).getTime() - new Date(first.updatedAt).getTime(),
   );
 
   const startRenaming = (conversation: Conversation) => {
-    setDeletedConversationId(null);
     setRenamedConversationId(conversation.id);
     setTitle(conversation.title ?? '');
   };
@@ -56,10 +55,14 @@ export function ConversationManager({
     cancelRenaming();
   };
 
-  const confirmDelete = (conversationId: DatabaseId) => {
-    onDelete(conversationId);
-    setDeletedConversationId(null);
-    if (renamedConversationId === conversationId) cancelRenaming();
+  const deleteConversation = async (conversationId: DatabaseId) => {
+    if (deletingConversationId) return;
+    setDeletingConversationId(conversationId);
+    try {
+      await onDelete(conversationId);
+    } finally {
+      setDeletingConversationId(null);
+    }
   };
 
   return (
@@ -86,7 +89,7 @@ export function ConversationManager({
           {orderedConversations.map((conversation) => {
             const isActive = conversation.id === currentConversationId;
             const isRenaming = conversation.id === renamedConversationId;
-            const isDeleting = conversation.id === deletedConversationId;
+            const isDeleting = conversation.id === deletingConversationId;
 
             if (isRenaming) {
               return (
@@ -163,39 +166,18 @@ export function ConversationManager({
                   </button>
                   <button
                     type="button"
-                    onClick={() => {
-                      setRenamedConversationId(null);
-                      setDeletedConversationId(conversation.id);
-                    }}
-                    disabled={disabled}
+                    onClick={() => void deleteConversation(conversation.id)}
+                    disabled={disabled || deletingConversationId !== null}
                     className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-slate-700 transition hover:bg-red-500/10 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-40"
                     aria-label={`Usuń rozmowę: ${conversation.title ?? 'Nowa rozmowa'}`}
                   >
-                    <Trash2 className="h-3 w-3" />
+                    {isDeleting ? (
+                      <LoaderCircle className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <Trash2 className="h-3 w-3" />
+                    )}
                   </button>
                 </div>
-
-                {isDeleting && (
-                  <div className="border-t border-white/[0.06] px-2.5 py-2">
-                    <p className="text-[10px] leading-4 text-slate-500">Usunąć rozmowę i jej wiadomości?</p>
-                    <div className="mt-2 flex justify-end gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setDeletedConversationId(null)}
-                        className="text-[10px] text-slate-500 transition hover:text-white"
-                      >
-                        Anuluj
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => confirmDelete(conversation.id)}
-                        className="rounded bg-red-500/15 px-2 py-1 text-[10px] font-medium text-red-300 transition hover:bg-red-500/25"
-                      >
-                        Usuń
-                      </button>
-                    </div>
-                  </div>
-                )}
               </div>
             );
           })}
