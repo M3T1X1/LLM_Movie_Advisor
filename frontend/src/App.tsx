@@ -9,6 +9,7 @@ import { LoginView } from './components/LoginView';
 import { MovieDetailModal } from './components/MovieDetailModal';
 import { Navbar } from './components/Navbar';
 import { ProfileView } from './components/ProfileView';
+import { RecommendationCard } from './components/RecommendationCard';
 import { RegisterView } from './components/RegisterView';
 import { TrendsView } from './components/TrendsView';
 import { TasteOnboardingPanel } from './components/TasteOnboardingPanel';
@@ -18,7 +19,7 @@ import {
   useSession,
 } from './context/SessionContext';
 import { getCatalogContent, getContentByIds } from './services/api';
-import type { AppView, CatalogPage, CatalogQuery, Content } from './types';
+import type { AppView, CatalogPage, CatalogQuery, Content, RunCandidate } from './types';
 
 const initialCatalogQuery: CatalogQuery = {
   page: 1,
@@ -100,6 +101,7 @@ export default function App() {
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [upcomingContent, setUpcomingContent] = useState<Content[]>([]);
   const [selectedCatalogContent, setSelectedCatalogContent] = useState<Content | null>(null);
+  const [selectedRecommendation, setSelectedRecommendation] = useState<RunCandidate | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
 
   useEffect(() => {
@@ -213,11 +215,13 @@ export default function App() {
   const handleCreateConversation = async () => {
     await createConversation();
     setSelectedCatalogContent(null);
+    setSelectedRecommendation(null);
   };
 
   const handleSelectConversation = (conversationId: string) => {
     selectConversation(conversationId);
     setSelectedCatalogContent(null);
+    setSelectedRecommendation(null);
   };
 
   const handleDeleteConversation = async (conversationId: string) => {
@@ -226,7 +230,22 @@ export default function App() {
 
   const handleOpenCatalogContent = (content: Content) => {
     setSelectedCatalogContent(content);
+    setSelectedRecommendation(null);
     void storeInteraction(content.id, null, 'details_opened').catch(() => undefined);
+  };
+
+  const handleOpenRecommendation = (candidate: RunCandidate) => {
+    setSelectedCatalogContent(candidate.content);
+    setSelectedRecommendation(candidate);
+    void storeInteraction(candidate.content.id, null, 'details_opened').catch(() => undefined);
+  };
+
+  const handleRecommendationWatchlist = (candidate: RunCandidate) => {
+    handleCatalogWatchlist(candidate.content);
+  };
+
+  const handleRecommendationWatched = (candidate: RunCandidate) => {
+    handleCatalogWatched(candidate.content);
   };
 
   const handleCatalogWatchlist = (content: Content) => {
@@ -245,19 +264,37 @@ export default function App() {
     void storeInteraction(content.id, null, 'watched').catch(() => undefined);
   };
 
-  const availableContent = [
-    ...knownCatalogContent,
-    ...upcomingContent.filter(
-      (upcomingItem) => !knownCatalogContent.some((catalogItem) => catalogItem.id === upcomingItem.id),
-    ),
-  ];
+  const recommendedContent = messages.flatMap((message) =>
+    (message.recommendations ?? []).map((recommendation) => recommendation.content),
+  );
+  const availableContent = Array.from(
+    new Map(
+      [...knownCatalogContent, ...upcomingContent, ...recommendedContent].map((content) => [
+        content.id,
+        content,
+      ]),
+    ).values(),
+  );
   const savedContent = availableContent.filter((content) =>
     watchlistedContentIds.includes(content.id),
   );
   const selectedContent = selectedCatalogContent;
+  const chatConversationId =
+    currentConversationId ?? TRANSIENT_CHAT_CONVERSATION_ID;
+  const currentChatMessages = messages.filter(
+    (message) => message.conversationId === chatConversationId,
+  );
+  const currentRecommendations =
+    [...currentChatMessages]
+      .reverse()
+      .find(
+        (message) =>
+          message.role === 'assistant' && message.recommendations !== undefined,
+      )?.recommendations ?? [];
 
   const handleCloseDetails = () => {
     setSelectedCatalogContent(null);
+    setSelectedRecommendation(null);
   };
 
   const handleModalWatchlist = () => {
@@ -426,11 +463,7 @@ export default function App() {
 
                 <div className="grid min-w-0 items-start gap-6 2xl:grid-cols-[minmax(500px,1.08fr)_minmax(420px,0.92fr)]">
                   <ChatInterface
-                    messages={messages.filter(
-                      (message) =>
-                        message.conversationId ===
-                        (currentConversationId ?? TRANSIENT_CHAT_CONVERSATION_ID),
-                    )}
+                    messages={currentChatMessages}
                     agentSteps={[]}
                     isProcessing={isProcessing}
                     onSubmit={handlePrompt}
@@ -440,13 +473,43 @@ export default function App() {
                     aria-labelledby="recommendations-title"
                     className="flex min-h-[680px] flex-col 2xl:h-[calc(100vh-6rem)] 2xl:min-h-[700px]"
                   >
+                    <div className="mb-3 flex items-end justify-between border-b border-white/[0.1] pb-3">
+                      <div>
+                        <p className="text-[9px] font-semibold uppercase tracking-[0.16em] text-violet-400">
+                          Wynik doradcy
+                        </p>
+                        <h2 id="recommendations-title" className="mt-1 text-lg text-slate-100">
+                          Polecane tytuły
+                        </h2>
+                      </div>
+                      {currentRecommendations.length > 0 && (
+                        <span className="text-[10px] text-slate-600">
+                          {currentRecommendations.length}
+                        </span>
+                      )}
+                    </div>
                     <div
-                      className={`min-h-0 flex-1 transition-opacity duration-300 ${
+                      className={`min-h-0 flex-1 overflow-y-auto transition-opacity duration-300 [scrollbar-color:rgba(148,163,184,0.16)_transparent] ${
                         isProcessing ? 'opacity-50' : 'opacity-100'
                       }`}
                       aria-live="polite"
                     >
-                      <RecommendationEmptyState isProcessing={isProcessing} />
+                      {currentRecommendations.length > 0 ? (
+                        currentRecommendations.map((candidate, index) => (
+                          <RecommendationCard
+                            key={candidate.id}
+                            candidate={candidate}
+                            index={index}
+                            isWatchlisted={watchlistedContentIds.includes(candidate.content.id)}
+                            isWatched={watchedContentIds.includes(candidate.content.id)}
+                            onOpen={handleOpenRecommendation}
+                            onWatchlist={handleRecommendationWatchlist}
+                            onMarkWatched={handleRecommendationWatched}
+                          />
+                        ))
+                      ) : (
+                        <RecommendationEmptyState isProcessing={isProcessing} />
+                      )}
                     </div>
                   </section>
                 </div>
@@ -458,7 +521,7 @@ export default function App() {
 
       <MovieDetailModal
         content={selectedContent}
-        recommendation={null}
+        recommendation={selectedRecommendation}
         isWatchlisted={selectedContent ? watchlistedContentIds.includes(selectedContent.id) : false}
         isWatched={selectedContent ? watchedContentIds.includes(selectedContent.id) : false}
         onClose={handleCloseDetails}
@@ -495,12 +558,12 @@ function RecommendationEmptyState({ isProcessing }: { isProcessing: boolean }) {
       <Sparkles className={`mb-3 h-5 w-5 ${isProcessing ? 'animate-pulse text-violet-400' : 'text-slate-700'}`} />
       <p className="text-xs font-medium text-slate-400">
         {isProcessing ? 'Model przygotowuje odpowiedź…'
-            : 'Karty rekomendacji nie są jeszcze aktywne'}
+            : 'Rekomendacje pojawią się tutaj'}
       </p>
       <p className="mt-2 max-w-xs text-[10px] leading-5 text-slate-600">
         {isProcessing
-          ? 'Prompt jest przetwarzany przez lokalną Ollamę i nie trafia do historii w PostgreSQL.'
-          : 'Czat odpowiada już przez lokalny model. W kolejnym etapie pojawi się lista tytułów z katalogu.'}
+          ? 'Lokalny model analizuje prośbę i wybiera pasujące tytuły z katalogu.'
+          : 'Opisz w czacie nastrój, gatunek lub rodzaj historii, której szukasz.'}
       </p>
     </div>
   );

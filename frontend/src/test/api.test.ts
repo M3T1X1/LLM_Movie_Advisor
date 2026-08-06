@@ -111,6 +111,14 @@ describe('backend API service', () => {
 
     expect(response).toMatchObject({
       message: 'Wstępna odpowiedź modelu na: Poleć thriller',
+      recommendations: [
+        expect.objectContaining({
+          rank: 1,
+          content: expect.objectContaining({ title: 'Zaginiona dziewczyna' }),
+        }),
+        expect.any(Object),
+        expect.any(Object),
+      ],
       model: 'llama3.1:8b',
     });
     const fetchMock = vi.mocked(fetch);

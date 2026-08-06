@@ -230,13 +230,30 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
     try {
       const response = await requestStatelessChat(content, history);
+      const assistantMessageId = transientMessageId();
       const assistantMessage: ChatMessage = {
-        id: transientMessageId(),
+        id: assistantMessageId,
         conversationId,
         role: 'assistant',
         content: response.message,
         sequenceNo: nextSequence + 1,
         createdAt: new Date().toISOString(),
+        recommendations: (response.recommendations ?? []).map((recommendation) => ({
+          id: `${assistantMessageId}-recommendation-${recommendation.rank}`,
+          runId: '',
+          contentId: recommendation.content.id,
+          sourceRank: recommendation.rank,
+          relevanceScore: null,
+          criticScore: null,
+          finalScore: null,
+          status: 'selected',
+          finalRank: recommendation.rank,
+          decisionReason: null,
+          explanation: recommendation.explanation,
+          metadataSnapshot: {},
+          createdAt: new Date().toISOString(),
+          content: recommendation.content,
+        })),
       };
       setSession((current) => ({
         ...current,
@@ -255,6 +272,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         content: `Nie udało się uzyskać odpowiedzi: ${detail}`,
         sequenceNo: nextSequence + 1,
         createdAt: new Date().toISOString(),
+        recommendations: [],
       };
       setSession((current) => ({
         ...current,

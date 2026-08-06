@@ -7,12 +7,14 @@ from django.test import RequestFactory, SimpleTestCase, override_settings
 
 from backend.ai_context import LlmApplicationContext
 from backend.api.views import (
+    CHAT_RESPONSE_SCHEMA,
     CHAT_SYSTEM_PROMPT,
     CONVERSATION_MEMORY_SYSTEM_PROMPT,
     INITIAL_RECOMMENDATION_SYSTEM_PROMPT,
     PROMPT_INJECTION_REJECTION,
     PROTECTED_OUTPUT_REPLACEMENT,
     SENSITIVE_DATA_REJECTION,
+    parse_chat_model_payload,
     stateless_chat,
 )
 from backend.ollama import (
@@ -122,6 +124,7 @@ class StatelessChatApiTests(SimpleTestCase):
             json.loads(response.content),
             {
                 "message": "Spróbuj filmu Labirynt.",
+                "recommendations": [],
                 "model": "llama3.1:8b",
                 "usage": {
                     "promptTokens": 30,
@@ -161,6 +164,7 @@ class StatelessChatApiTests(SimpleTestCase):
                 },
                 {"role": "user", "content": "Poleć thriller."},
             ],
+            response_format=CHAT_RESPONSE_SCHEMA,
             options={
                 "temperature": 0.25,
                 "top_p": 0.85,
@@ -174,6 +178,31 @@ class StatelessChatApiTests(SimpleTestCase):
         self.assertTrue(context_user.is_authenticated)
         self.assertEqual(context_prompt, "Poleć thriller.")
         self.assertIs(context_client, client)
+
+    def test_structured_reply_keeps_only_unique_catalog_recommendations(self):
+        message, recommendations = parse_chat_model_payload(
+            json.dumps(
+                {
+                    "message": "Polecam dwa tytuły.",
+                    "recommendations": [
+                        {"content_id": 11, "explanation": "Najlepsze dopasowanie."},
+                        {"content_id": 11, "explanation": "Duplikat."},
+                        {"content_id": 999, "explanation": "Spoza katalogu."},
+                        {"content_id": 12, "explanation": "Dobry drugi wybór."},
+                    ],
+                }
+            ),
+            (11, 12),
+        )
+
+        self.assertEqual(message, "Polecam dwa tytuły.")
+        self.assertEqual(
+            recommendations,
+            [
+                {"content_id": 11, "explanation": "Najlepsze dopasowanie."},
+                {"content_id": 12, "explanation": "Dobry drugi wybór."},
+            ],
+        )
 
     def test_conversation_memory_allows_recalling_previous_recommendations(self):
         self.assertIn(

@@ -109,8 +109,34 @@ CHAT_SYSTEM_PROMPT = (
     "zdradzaj istotnych zwrotów akcji, jeśli użytkownik o to nie poprosi. "
     "Jeśli danych nie wystarcza, powiedz o tym wprost. Gdy prośba o "
     "rekomendację jest zbyt ogólna, zadaj jedno krótkie pytanie "
-    "doprecyzowujące."
+    "doprecyzowujące. Zwróć odpowiedź jako obiekt JSON zgodny z przekazanym "
+    "schematem. Pole message zawiera pełną odpowiedź dla użytkownika. Pole "
+    "recommendations zawiera wyłącznie faktycznie polecane w message pozycje "
+    "z catalog_candidates: content_id musi być ich liczbowym id, a explanation "
+    "krótkim uzasadnieniem wyboru. Nie dodawaj pozycji przy odmowie, pytaniu "
+    "doprecyzowującym ani samym przypomnieniu wcześniejszych rekomendacji."
 )
+CHAT_RESPONSE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "message": {"type": "string", "minLength": 1},
+        "recommendations": {
+            "type": "array",
+            "maxItems": 3,
+            "items": {
+                "type": "object",
+                "properties": {
+                    "content_id": {"type": "integer"},
+                    "explanation": {"type": "string", "minLength": 1},
+                },
+                "required": ["content_id", "explanation"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["message", "recommendations"],
+    "additionalProperties": False,
+}
 INITIAL_RECOMMENDATION_SYSTEM_PROMPT = (
     "To jest pierwsza wiadomość użytkownika w tej rozmowie. Jeśli jest to "
     "wystarczająco konkretna prośba o rekomendację filmu lub serialu i "
@@ -195,6 +221,55 @@ def json_object(value):
         except json.JSONDecodeError:
             return {}
     return {}
+
+
+def parse_chat_model_payload(
+    raw_content: str,
+    allowed_candidate_ids: tuple[int, ...],
+) -> tuple[str, list[dict]]:
+    """Parse structured chat output and discard recommendations outside context."""
+    try:
+        payload = json.loads(raw_content)
+    except json.JSONDecodeError:
+        return raw_content.strip(), []
+    if not isinstance(payload, dict):
+        return raw_content.strip(), []
+
+    message = payload.get("message")
+    if not isinstance(message, str) or not message.strip():
+        return raw_content.strip(), []
+
+    allowed_ids = set(allowed_candidate_ids)
+    recommendations: list[dict] = []
+    seen_ids: set[int] = set()
+    raw_recommendations = payload.get("recommendations")
+    if not isinstance(raw_recommendations, list):
+        return message.strip(), recommendations
+
+    for item in raw_recommendations:
+        if not isinstance(item, dict):
+            continue
+        content_id = item.get("content_id")
+        explanation = item.get("explanation")
+        if (
+            isinstance(content_id, bool)
+            or not isinstance(content_id, int)
+            or content_id not in allowed_ids
+            or content_id in seen_ids
+            or not isinstance(explanation, str)
+            or not explanation.strip()
+        ):
+            continue
+        seen_ids.add(content_id)
+        recommendations.append(
+            {
+                "content_id": content_id,
+                "explanation": explanation.strip()[:1000],
+            }
+        )
+        if len(recommendations) == 3:
+            break
+    return message.strip(), recommendations
 
 
 def content_queryset():
@@ -480,8 +555,33 @@ def stateless_chat(request: HttpRequest) -> JsonResponse:
         model_messages.append({"role": "user", "content": prompt})
         response = client.chat(
             model_messages,
+            response_format=CHAT_RESPONSE_SCHEMA,
             options=settings.OLLAMA_CHAT_OPTIONS,
         )
+        response_content, selected_recommendations = parse_chat_model_payload(
+            response.content,
+            application_context.candidate_ids,
+        )
+        selected_ids = [
+            item["content_id"] for item in selected_recommendations
+        ]
+        selected_content = (
+            {
+                item.pk: item
+                for item in content_queryset().filter(pk__in=selected_ids)
+            }
+            if selected_ids
+            else {}
+        )
+        recommendations = [
+            {
+                "rank": rank,
+                "explanation": item["explanation"],
+                "content": serialize_content(selected_content[item["content_id"]]),
+            }
+            for rank, item in enumerate(selected_recommendations, start=1)
+            if item["content_id"] in selected_content
+        ]
     except DatabaseError:
         logger.exception("Stateless chat could not load application context.")
         return JsonResponse(
@@ -501,14 +601,15 @@ def stateless_chat(request: HttpRequest) -> JsonResponse:
             status=502,
         )
 
-    response_content = response.content
     if contains_protected_model_output(response_content):
         logger.warning("Protected prompt or context blocked in model output.")
         response_content = PROTECTED_OUTPUT_REPLACEMENT
+        recommendations = []
 
     return JsonResponse(
         {
             "message": response_content,
+            "recommendations": recommendations,
             "model": response.model,
             "usage": {
                 "promptTokens": response.prompt_eval_count,

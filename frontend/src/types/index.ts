@@ -82,10 +82,12 @@ export interface ChatMessage {
   content: string;
   sequenceNo: number;
   createdAt: string;
+  recommendations?: RunCandidate[];
 }
 
 export interface StatelessChatResponse {
   message: string;
+  recommendations: StatelessChatRecommendation[];
   model: string;
   usage: {
     promptTokens: number | null;
@@ -150,6 +152,12 @@ export interface Content {
   metadata: ContentMetadata;
   tmdbRefreshedAt: string | null;
   genres: Genre[];
+}
+
+export interface StatelessChatRecommendation {
+  rank: number;
+  explanation: string;
+  content: Content;
 }
 
 export type CatalogMediaFilter = 'all' | MediaType;

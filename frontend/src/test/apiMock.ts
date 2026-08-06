@@ -55,6 +55,11 @@ export function installApiMock() {
     if (path === '/api/chat/' && method === 'POST') {
       return json({
         message: `Wstępna odpowiedź modelu na: ${body.message}`,
+        recommendations: demoCatalogContent.slice(0, 3).map((content, index) => ({
+          rank: index + 1,
+          explanation: `Pasuje do zapytania: ${body.message}`,
+          content,
+        })),
         model: 'llama3.1:8b',
         usage: {
           promptTokens: 24,

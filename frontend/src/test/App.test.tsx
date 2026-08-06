@@ -45,10 +45,10 @@ describe('App routing', () => {
     expect(screen.getByRole('heading', { name: 'Dzień dobry, kacper' })).toBeInTheDocument();
   });
 
-  it('clearly reports that recommendations are not active yet', async () => {
+  it('shows where recommendations will appear before the first prompt', async () => {
     renderApp('/recommendations');
     expect(
-      await screen.findByText('Karty rekomendacji nie są jeszcze aktywne'),
+      await screen.findByText('Rekomendacje pojawią się tutaj'),
     ).toBeInTheDocument();
     expect(screen.queryByText('96%')).not.toBeInTheDocument();
   });
@@ -149,9 +149,8 @@ describe('App routing', () => {
         'Wstępna odpowiedź modelu na: Lekki serial na dwa wieczory',
       ),
     ).toBeInTheDocument();
-    expect(
-      screen.getByText('Karty rekomendacji nie są jeszcze aktywne'),
-    ).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Polecane tytuły' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Zaginiona dziewczyna' })).toBeInTheDocument();
     expect(screen.queryByText('96%')).not.toBeInTheDocument();
 
     const fetchMock = vi.mocked(fetch);

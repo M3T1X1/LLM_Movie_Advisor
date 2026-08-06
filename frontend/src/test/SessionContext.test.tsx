@@ -102,6 +102,12 @@ describe('SessionContext backend integration', () => {
         expect.objectContaining({
           role: 'assistant',
           content: 'Wstępna odpowiedź modelu na: Poleć lekki serial',
+          recommendations: expect.arrayContaining([
+            expect.objectContaining({
+              finalRank: 1,
+              content: expect.objectContaining({ title: 'Zaginiona dziewczyna' }),
+            }),
+          ]),
         }),
       ]),
     );

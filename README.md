@@ -17,7 +17,8 @@ the local model through Django. Django grounds the model with catalog, profile,
 preference, and interaction data from PostgreSQL and caches catalog candidates
 in Redis. Semantic catalog retrieval is implemented with Ollama embeddings and
 PostgreSQL/pgvector, with keyword search as a fallback. A live structured
-recommendation pipeline and recommendation agents are not yet implemented.
+multi-agent pipeline is not implemented; one LLM returns a validated structured
+selection that the frontend renders as catalog-backed recommendation cards.
 
 ## Application screenshots
 
@@ -484,7 +485,10 @@ the query with Ollama and retrieves a bounded candidate list through pgvector
 cosine distance and the HNSW index. Keyword retrieval fills missing results and
 acts as a fallback. Candidate lists are cached in Redis and invalidated through
 the existing catalog version. Redis failures fall back to PostgreSQL. The
-prompt and response remain only in React memory and disappear after a page
+model returns a message plus up to three catalog identifiers and explanations.
+Django discards identifiers outside the supplied candidate context and returns
+the matching catalog records for the recommendation cards. The prompt,
+response, and selected cards remain only in React memory and disappear after a page
 reload; this preliminary flow does not create `message`,
 `recommendation_request`, or `recommendation_run` records.
 
@@ -734,7 +738,7 @@ health endpoint.
 | Method | Endpoint | Purpose |
 |---|---|---|
 | `GET` | `/api/health/` | report PostgreSQL, Redis, Ollama, and model status |
-| `POST` | `/api/chat/` | return a temporary response from the local chat model without database persistence |
+| `POST` | `/api/chat/` | return a temporary model response with validated catalog-backed recommendations |
 | `GET` | `/api/bootstrap/` | return initial data for the signed-in user |
 | `GET` | `/api/contents/` | catalog search, filters, sorting, and pagination |
 | `GET` | `/api/contents/upcoming/` | upcoming movie releases |
@@ -774,7 +778,8 @@ unrelated to the catalog baseline process and the Bootstrap CSS framework.
 
 `RecommendationRequest`, `RecommendationRun`, `RunCandidate`, and
 `AgentExecution` provide persistence for recommendation-related data. The API
-does not execute a recommendation pipeline. The dedicated
+does not execute or persist a recommendation run; `/api/chat/` obtains a
+structured selection directly from one model call. The dedicated
 `POST /api/conversations/:id/messages/` endpoint stores a user message in
 PostgreSQL without fabricating an assistant response. The current React chat
 uses the separate stateless `/api/chat/` endpoint and does not call the
@@ -1214,9 +1219,7 @@ evaluation.
 - no LangChain or LangGraph integration;
 - no automatic semantic-profile updates;
 - recommendation trends depend on stored records, which can be demo data;
-- recommendation and agent-status components have no live pipeline;
-- several frontend tests still expect the removed prompt-suggestion buttons
-  and need to be updated before the frontend suite is green again;
+- agent-status components have no live pipeline;
 - upcoming releases cover movies, not future TV seasons;
 - `catalog-sync` uses a shell loop instead of a scheduler with job history;
 - local Redis has no password;

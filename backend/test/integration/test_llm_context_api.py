@@ -1,3 +1,4 @@
+import json
 from unittest.mock import patch
 
 from django.conf import settings
@@ -98,7 +99,17 @@ class LlmContextApiIntegrationTests(ApiIntegrationTestCase):
             lambda model, available: model in available
         )
         ollama_client.chat.return_value = OllamaChatResponse(
-            content="Polecam Mroczny Labirynt.",
+            content=json.dumps(
+                {
+                    "message": "Polecam Mroczny Labirynt.",
+                    "recommendations": [
+                        {
+                            "content_id": content_id,
+                            "explanation": "Mroczny thriller zgodny z prośbą.",
+                        }
+                    ],
+                }
+            ),
             model="llama3.1:8b",
             done_reason="stop",
             total_duration_ns=100,
@@ -115,6 +126,28 @@ class LlmContextApiIntegrationTests(ApiIntegrationTestCase):
         context_message = first_messages[1]["content"]
 
         self.assertEqual(first_response.status_code, 200)
+        recommendations = first_response.json()["recommendations"]
+        self.assertEqual(len(recommendations), 1)
+        self.assertEqual(recommendations[0]["rank"], 1)
+        self.assertEqual(
+            recommendations[0]["explanation"],
+            "Mroczny thriller zgodny z prośbą.",
+        )
+        self.assertEqual(recommendations[0]["content"]["id"], str(content_id))
+        self.assertEqual(
+            recommendations[0]["content"]["title"],
+            "Mroczny Labirynt",
+        )
+        self.assertEqual(
+            recommendations[0]["content"]["genres"],
+            [
+                {
+                    "id": str(genre.pk),
+                    "tmdbGenreId": 53,
+                    "name": "Thriller",
+                }
+            ],
+        )
         self.assertIn("Mroczny Labirynt", context_message)
         self.assertIn("Thriller", context_message)
         self.assertIn("Unikanie gore", context_message)
