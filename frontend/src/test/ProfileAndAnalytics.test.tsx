@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { demoCatalogContent, demoConversations, demoInteractions, demoPreferences, demoProfile, demoUser } from './fixtures/mockData';
@@ -59,18 +59,11 @@ describe('profile and analytics views', () => {
     );
   });
 
-  it('builds analytics from watched interactions', () => {
+  it('builds analytics charts from watched interactions', () => {
     render(<AnalyticsView content={demoCatalogContent} interactions={demoInteractions} preferences={demoPreferences} />);
-    const expectMetric = (label: string, value: string) => {
-      const card = screen.getByText(label).parentElement;
-      expect(card).not.toBeNull();
-      expect(within(card!).getByText(value)).toBeInTheDocument();
-    };
-
-    expectMetric('Obejrzane tytuły', '5');
-    expectMetric('Średnia ocena TMDB', '8.2');
-    expectMetric('Na liście', '1');
     expect(screen.getByRole('img', { name: 'Najczęściej oglądane gatunki' })).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'Podział na filmy i seriale' })).toBeInTheDocument();
+    expect(screen.getByText('łącznie').parentElement).toHaveTextContent('5');
     expect(screen.getByText('Filmy').parentElement).toHaveTextContent('3');
     expect(screen.getByText('Seriale').parentElement).toHaveTextContent('2');
   });

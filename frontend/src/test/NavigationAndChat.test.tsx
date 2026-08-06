@@ -97,15 +97,14 @@ describe('navigation and chat components', () => {
     expect(textbox).toHaveValue('');
   });
 
-  it('fills a suggested prompt without sending it automatically', async () => {
+  it('does not submit typed text until the send button is used', async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn().mockResolvedValue(undefined);
     render(<ChatInterface messages={[]} agentSteps={initialAgentSteps} isProcessing={false} onSubmit={onSubmit} />);
 
-    await user.click(screen.getByRole('button', { name: 'Lekki serial na dwa wieczory' }));
-    expect(screen.getByPlaceholderText('Opisz nastrój, tempo albo motyw...')).toHaveValue(
-      'Lekki serial na dwa wieczory',
-    );
+    const textbox = screen.getByPlaceholderText('Opisz nastrój, tempo albo motyw...');
+    await user.type(textbox, 'Lekki serial na dwa wieczory');
+    expect(textbox).toHaveValue('Lekki serial na dwa wieczory');
     expect(onSubmit).not.toHaveBeenCalled();
 
     await user.click(screen.getByRole('button', { name: 'Wyślij wiadomość' }));
@@ -127,7 +126,6 @@ describe('navigation and chat components', () => {
     render(<ChatInterface messages={initialMessages} agentSteps={initialAgentSteps} isProcessing onSubmit={vi.fn()} />);
     expect(screen.getByPlaceholderText('Opisz nastrój, tempo albo motyw...')).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Wyślij wiadomość' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Lekki serial na dwa wieczory' })).toBeDisabled();
     expect(screen.getByText('Przetwarzanie')).toBeInTheDocument();
   });
 

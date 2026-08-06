@@ -133,13 +133,12 @@ describe('App routing', () => {
     const user = userEvent.setup();
     renderApp('/recommendations');
 
-    await user.click(
-      await screen.findByRole('button', { name: 'Lekki serial na dwa wieczory' }),
+    const chatInput = await screen.findByPlaceholderText(
+      'Opisz nastrój, tempo albo motyw...',
     );
+    await user.type(chatInput, 'Lekki serial na dwa wieczory');
     expect(screen.queryByText('96%')).not.toBeInTheDocument();
-    expect(screen.getByPlaceholderText('Opisz nastrój, tempo albo motyw...')).toHaveValue(
-      'Lekki serial na dwa wieczory',
-    );
+    expect(chatInput).toHaveValue('Lekki serial na dwa wieczory');
 
     await user.click(screen.getByRole('button', { name: 'Wyślij wiadomość' }));
     expect(

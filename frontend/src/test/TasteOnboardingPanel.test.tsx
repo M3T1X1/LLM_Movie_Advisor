@@ -34,12 +34,13 @@ describe('TasteOnboardingPanel', () => {
 
     await user.click(likesThriller);
     expect(likesThriller).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText('Wybierz jeszcze 2 pozycje, aby kontynuować.')).toBeInTheDocument();
     await user.click(dislikesThriller);
     expect(likesThriller).toHaveAttribute('aria-pressed', 'false');
     expect(dislikesThriller).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByText('1')).toBeInTheDocument();
+    expect(screen.getByText('Wybierz jeszcze 2 pozycje, aby kontynuować.')).toBeInTheDocument();
     await user.click(dislikesThriller);
-    expect(screen.getByText('0')).toBeInTheDocument();
+    expect(screen.getByText('Wybierz jeszcze 3 pozycje, aby kontynuować.')).toBeInTheDocument();
   });
 
   it('requires at least one liked and one disliked choice', async () => {
