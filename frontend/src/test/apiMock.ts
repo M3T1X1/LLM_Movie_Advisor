@@ -183,6 +183,93 @@ export function installApiMock() {
       messages = messages.filter((item) => item.conversationId !== conversationMatch[1]);
       return json(null, 204);
     }
+    const recommendationMatch = path.match(
+      /^\/api\/conversations\/([^/]+)\/recommendations\/$/,
+    );
+    if (recommendationMatch && method === 'POST') {
+      const conversationId = recommendationMatch[1];
+      const nextSequence =
+        Math.max(
+          0,
+          ...messages
+            .filter((item) => item.conversationId === conversationId)
+            .map((item) => item.sequenceNo),
+        ) + 1;
+      const timestamp = new Date().toISOString();
+      const userMessage = {
+        id: `message-${messages.length + 1}`,
+        conversationId,
+        role: 'user' as const,
+        content: body.message,
+        sequenceNo: nextSequence,
+        createdAt: timestamp,
+      };
+      const runId = `run-${messages.length + 1}`;
+      const candidates = demoCatalogContent.slice(0, 3).map((content, index) => ({
+        id: `${runId}-candidate-${index + 1}`,
+        runId,
+        contentId: content.id,
+        sourceRank: index + 1,
+        relevanceScore: 0.9 - index * 0.05,
+        criticScore: 0.8,
+        finalScore: 0.865 - index * 0.03,
+        status: 'selected' as const,
+        finalRank: index + 1,
+        decisionReason: 'Dopasowanie do bieżącej prośby.',
+        explanation: `Pasuje do zapytania: ${body.message}`,
+        metadataSnapshot: {},
+        createdAt: timestamp,
+        content,
+      }));
+      const assistantMessage = {
+        id: `message-${messages.length + 2}`,
+        conversationId,
+        role: 'assistant' as const,
+        content: `Wstępna odpowiedź modelu na: ${body.message}`,
+        sequenceNo: nextSequence + 1,
+        createdAt: timestamp,
+        recommendations: candidates,
+      };
+      messages = [...messages, userMessage, assistantMessage];
+      conversations = conversations.map((conversation) =>
+        conversation.id === conversationId
+          ? {
+              ...conversation,
+              title: conversation.title ?? String(body.message).slice(0, 255),
+              updatedAt: timestamp,
+            }
+          : conversation,
+      );
+      return json(
+        {
+          conversationId,
+          request: {
+            id: `request-${messages.length}`,
+            conversationId,
+            triggerMessageId: userMessage.id,
+            mood: null,
+            extractedContext: {},
+            constraintsData: {},
+            createdAt: timestamp,
+          },
+          run: {
+            id: runId,
+            requestId: `request-${messages.length}`,
+            status: 'completed',
+            graphVersion: 'recommendation-agents-v2',
+            modelName: 'llama3.1:8b',
+            startedAt: timestamp,
+            finishedAt: timestamp,
+          },
+          userMessage,
+          assistantMessage,
+          candidates,
+          detectedPreferences: [],
+          agentExecutions: [],
+        },
+        201,
+      );
+    }
     const messageMatch = path.match(/^\/api\/conversations\/([^/]+)\/messages\/$/);
     if (messageMatch && method === 'POST') {
       const conversationId = messageMatch[1];

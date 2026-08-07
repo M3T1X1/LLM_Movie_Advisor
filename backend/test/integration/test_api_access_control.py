@@ -18,6 +18,13 @@ class ApiAccessControlTests(ApiIntegrationTestCase):
             ("post", reverse("api:interactions")),
             ("post", reverse("api:profile-preferences")),
             ("delete", reverse("api:profile-preferences")),
+            (
+                "post",
+                reverse(
+                    "api:conversation-recommendations",
+                    kwargs={"conversation_id": 1},
+                ),
+            ),
         )
 
         for method, url in protected_requests:
@@ -62,6 +69,13 @@ class ApiAccessControlTests(ApiIntegrationTestCase):
                 "get",
                 reverse(
                     "api:conversation-messages",
+                    kwargs={"conversation_id": conversation_id},
+                ),
+            ),
+            (
+                "get",
+                reverse(
+                    "api:conversation-recommendations",
                     kwargs={"conversation_id": conversation_id},
                 ),
             ),
@@ -122,6 +136,14 @@ class ApiAccessControlTests(ApiIntegrationTestCase):
                     kwargs={"conversation_id": conversation_id},
                 ),
                 {"content": "CSRF"},
+            ),
+            (
+                "post",
+                reverse(
+                    "api:conversation-recommendations",
+                    kwargs={"conversation_id": conversation_id},
+                ),
+                {"message": "Poleć thriller"},
             ),
             (
                 "post",

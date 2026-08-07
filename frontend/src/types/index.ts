@@ -243,6 +243,7 @@ export interface RecommendationResponse {
   conversationId: DatabaseId;
   request: RecommendationRequestRecord;
   run: RecommendationRun;
+  userMessage: ChatMessage;
   assistantMessage: ChatMessage;
   candidates: RunCandidate[];
   detectedPreferences: UserPreference[];

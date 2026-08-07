@@ -81,7 +81,7 @@ describe('SessionContext backend integration', () => {
     expect(result.current.conversations.some((item) => item.id === createdId)).toBe(false);
   });
 
-  it('keeps a prompt and Ollama response only in the current browser session', async () => {
+  it('stores the prompt, agent response and recommendation candidates', async () => {
     const { result } = await renderAuthenticatedSession();
     const conversationId = result.current.currentConversationId!;
 
@@ -91,7 +91,7 @@ describe('SessionContext backend integration', () => {
       result.current.messages.filter(
         (message) =>
           message.conversationId === conversationId &&
-          message.id.startsWith('transient-'),
+          !message.id.startsWith('transient-'),
       ),
     ).toEqual(
       expect.arrayContaining([

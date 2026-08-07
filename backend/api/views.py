@@ -20,6 +20,8 @@ from backend.accounts.services import get_business_user_id, sync_business_user
 from backend.ai_context import build_llm_application_context
 from backend.api.catalog_sync import upsert_catalog
 from backend.api.models import (
+    AgentExecution,
+    CandidateStatus,
     Content,
     Conversation,
     Genre,
@@ -27,6 +29,8 @@ from backend.api.models import (
     InteractionType,
     Message,
     MessageRole,
+    RecommendationRequest,
+    RecommendationRun,
     RunCandidate,
     UserPreference,
     UserProfile,
@@ -53,6 +57,10 @@ from backend.redis import (
     set_cached_catalog_search,
     sync_from_tmdb,
 )
+from backend.recommendation_agents.explanation import ExplanationAgentError
+from backend.recommendation_agents.profiling import ProfilingAgentError
+from backend.recommendation_agents.ranking import RankingAgentError
+from backend.recommendation_agents.service import run_persistent_recommendation
 from backend.tmdb import TmdbClient, normalize_tmdb_item
 
 
@@ -317,8 +325,11 @@ def serialize_conversation(item: Conversation) -> dict:
     }
 
 
-def serialize_message(item: Message) -> dict:
-    return {
+def serialize_message(
+    item: Message,
+    recommendations: list[dict] | None = None,
+) -> dict:
+    payload = {
         "id": str(item.pk),
         "conversationId": str(item.conversation_id),
         "role": item.role,
@@ -326,6 +337,9 @@ def serialize_message(item: Message) -> dict:
         "sequenceNo": item.sequence_no,
         "createdAt": iso(item.created_at),
     }
+    if recommendations is not None:
+        payload["recommendations"] = recommendations
+    return payload
 
 
 def serialize_interaction(item: Interaction) -> dict:
@@ -366,6 +380,72 @@ def serialize_semantic_profile(user_id: int, profile: UserProfile | None) -> dic
         "version": profile.version if profile else 1,
         "lastRebuiltAt": iso(profile.last_rebuilt_at) if profile else None,
         "updatedAt": iso(profile.updated_at) if profile else iso(timezone.now()),
+    }
+
+
+def serialize_recommendation_request(item: RecommendationRequest) -> dict:
+    return {
+        "id": str(item.pk),
+        "conversationId": str(item.conversation_id),
+        "triggerMessageId": (
+            str(item.trigger_message_id) if item.trigger_message_id else None
+        ),
+        "mood": item.mood,
+        "extractedContext": json_object(item.extracted_context),
+        "constraintsData": json_object(item.constraints),
+        "createdAt": iso(item.created_at),
+    }
+
+
+def serialize_recommendation_run(item: RecommendationRun) -> dict:
+    return {
+        "id": str(item.pk),
+        "requestId": str(item.request_id),
+        "status": item.status,
+        "graphVersion": item.graph_version,
+        "modelName": item.model_name,
+        "startedAt": iso(item.started_at),
+        "finishedAt": iso(item.finished_at),
+    }
+
+
+def serialize_run_candidate(item: RunCandidate) -> dict:
+    return {
+        "id": str(item.pk),
+        "runId": str(item.run_id),
+        "contentId": str(item.content_id),
+        "sourceRank": item.source_rank,
+        "relevanceScore": (
+            float(item.relevance_score) if item.relevance_score is not None else None
+        ),
+        "criticScore": (
+            float(item.critic_score) if item.critic_score is not None else None
+        ),
+        "finalScore": (
+            float(item.final_score) if item.final_score is not None else None
+        ),
+        "status": item.status,
+        "finalRank": item.final_rank,
+        "decisionReason": item.decision_reason,
+        "explanation": item.explanation,
+        "metadataSnapshot": json_object(item.metadata_snapshot),
+        "createdAt": iso(item.created_at),
+        "content": serialize_content(item.content),
+    }
+
+
+def serialize_agent_execution(item: AgentExecution) -> dict:
+    return {
+        "id": str(item.pk),
+        "runId": str(item.run_id),
+        "agentType": item.agent_type,
+        "sequenceNo": item.sequence_no,
+        "status": item.status,
+        "inputSnapshot": json_object(item.input_snapshot),
+        "outputSnapshot": json_object(item.output_snapshot),
+        "durationMs": item.duration_ms,
+        "startedAt": iso(item.started_at),
+        "finishedAt": iso(item.finished_at),
     }
 
 
@@ -656,12 +736,66 @@ def bootstrap(request: HttpRequest) -> JsonResponse:
     conversations = list(
         Conversation.objects.filter(user_id=user_id).order_by("-updated_at", "-id")
     )
-    messages = Message.objects.filter(
+    messages = list(Message.objects.filter(
         conversation_id__in=[item.pk for item in conversations]
-    ).order_by("conversation_id", "sequence_no")
+    ).order_by("conversation_id", "sequence_no"))
     interactions = Interaction.objects.filter(user_id=user_id).order_by(
         "created_at", "id"
     )
+    recommendation_requests = list(
+        RecommendationRequest.objects.filter(
+            conversation_id__in=[item.pk for item in conversations]
+        ).order_by("created_at", "id")
+    )
+    recommendation_runs = list(
+        RecommendationRun.objects.filter(
+            request_id__in=[item.pk for item in recommendation_requests]
+        ).order_by("started_at", "id")
+    )
+    run_ids = [item.pk for item in recommendation_runs]
+    candidates = list(
+        RunCandidate.objects.filter(run_id__in=run_ids)
+        .select_related("content")
+        .prefetch_related("content__genres")
+        .order_by("run_id", "final_rank", "source_rank", "id")
+    )
+    agent_executions = list(
+        AgentExecution.objects.filter(run_id__in=run_ids).order_by(
+            "run_id", "sequence_no"
+        )
+    )
+    request_by_id = {item.pk: item for item in recommendation_requests}
+    message_by_position = {
+        (item.conversation_id, item.sequence_no): item for item in messages
+    }
+    recommendations_by_message_id: dict[int, list[dict]] = {}
+    for run in recommendation_runs:
+        recommendation_request = request_by_id.get(run.request_id)
+        trigger = (
+            next(
+                (
+                    item
+                    for item in messages
+                    if item.pk == recommendation_request.trigger_message_id
+                ),
+                None,
+            )
+            if recommendation_request
+            else None
+        )
+        if trigger is None:
+            continue
+        assistant = message_by_position.get(
+            (trigger.conversation_id, trigger.sequence_no + 1)
+        )
+        if assistant is None or assistant.role != MessageRole.ASSISTANT:
+            continue
+        recommendations_by_message_id[assistant.pk] = [
+            serialize_run_candidate(candidate)
+            for candidate in candidates
+            if candidate.run_id == run.pk
+            and candidate.status == CandidateStatus.SELECTED
+        ]
 
     profile_data = serialize_semantic_profile(user_id, profile)
     preference_data = [serialize_preference(item) for item in preferences]
@@ -680,8 +814,27 @@ def bootstrap(request: HttpRequest) -> JsonResponse:
                 "traits": ONBOARDING_TRAIT_OPTIONS,
             },
             "conversations": [serialize_conversation(item) for item in conversations],
-            "messages": [serialize_message(item) for item in messages],
+            "messages": [
+                serialize_message(
+                    item,
+                    recommendations_by_message_id.get(item.pk)
+                    if item.role == MessageRole.ASSISTANT
+                    else None,
+                )
+                for item in messages
+            ],
             "interactions": [serialize_interaction(item) for item in interactions],
+            "recommendationRequests": [
+                serialize_recommendation_request(item)
+                for item in recommendation_requests
+            ],
+            "recommendationRuns": [
+                serialize_recommendation_run(item) for item in recommendation_runs
+            ],
+            "candidates": [serialize_run_candidate(item) for item in candidates],
+            "agentExecutions": [
+                serialize_agent_execution(item) for item in agent_executions
+            ],
         }
     )
 
@@ -932,10 +1085,16 @@ def recommendation_trends(request: HttpRequest) -> JsonResponse:
     if days is None:
         return JsonResponse({"detail": "Invalid trend period."}, status=400)
     since = timezone.now() - timedelta(days=days)
-    candidates = RunCandidate.objects.filter(created_at__gte=since)
+    candidates = RunCandidate.objects.filter(
+        created_at__gte=since,
+        status=CandidateStatus.SELECTED,
+    )
     total = candidates.count()
     genre_rows = list(
-        Genre.objects.filter(contents__run_candidates__created_at__gte=since)
+        Genre.objects.filter(
+            contents__run_candidates__created_at__gte=since,
+            contents__run_candidates__status=CandidateStatus.SELECTED,
+        )
         .values("name")
         .annotate(recommendation_count=Count("contents__run_candidates"))
         .order_by("-recommendation_count", "name")[:5]
@@ -1287,6 +1446,118 @@ def conversation_messages(
         conversation.updated_at = timezone.now()
         conversation.save(update_fields=["title", "updated_at"])
     return JsonResponse(serialize_message(message), status=201)
+
+
+@require_http_methods(["POST"])
+@authenticated
+def conversation_recommendations(
+    request: HttpRequest,
+    conversation_id: int,
+) -> JsonResponse:
+    data = request_data(request)
+    prompt = data.get("message") if data else None
+    if not isinstance(prompt, str) or not prompt.strip():
+        return JsonResponse({"detail": "Message content is required."}, status=400)
+    prompt = prompt.strip()
+    if len(prompt) > MAX_CHAT_MESSAGE_LENGTH:
+        return JsonResponse(
+            {
+                "detail": (
+                    f"Message content cannot exceed "
+                    f"{MAX_CHAT_MESSAGE_LENGTH} characters."
+                )
+            },
+            status=400,
+        )
+    if contains_prompt_injection(prompt):
+        logger.warning("Prompt injection rejected by recommendation pipeline.")
+        return JsonResponse({"detail": PROMPT_INJECTION_REJECTION}, status=400)
+    if contains_sensitive_data_request(prompt):
+        logger.warning("Sensitive data request rejected by recommendation pipeline.")
+        return JsonResponse({"detail": SENSITIVE_DATA_REJECTION}, status=400)
+
+    user_id = get_business_user_id(request.user)
+    conversation = Conversation.objects.select_related("user").filter(
+        pk=conversation_id,
+        user_id=user_id,
+    ).first()
+    if conversation is None:
+        return JsonResponse({"detail": "Conversation not found."}, status=404)
+    if not has_configured_movie_preferences(request.user):
+        return JsonResponse(
+            {"detail": "Ustaw preferencje filmowe, aby skorzystać z doradcy."},
+            status=409,
+        )
+
+    try:
+        client = get_ollama_client()
+        available_models = client.list_models()
+        if not client.is_model_available(client.model, available_models):
+            return JsonResponse(
+                {"detail": "Skonfigurowany lokalny model nie jest jeszcze pobrany."},
+                status=503,
+            )
+        result = run_persistent_recommendation(
+            user=conversation.user,
+            conversation=conversation,
+            prompt=prompt,
+            client=client,
+        )
+    except DatabaseError:
+        logger.exception("Persistent recommendation failed because of the database.")
+        return JsonResponse(
+            {"detail": "Nie udało się zapisać rekomendacji."},
+            status=503,
+        )
+    except (OllamaUnavailableError, OllamaConfigurationError):
+        logger.warning("Persistent recommendation could not reach Ollama.")
+        return JsonResponse(
+            {"detail": "Lokalny model językowy jest obecnie niedostępny."},
+            status=503,
+        )
+    except (
+        OllamaResponseError,
+        ProfilingAgentError,
+        RankingAgentError,
+        ExplanationAgentError,
+    ):
+        logger.warning("Persistent recommendation received an invalid agent result.")
+        return JsonResponse(
+            {"detail": "Agenci zwrócili nieprawidłowy wynik."},
+            status=502,
+        )
+
+    selected_candidates = [
+        item
+        for item in result.candidates
+        if item.status == CandidateStatus.SELECTED
+    ]
+    serialized_candidates = [
+        serialize_run_candidate(
+            RunCandidate.objects.select_related("content")
+            .prefetch_related("content__genres")
+            .get(pk=item.pk)
+        )
+        for item in selected_candidates
+    ]
+    return JsonResponse(
+        {
+            "conversationId": str(conversation.pk),
+            "request": serialize_recommendation_request(result.request),
+            "run": serialize_recommendation_run(result.run),
+            "userMessage": serialize_message(result.request.trigger_message),
+            "assistantMessage": serialize_message(
+                result.assistant_message,
+                serialized_candidates,
+            ),
+            "candidates": serialized_candidates,
+            "detectedPreferences": [],
+            "agentExecutions": [
+                serialize_agent_execution(item) for item in result.agent_executions
+            ],
+        },
+        status=201,
+    )
 
 
 @require_http_methods(["POST"])

@@ -14,6 +14,7 @@ import type {
   ResetMoviePreferencesResponse,
   SaveMoviePreferencesResponse,
   StatelessChatResponse,
+  RecommendationResponse,
   TrendPeriod,
 } from '../types';
 
@@ -238,6 +239,16 @@ export async function requestStatelessChat(
       message,
       history,
     }),
+  );
+}
+
+export async function requestRecommendation(
+  conversationId: DatabaseId,
+  message: string,
+): Promise<RecommendationResponse> {
+  return request(
+    `/conversations/${conversationId}/recommendations/`,
+    jsonRequest('POST', { message }),
   );
 }
 
