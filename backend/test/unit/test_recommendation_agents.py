@@ -6,7 +6,6 @@ from django.test import SimpleTestCase, override_settings
 from backend.ollama import OllamaChatResponse
 from backend.recommendation_agents.explanation import (
     ExplanationAgent,
-    ExplanationAgentError,
     ExplanationAgentRun,
 )
 from backend.recommendation_agents.graph import build_recommendation_graph
@@ -89,13 +88,25 @@ class RetrievalAgentTests(SimpleTestCase):
         self.assertEqual(query, "Mroczny film | Thriller | izolacja | The Thing")
         self.assertFalse(RetrievalAgent._runtime_matches(content, output))
 
-    def test_missing_runtime_does_not_remove_candidate(self):
+    @patch("backend.recommendation_agents.retrieval.Content.objects.filter")
+    def test_gore_avoidance_does_not_exclude_the_horror_genre(self, objects_filter):
+        queryset = MagicMock()
+        objects_filter.return_value = queryset
+
+        RetrievalAgent._constrained_queryset(
+            profile(genres=(), avoid=("Gore",)),
+            require_all_genres=True,
+        )
+
+        queryset.exclude.assert_not_called()
+
+    def test_missing_runtime_cannot_satisfy_a_hard_limit(self):
         output = profile(
             constraints=ProfilingConstraints(100, None, None, None),
         )
         content = MagicMock(metadata={})
 
-        self.assertTrue(RetrievalAgent._runtime_matches(content, output))
+        self.assertFalse(RetrievalAgent._runtime_matches(content, output))
 
     @override_settings(
         LLM_SEMANTIC_SEARCH_ENABLED=False,
@@ -282,6 +293,32 @@ class RankingAgentTests(SimpleTestCase):
         self.assertEqual(len(run.selected), 2)
         self.assertGreater(run.candidates[0].relevance_score, 0)
 
+    def test_rejects_candidate_when_model_reason_explicitly_says_it_does_not_fit(self):
+        self.client.chat.return_value = response(
+            {
+                "scores": [
+                    {
+                        "content_id": 1,
+                        "relevance_score": 0.95,
+                        "critic_score": 0.9,
+                        "decision_reason": "Film nie pasuje do prośby użytkownika.",
+                    },
+                    {
+                        "content_id": 2,
+                        "relevance_score": 0.8,
+                        "critic_score": 0.8,
+                        "decision_reason": "Dobre dopasowanie.",
+                    },
+                ]
+            }
+        )
+
+        run = self.agent.run("Lekki film", profile(), self.candidates)
+
+        rejected = next(item for item in run.candidates if item.candidate.content_id == 1)
+        self.assertEqual(rejected.status, "rejected")
+        self.assertEqual(rejected.relevance_score, 0.0)
+
 
 class ExplanationAgentTests(SimpleTestCase):
     def setUp(self):
@@ -293,33 +330,15 @@ class ExplanationAgentTests(SimpleTestCase):
         self.agent = ExplanationAgent(self.client)
 
     def test_explains_each_selected_candidate(self):
-        self.client.chat.return_value = response(
-            {"message": "Mam dla Ciebie jeden tytuł.", "explanations": [{"content_id": 1, "explanation": "Mroczna tajemnica odpowiada prośbie."}]}
-        )
         run = self.agent.run("Mroczny thriller", profile(), self.selected)
 
-        self.assertEqual(
-            run.message,
-            "Mam dla Ciebie te propozycje:\n"
-            "1. Film 1 — Mroczna tajemnica odpowiada prośbie.",
-        )
+        self.assertIn("1. Film 1 — Mroczna tajemnica.", run.message)
+        self.assertIn("gatunki: Thriller", run.message)
         self.assertEqual(run.explanations[0].content_id, 1)
-        self.assertEqual(
-            run.explanations[0].explanation,
-            "Mroczna tajemnica odpowiada prośbie.",
-        )
+        self.assertIn("ocena katalogowa: 8.0/10", run.explanations[0].explanation)
         self.assertEqual(run.model, "llama3.1:8b")
-        self.assertEqual(run.prompt_tokens, 20)
-        self.assertEqual(run.generated_tokens, 10)
-        self.client.chat.assert_called_once()
-        messages = self.client.chat.call_args.args[0]
-        payload = json.loads(messages[1]["content"])
-        self.assertEqual(payload["current_request"], "Mroczny thriller")
-        self.assertEqual(payload["selected_candidates"][0]["content_id"], 1)
-        self.assertEqual(
-            self.client.chat.call_args.kwargs["options"]["temperature"],
-            0,
-        )
+        self.assertEqual(run.source, "catalog")
+        self.client.chat.assert_not_called()
 
     def test_chat_message_describes_every_selected_title(self):
         second = RankedCandidate(
@@ -331,37 +350,14 @@ class ExplanationAgentTests(SimpleTestCase):
             final_rank=2,
             decision_reason="Pasuje.",
         )
-        self.client.chat.return_value = response(
-            {
-                "message": "Oto filmy, które mogą Ci się spodobać.",
-                "explanations": [
-                    {
-                        "content_id": 1,
-                        "explanation": "Mroczna zagadka pasuje do prośby.",
-                    },
-                    {
-                        "content_id": 2,
-                        "explanation": "Napięta historia ma podobny klimat.",
-                    },
-                ],
-            }
-        )
-
         run = self.agent.run(
             "Mroczne filmy",
             profile(),
             (*self.selected, second),
         )
 
-        self.assertIn("1. Film 1 — Mroczna zagadka pasuje do prośby.", run.message)
-        self.assertIn(
-            "2. Drugi film — Napięta historia ma podobny klimat.",
-            run.message,
-        )
-        self.assertNotEqual(
-            run.message,
-            "Oto filmy, które mogą Ci się spodobać.",
-        )
+        self.assertIn("1. Film 1 — Mroczna tajemnica.", run.message)
+        self.assertIn("2. Drugi film — Mroczna tajemnica.", run.message)
 
     def test_falls_back_for_explanation_of_unknown_candidate(self):
         self.client.chat.return_value = response(
@@ -372,21 +368,13 @@ class ExplanationAgentTests(SimpleTestCase):
         self.assertIn("Film 1", run.message)
         self.assertEqual(run.explanations[0].content_id, 1)
 
-    def test_falls_back_for_invalid_json(self):
-        self.client.chat.return_value = OllamaChatResponse(
-            content="{invalid-json",
-            model="llama3.1:8b",
-            done_reason="stop",
-            total_duration_ns=100,
-            prompt_eval_count=20,
-            eval_count=10,
-        )
-
+    def test_catalog_description_does_not_call_model(self):
         run = self.agent.run("Thriller", profile(), self.selected)
 
         self.assertIn("Film 1", run.message)
         self.assertEqual(run.explanations[0].content_id, 1)
-        self.assertEqual(run.prompt_tokens, 20)
+        self.assertEqual(run.source, "catalog")
+        self.client.chat.assert_not_called()
 
     def test_falls_back_for_duplicate_candidate_explanation(self):
         self.client.chat.return_value = response(
@@ -443,37 +431,63 @@ class ExplanationAgentTests(SimpleTestCase):
             selected,
         )
 
-        self.assertIn("Nie mogę potwierdzić limitu 100 minut", run.message)
+        self.assertIn("Limit 100 minut", run.message)
         self.client.chat.assert_not_called()
 
     def test_answers_content_question_from_catalog_context(self):
-        self.client.chat.return_value = response(
-            {"message": "To opowieść o zagadce przedstawionej w opisie katalogowym."}
-        )
-
         run = self.agent.answer_content_question(
             "O czym jest ten film?",
             (candidate(1, title="Zagadka"),),
             ({"role": "assistant", "content": "Poleciłem tytuł Zagadka."},),
         )
 
-        self.assertEqual(
-            run.message,
-            "To opowieść o zagadce przedstawionej w opisie katalogowym.",
-        )
+        self.assertEqual(run.message, "Zagadka — Mroczna tajemnica.")
         self.assertEqual(run.explanations, ())
-        payload = json.loads(self.client.chat.call_args.args[0][1]["content"])
-        self.assertEqual(payload["current_question"], "O czym jest ten film?")
-        self.assertEqual(payload["catalog_candidates"][0]["title"], "Zagadka")
-        self.assertEqual(payload["conversation_history"][0]["role"], "assistant")
+        self.client.chat.assert_not_called()
 
-    def test_content_question_falls_back_for_invalid_model_output(self):
-        self.client.chat.return_value = response({"unexpected": "value"})
-
+    def test_content_question_is_honest_when_catalog_has_no_answer(self):
         run = self.agent.answer_content_question("Kto reżyserował ten film?", ())
 
-        self.assertIn("wystarczających danych", run.message)
-        self.assertEqual(run.source, "fallback")
+        self.assertIn("danych potrzebnych", run.message)
+        self.assertEqual(run.source, "catalog")
+
+    def test_answers_question_about_first_previous_recommendation(self):
+        history = (
+            {
+                "role": "assistant",
+                "content": (
+                    "Mam dla Ciebie te propozycje:\n"
+                    "1. Coco — Chłopiec trafia do Krainy Umarłych. Dane katalogowe: Animacja.\n"
+                    "2. Odlot — Senior rusza w podróż. Dane katalogowe: Animacja."
+                ),
+            },
+        )
+
+        run = self.agent.answer_content_question(
+            "O czym jest pierwsza propozycja?",
+            (),
+            history,
+        )
+
+        self.assertIn("Coco — Chłopiec trafia", run.message)
+        self.assertNotIn("Odlot", run.message)
+
+    def test_does_not_claim_happy_end_without_catalog_data(self):
+        run = self.agent.answer_content_question(
+            "Czy każdy ma happy ending?",
+            (),
+        )
+
+        self.assertIn("nie mogę rzetelnie potwierdzić", run.message.casefold())
+
+    def test_stored_gore_avoidance_does_not_warn_on_unrelated_prompt(self):
+        run = self.agent.run(
+            "Poleć lekki serial.",
+            profile(avoid=("Gore",)),
+            self.selected,
+        )
+
+        self.assertNotIn("gore", run.message.casefold())
 
 
 class RecommendationGraphTests(SimpleTestCase):

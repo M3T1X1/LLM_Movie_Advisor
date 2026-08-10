@@ -344,6 +344,170 @@ class ProfilingAgentTests(SimpleTestCase):
         self.assertIn("humor", result.output.themes)
         self.assertIsNone(result.output.constraints.max_runtime_minutes)
 
+    def test_recognizes_catalog_genres_missing_during_manual_tests(self):
+        cases = {
+            "Poleć coś dla dzieci.": ("Dla dzieci",),
+            "Szukam filmu telewizyjnego.": ("Film telewizyjny",),
+            "Chcę operę mydlaną.": ("Opera mydlana",),
+            "Poleć reality-show.": ("Reality show",),
+            "Szukam talk-show.": ("Talk-show",),
+            "Chcę wiadomości.": ("Wiadomości",),
+        }
+
+        for request, expected in cases.items():
+            with self.subTest(request=request):
+                result = self.agent.run(ProfilingAgentInput(current_request=request))
+                self.assertEqual(result.output.genres, expected)
+                self.assertEqual(result.output.intent, "recommendation")
+
+    def test_child_age_phrase_uses_child_catalog_genre(self):
+        result = self.agent.run(
+            ProfilingAgentInput(
+                current_request="Szukam czegoś dla sześciolatka, bez strasznych scen."
+            )
+        )
+
+        self.assertEqual(result.output.genres, ("Dla dzieci",))
+        self.assertIn("strasznych scen", result.output.avoid)
+
+    def test_negated_horror_is_not_a_positive_genre(self):
+        result = self.agent.run(
+            ProfilingAgentInput(
+                current_request="Poleć science fiction bez horroru i gore."
+            )
+        )
+
+        self.assertEqual(result.output.genres, ("Science Fiction",))
+        self.assertIn("Horror", result.output.avoid)
+        self.assertIn("Gore", result.output.avoid)
+
+    def test_parses_natural_year_and_runtime_limits(self):
+        after = self.agent.run(
+            ProfilingAgentInput(current_request="Poleć akcję po 2015 roku.")
+        )
+        before = self.agent.run(
+            ProfilingAgentInput(current_request="Film historyczny sprzed 2015 roku.")
+        )
+        runtime = self.agent.run(
+            ProfilingAgentInput(current_request="Film nie dłuższy niż 100 minut.")
+        )
+
+        self.assertEqual(after.output.constraints.release_year_from, 2016)
+        self.assertEqual(before.output.constraints.release_year_to, 2014)
+        self.assertEqual(runtime.output.constraints.max_runtime_minutes, 100)
+
+    def test_clarification_answer_overrides_bad_content_question_classification(self):
+        output = valid_output(
+            intent="content_question",
+            media_types=["tv"],
+            genres=[],
+            themes=[],
+        )
+        self.client.chat.return_value = OllamaChatResponse(
+            content=json.dumps(output),
+            model="llama3.1:8b",
+            done_reason="stop",
+            total_duration_ns=None,
+            prompt_eval_count=None,
+            eval_count=None,
+        )
+
+        result = self.agent.run(
+            ProfilingAgentInput(
+                current_request="Serial. Mam dobry nastrój i chcę coś lekkiego.",
+                conversation_history=(
+                    {"role": "user", "content": "Poleć mi coś."},
+                    {
+                        "role": "assistant",
+                        "content": "Wolisz film czy serial i na jaki masz dziś nastrój?",
+                    },
+                ),
+            )
+        )
+
+        self.assertEqual(result.output.intent, "recommendation")
+        self.assertEqual(result.output.media_types, ("tv",))
+
+    def test_recognizes_question_about_previous_numbered_proposal(self):
+        output = valid_output(intent="recommendation", genres=[])
+        self.client.chat.return_value = OllamaChatResponse(
+            content=json.dumps(output),
+            model="llama3.1:8b",
+            done_reason="stop",
+            total_duration_ns=None,
+            prompt_eval_count=None,
+            eval_count=None,
+        )
+
+        result = self.agent.run(
+            ProfilingAgentInput(
+                current_request="O czym jest pierwsza propozycja?",
+                conversation_history=(
+                    {
+                        "role": "assistant",
+                        "content": "1. Coco — Opis filmu.\n2. Odlot — Opis filmu.",
+                    },
+                ),
+            )
+        )
+
+        self.assertEqual(result.output.intent, "content_question")
+
+    def test_recognizes_recall_of_previous_recommendations(self):
+        result = self.agent.run(
+            ProfilingAgentInput(
+                current_request="Przypomnij poprzednie propozycje.",
+                conversation_history=(
+                    {
+                        "role": "assistant",
+                        "content": "1. Coco — Opis filmu.\n2. Odlot — Opis filmu.",
+                    },
+                ),
+            )
+        )
+
+        self.assertEqual(result.output.intent, "recall")
+
+    def test_discards_genre_not_present_in_catalog_taxonomy(self):
+        output = valid_output(genres=["obyczajowy"], themes=[])
+        self.client.chat.return_value = OllamaChatResponse(
+            content=json.dumps(output),
+            model="llama3.1:8b",
+            done_reason="stop",
+            total_duration_ns=None,
+            prompt_eval_count=None,
+            eval_count=None,
+        )
+
+        result = self.agent.run(
+            ProfilingAgentInput(current_request="Poleć coś lekkiego.")
+        )
+
+        self.assertEqual(result.output.genres, ())
+
+    def test_light_request_discards_stale_heavy_genre_from_model(self):
+        output = valid_output(genres=["Dramat"], themes=["lekki klimat"])
+        self.client.chat.return_value = OllamaChatResponse(
+            content=json.dumps(output),
+            model="llama3.1:8b",
+            done_reason="stop",
+            total_duration_ns=None,
+            prompt_eval_count=None,
+            eval_count=None,
+        )
+
+        result = self.agent.run(
+            ProfilingAgentInput(
+                current_request="Poleć jeszcze jeden lekki serial.",
+                conversation_history=(
+                    {"role": "assistant", "content": "1. Ciężki dramat — Opis."},
+                ),
+            )
+        )
+
+        self.assertEqual(result.output.genres, ())
+        self.assertIn("lekki klimat", result.output.themes)
+
     def test_discards_reference_titles_not_present_in_request_or_history(self):
         result = self.agent.run(
             ProfilingAgentInput(current_request="Szukam filmu science fiction z 2002 roku.")

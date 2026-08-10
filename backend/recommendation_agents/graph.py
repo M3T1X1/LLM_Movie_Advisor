@@ -17,7 +17,7 @@ from backend.recommendation_agents.ranking import RankingAgent, RankingAgentRun
 from backend.recommendation_agents.retrieval import RetrievalAgent, RetrievalAgentRun
 
 
-GRAPH_VERSION = "recommendation-agents-v3"
+GRAPH_VERSION = "recommendation-agents-v4"
 
 
 class RecommendationGraphState(TypedDict, total=False):
@@ -178,11 +178,12 @@ def build_recommendation_graph(
                         item.get("content", "")
                         for item in reversed(state.get("conversation_history", ()))
                         if item.get("role") == "assistant"
+                        and "1." in str(item.get("content", ""))
                     ),
                     "",
                 )
                 message = (
-                    f"Wcześniej odpowiedziałem: {previous_answer[:1800]}"
+                    f"Oto ostatnie polecane tytuły:\n{previous_answer[:1800]}"
                     if previous_answer
                     else "W tej rozmowie nie ma jeszcze wcześniejszej rekomendacji."
                 )

@@ -134,6 +134,7 @@ class RankingAgent:
             source = "fallback"
             fallback_reason = type(error).__name__
         scores = self._apply_avoid_penalties(profile, candidates, scores)
+        scores = self._reject_explicit_mismatches(scores)
         ordered = sorted(
             candidates,
             key=lambda item: (
@@ -227,9 +228,12 @@ class RankingAgent:
                 if candidate.semantic_score is not None
                 else 0.15 + lexical
             )
+            requested_genres = {item.casefold() for item in profile.genres}
+            if "dla dzieci" in requested_genres:
+                requested_genres.add("familijny")
             genre_match = bool(
                 {item.casefold() for item in candidate.genres}
-                & {item.casefold() for item in profile.genres}
+                & requested_genres
             )
             conflicts = bool(
                 {item.casefold() for item in candidate.genres} & avoided
@@ -268,10 +272,13 @@ class RankingAgent:
 
     @staticmethod
     def _avoided_genres(profile: ProfilingAgentOutput) -> set[str]:
-        avoided = {item.casefold() for item in profile.avoid}
-        if "gore" in avoided:
-            avoided.add("horror")
-        return avoided
+        # Only actual catalog genres can be enforced at this stage. In
+        # particular, "bez gore" must not mean "bez horrorów".
+        return {
+            item.casefold()
+            for item in profile.avoid
+            if item.casefold() != "gore"
+        }
 
     @staticmethod
     def _final_score(score: tuple[float, float, str]) -> float:
@@ -296,6 +303,24 @@ class RankingAgent:
                 "Pozycja ma cechę wskazaną przez użytkownika do unikania.",
             )
         return adjusted
+
+    @staticmethod
+    def _reject_explicit_mismatches(
+        scores: dict[int, tuple[float, float, str]],
+    ) -> dict[int, tuple[float, float, str]]:
+        mismatch = re.compile(
+            r"\b(?:nie\s+pasuje|nie\s+spełnia|nie\s+odpowiada|"
+            r"brak\s+dopasowania|sprzeczn\w*\s+z)\b",
+            re.IGNORECASE,
+        )
+        return {
+            content_id: (
+                (0.0, critic, reason)
+                if mismatch.search(reason)
+                else (relevance, critic, reason)
+            )
+            for content_id, (relevance, critic, reason) in scores.items()
+        }
 
     @staticmethod
     def _validate_scores(

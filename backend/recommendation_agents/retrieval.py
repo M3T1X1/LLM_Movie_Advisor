@@ -160,6 +160,10 @@ class RetrievalAgent:
                 *profile.themes,
                 *profile.reference_titles,
             ]
+            if "Dla dzieci" in profile.genres:
+                terms.append("Familijny")
+            if "lekki klimat" in profile.themes and not profile.genres:
+                terms.extend(("Komedia", "Familijny", "Romans", "Reality show"))
             keyword_filter = Q()
             for term in terms[:10]:
                 keyword_filter |= (
@@ -218,17 +222,37 @@ class RetrievalAgent:
         if profile.genres:
             if require_all_genres:
                 for genre in profile.genres:
-                    queryset = queryset.filter(genres__name__iexact=genre)
+                    if genre == "Dla dzieci":
+                        queryset = queryset.filter(
+                            Q(genres__name__iexact="Dla dzieci")
+                            | Q(genres__name__iexact="Familijny")
+                        )
+                    else:
+                        queryset = queryset.filter(genres__name__iexact=genre)
             else:
                 genre_filter = Q()
                 for genre in profile.genres:
-                    genre_filter |= Q(genres__name__iexact=genre)
+                    if genre == "Dla dzieci":
+                        genre_filter |= (
+                            Q(genres__name__iexact="Dla dzieci")
+                            | Q(genres__name__iexact="Familijny")
+                        )
+                    else:
+                        genre_filter |= Q(genres__name__iexact=genre)
                 queryset = queryset.filter(genre_filter)
+        elif "lekki klimat" in profile.themes:
+            queryset = queryset.filter(
+                Q(genres__name__iexact="Komedia")
+                | Q(genres__name__iexact="Familijny")
+                | Q(genres__name__iexact="Romans")
+                | Q(genres__name__iexact="Reality show")
+            )
         for avoided in profile.avoid:
-            excluded_genres = [avoided]
+            # "Gore" is not a catalog genre. A horror can be non-gory, so
+            # excluding all horrors here silently changes the user's request.
             if avoided.casefold() == "gore":
-                excluded_genres.append("Horror")
-            queryset = queryset.exclude(genres__name__in=excluded_genres)
+                continue
+            queryset = queryset.exclude(genres__name__iexact=avoided)
         constraints = profile.constraints
         if constraints.release_year_from is not None:
             queryset = queryset.filter(
@@ -251,7 +275,7 @@ class RetrievalAgent:
             return True
         runtime = (content.metadata or {}).get("runtimeMinutes")
         if runtime is None:
-            return True
+            return False
         return isinstance(runtime, (int, float)) and not isinstance(
             runtime, bool
         ) and runtime <= maximum

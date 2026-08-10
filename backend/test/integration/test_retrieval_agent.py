@@ -35,7 +35,13 @@ class RetrievalGenreIntersectionTests(ApiIntegrationTestCase):
         super().setUp()
         self.genre_ids = {}
         with connection.cursor() as cursor:
-            for tmdb_genre_id, name in ((27, "Horror"), (878, "Science Fiction")):
+            for tmdb_genre_id, name in (
+                (27, "Horror"),
+                (878, "Science Fiction"),
+                (10762, "Dla dzieci"),
+                (10751, "Familijny"),
+                (35, "Komedia"),
+            ):
                 cursor.execute(
                     """
                     INSERT INTO genre (tmdb_genre_id, name)
@@ -88,3 +94,42 @@ class RetrievalGenreIntersectionTests(ApiIntegrationTestCase):
             {horror_id, science_fiction_id},
         )
 
+    def test_child_movie_request_accepts_catalog_family_movies(self):
+        family_movie_id = self.insert_content(1004, "Familijny film")
+        self.attach_genres(family_movie_id, "Familijny")
+        child_profile = ProfilingAgentOutput(
+            **{
+                **multi_genre_profile().__dict__,
+                "genres": ("Dla dzieci",),
+            }
+        )
+
+        run = RetrievalAgent(None).run(
+            "Film dla sześciolatka",
+            child_profile,
+        )
+
+        self.assertEqual(
+            [candidate.content_id for candidate in run.candidates],
+            [family_movie_id],
+        )
+
+    def test_light_request_does_not_return_plain_drama(self):
+        comedy_id = self.insert_content(1005, "Lekka komedia")
+        drama_id = self.insert_content(1006, "Ciężki dramat")
+        self.attach_genres(comedy_id, "Komedia")
+        self.attach_genres(drama_id, "Horror")
+        light_profile = ProfilingAgentOutput(
+            **{
+                **multi_genre_profile().__dict__,
+                "genres": (),
+                "themes": ("lekki klimat",),
+            }
+        )
+
+        run = RetrievalAgent(None).run("Lekki film", light_profile)
+
+        self.assertEqual(
+            [candidate.content_id for candidate in run.candidates],
+            [comedy_id],
+        )
