@@ -409,22 +409,8 @@ class ProfilingAgent:
         request = agent_input.current_request.strip()
         normalized = request.casefold()
         explicit_genres = cls._explicit_genres(normalized)
-        canonical_genres = set(CANONICAL_GENRES)
-        genres = explicit_genres or tuple(
-            dict.fromkeys(
-                canonical
-                for item in output.genres
-                if (canonical := GENRE_ALIASES.get(item.casefold(), item))
-                in canonical_genres
-            )
-        )
         explicit_themes = cls._explicit_themes(normalized)
-        if (
-            not explicit_genres
-            and "lekki klimat" in explicit_themes
-        ):
-            light_genres = {"Komedia", "Familijny", "Romans", "Reality show"}
-            genres = tuple(genre for genre in genres if genre in light_genres)
+        genres = explicit_genres or cls._inherited_genres(agent_input, normalized)
         media_types = output.media_types
         mentions_movie = bool(re.search(r"\bfilm\w*", normalized))
         mentions_tv = bool(re.search(r"\bserial\w*", normalized))
@@ -535,6 +521,13 @@ class ProfilingAgent:
             for title in output.reference_titles
             if title.casefold() in trusted_text
         )
+        history_reference_titles = cls._history_reference_titles(
+            normalized,
+            agent_input.conversation_history,
+        )
+        reference_titles = tuple(
+            dict.fromkeys((*history_reference_titles, *reference_titles))
+        )
         return ProfilingAgentOutput(
             intent=intent,
             mood=mood,
@@ -598,7 +591,8 @@ class ProfilingAgent:
     def _looks_like_content_question(normalized: str) -> bool:
         question_form = "?" in normalized or bool(
             re.search(
-                r"^(?:kto|co|czy|kiedy|gdzie|dlaczego|jak|jaki|jaka|jakie|ile|o czym)\b",
+                r"^(?:kto|co|czy|kiedy|gdzie|dlaczego|jak|jaki|jaka|jakie|ile|"
+                r"o czym|od ilu lat)\b",
                 normalized,
             )
         )
@@ -610,7 +604,8 @@ class ProfilingAgent:
                 r"sezon\w*|odcink\w*|premier\w*|zakończ\w*|trwa\w*|"
                 r"happy\s+end\w*|pierwsz\w*\s+(?:propozycj\w*|tytuł\w*)|"
                 r"drug\w*\s+(?:propozycj\w*|tytuł\w*)|"
-                r"trzeci\w*\s+(?:propozycj\w*|tytuł\w*))\b",
+                r"trzeci\w*\s+(?:propozycj\w*|tytuł\w*)|"
+                r"kategori\w*\s+wiekow\w*|od\s+ilu\s+lat)\b",
                 normalized,
             )
         )
@@ -632,6 +627,84 @@ class ProfilingAgent:
                 normalized,
             )
         )
+
+    @classmethod
+    def _inherited_genres(
+        cls,
+        agent_input: ProfilingAgentInput,
+        normalized_request: str,
+    ) -> tuple[str, ...]:
+        if re.search(
+            r"\b(?:zupełnie\s+inn\w*|zmieńmy\s+temat|nowa\s+prośba|"
+            r"nowy\s+temat)\b",
+            normalized_request,
+        ):
+            return ()
+        continuation = bool(
+            re.search(
+                r"\b(?:a\s+teraz|jeszcze|tym\s+razem|ale|zamiast|podobn\w*|"
+                r"krótsz\w*|dłuższ\w*|nowsz\w*|starsz\w*|po\s+\d{4}|"
+                r"sprzed\s+\d{4}|maksymalnie|co\s+najmniej)\b",
+                normalized_request,
+            )
+        ) or cls._follows_clarification(agent_input)
+        if not continuation:
+            return ()
+        for message in reversed(agent_input.conversation_history):
+            if message.get("role") != "user":
+                continue
+            text = str(message.get("content", "")).casefold()
+            if re.search(
+                r"\b(?:zupełnie\s+inn\w*|zmieńmy\s+temat|nowa\s+prośba|"
+                r"nowy\s+temat)\b",
+                text,
+            ):
+                break
+            genres = cls._explicit_genres(text)
+            if genres:
+                return genres
+        return ()
+
+    @staticmethod
+    def _history_reference_titles(
+        normalized_request: str,
+        conversation_history: tuple[dict[str, str], ...],
+    ) -> tuple[str, ...]:
+        ordinal_patterns = (
+            (r"\b(?:pierwsz\w*|1\.)", 0),
+            (r"\b(?:drug\w*|2\.)", 1),
+            (r"\b(?:trzeci\w*|3\.)", 2),
+        )
+        ordinal = next(
+            (
+                value
+                for pattern, value in ordinal_patterns
+                if re.search(pattern, normalized_request)
+            ),
+            None,
+        )
+        refers_to_previous = ordinal is not None or bool(
+            re.search(
+                r"\b(?:ten|ta|to|tego|tej|ostatni\w*)\s+"
+                r"(?:film\w*|serial\w*|tytuł\w*|propozycj\w*)",
+                normalized_request,
+            )
+        )
+        if not refers_to_previous:
+            return ()
+        for message in reversed(conversation_history):
+            if message.get("role") != "assistant":
+                continue
+            titles = re.findall(
+                r"(?m)^\s*\d+\.\s+(.+?)\s+[—-]\s+",
+                str(message.get("content", "")),
+            )
+            if not titles:
+                continue
+            if ordinal is not None:
+                return (titles[ordinal].strip(),) if ordinal < len(titles) else ()
+            return (titles[0].strip(),)
+        return ()
 
     @staticmethod
     def _follows_clarification(agent_input: ProfilingAgentInput) -> bool:

@@ -246,6 +246,14 @@ class ProfilingAgentTests(SimpleTestCase):
         self.assertEqual(result.output.intent, "content_question")
         self.assertFalse(result.output.needs_clarification)
 
+    def test_age_rating_question_is_not_treated_as_recommendation(self):
+        result = self.agent.run(
+            ProfilingAgentInput(current_request="Od ilu lat jest film Coco?")
+        )
+
+        self.assertEqual(result.output.intent, "content_question")
+        self.assertFalse(result.output.needs_clarification)
+
     def test_uses_specific_user_history_for_short_follow_up(self):
         result = self.agent.run(
             ProfilingAgentInput(
@@ -331,6 +339,7 @@ class ProfilingAgentTests(SimpleTestCase):
         )
 
         self.assertEqual(result.output.intent, "recommendation")
+        self.assertEqual(result.output.genres, ("Thriller",))
         self.assertEqual(result.output.constraints.max_runtime_minutes, 90)
 
     def test_funny_request_is_grounded_as_comedy_without_inventing_runtime(self):
@@ -452,6 +461,7 @@ class ProfilingAgentTests(SimpleTestCase):
         )
 
         self.assertEqual(result.output.intent, "content_question")
+        self.assertEqual(result.output.reference_titles, ("Coco",))
 
     def test_recognizes_recall_of_previous_recommendations(self):
         result = self.agent.run(
@@ -507,6 +517,23 @@ class ProfilingAgentTests(SimpleTestCase):
 
         self.assertEqual(result.output.genres, ())
         self.assertIn("lekki klimat", result.output.themes)
+
+    def test_new_request_does_not_accept_ungrounded_model_genre(self):
+        output = valid_output(genres=["Dramat"], themes=[])
+        self.client.chat.return_value = OllamaChatResponse(
+            content=json.dumps(output),
+            model="llama3.1:8b",
+            done_reason="stop",
+            total_duration_ns=None,
+            prompt_eval_count=None,
+            eval_count=None,
+        )
+
+        result = self.agent.run(
+            ProfilingAgentInput(current_request="Poleć serial na wieczór.")
+        )
+
+        self.assertEqual(result.output.genres, ())
 
     def test_discards_reference_titles_not_present_in_request_or_history(self):
         result = self.agent.run(

@@ -4,6 +4,8 @@ from datetime import date, timedelta
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
+from django.db.models import Q
+from django.utils import timezone
 
 from backend.api.catalog_sync import upsert_catalog
 from backend.api.models import Content
@@ -17,6 +19,7 @@ DEFAULT_DAYS_BACK = 30
 DEFAULT_MAX_PAGES = 10
 DEFAULT_UPCOMING_DAYS_AHEAD = 365
 DEFAULT_UPCOMING_MAX_PAGES = 10
+DEFAULT_DETAIL_ENRICHMENT_LIMIT = 100
 
 
 def env_int(name: str, default: int) -> int:
@@ -27,6 +30,14 @@ def env_int(name: str, default: int) -> int:
         return int(value)
     except ValueError as error:
         raise CommandError(f"{name} must be an integer.") from error
+
+
+def detail_enrichment_candidates(*, limit: int):
+    refresh_before = (timezone.now() - timedelta(days=30)).isoformat()
+    return Content.objects.filter(
+        ~Q(metadata__has_key="detailRefreshedAt")
+        | Q(metadata__detailRefreshedAt__lt=refresh_before),
+    ).order_by("-popularity", "id")[:limit]
 
 
 class Command(BaseCommand):
@@ -84,6 +95,18 @@ class Command(BaseCommand):
             ),
             help="Maximum discover pages fetched for upcoming movies.",
         )
+        parser.add_argument(
+            "--detail-limit",
+            type=int,
+            default=env_int(
+                "TMDB_DETAIL_ENRICHMENT_LIMIT",
+                DEFAULT_DETAIL_ENRICHMENT_LIMIT,
+            ),
+            help=(
+                "Maximum number of catalog titles enriched with runtime, credits, "
+                "age rating and localized titles in this run."
+            ),
+        )
 
     def handle(self, *args, **options):
         baseline_movies = options["baseline_movies"]
@@ -92,6 +115,10 @@ class Command(BaseCommand):
         max_pages = options["max_pages"]
         upcoming_days_ahead = options["upcoming_days_ahead"]
         upcoming_max_pages = options["upcoming_max_pages"]
+        detail_limit = options.get(
+            "detail_limit",
+            DEFAULT_DETAIL_ENRICHMENT_LIMIT,
+        )
         if not 0 <= baseline_movies <= 10000:
             raise CommandError("--baseline-movies must be between 0 and 10000.")
         if not 0 <= baseline_tv_shows <= 10000:
@@ -108,6 +135,8 @@ class Command(BaseCommand):
             raise CommandError(
                 "--upcoming-max-pages must be between 1 and 500."
             )
+        if not 0 <= detail_limit <= 1000:
+            raise CommandError("--detail-limit must be between 0 and 1000.")
 
         today = date.today()
         start_date = today - timedelta(days=days_back)
@@ -117,6 +146,7 @@ class Command(BaseCommand):
             "bootstrap_tv": 0,
             "released": 0,
             "upcoming": 0,
+            "details": 0,
         }
 
         def synchronize() -> None:
@@ -196,9 +226,35 @@ class Command(BaseCommand):
                 self.stdout.write(
                     self.style.WARNING("TMDB returned no valid catalog items.")
                 )
-                return
-            with transaction.atomic():
-                upsert_catalog(genres, catalog)
+            else:
+                with transaction.atomic():
+                    upsert_catalog(genres, catalog)
+
+            if detail_limit:
+                detail_candidates = list(
+                    detail_enrichment_candidates(limit=detail_limit)
+                )
+                for content in detail_candidates:
+                    try:
+                        details = client.fetch_content_details(
+                            media_type=content.media_type,
+                            tmdb_id=content.tmdb_id,
+                        )
+                    except CommandError as error:
+                        self.stderr.write(
+                            self.style.WARNING(
+                                f"Could not enrich {content.media_type} "
+                                f"{content.tmdb_id}: {error}"
+                            )
+                        )
+                        continue
+                    content.metadata = {
+                        **(content.metadata or {}),
+                        **details,
+                        "detailRefreshedAt": timezone.now().isoformat(),
+                    }
+                    content.save(update_fields=["metadata"])
+                    synchronized_counts["details"] += 1
 
         executed = run_with_redis_lock(
             TMDB_CATALOG_LOCK_KEY,
@@ -218,6 +274,7 @@ class Command(BaseCommand):
                 f"bootstrap movies={synchronized_counts['bootstrap_movies']}, "
                 f"bootstrap TV={synchronized_counts['bootstrap_tv']}, "
                 f"released={synchronized_counts['released']}, "
-                f"upcoming={synchronized_counts['upcoming']}."
+                f"upcoming={synchronized_counts['upcoming']}, "
+                f"details={synchronized_counts['details']}."
             )
         )

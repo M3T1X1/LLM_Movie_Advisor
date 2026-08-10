@@ -9,6 +9,9 @@ from django.utils import timezone
 from backend.accounts.management.commands.seed_demo_data import (
     Command as SeedDemoCommand,
 )
+from backend.accounts.management.commands.sync_tmdb_catalog import (
+    detail_enrichment_candidates,
+)
 from backend.api.catalog_sync import upsert_catalog
 from backend.api.models import Content, ContentGenre, Genre, Interaction
 from backend.test.integration.api_base import ApiIntegrationTestCase
@@ -54,6 +57,27 @@ class CatalogApiTests(ApiIntegrationTestCase):
         )
         self.assertEqual(payload["filters"]["genres"], ["Thriller"])
 
+    def test_detail_enrichment_selects_missing_or_stale_metadata(self):
+        missing_id = self.insert_content(8001, "Brak szczegółów")
+        stale_id = self.insert_content(8002, "Stare szczegóły")
+        fresh_id = self.insert_content(8003, "Świeże szczegóły")
+        Content.objects.filter(pk=stale_id).update(
+            metadata={
+                "detailRefreshedAt": (
+                    timezone.now() - timedelta(days=31)
+                ).isoformat()
+            }
+        )
+        Content.objects.filter(pk=fresh_id).update(
+            metadata={"detailRefreshedAt": timezone.now().isoformat()}
+        )
+
+        selected = set(
+            detail_enrichment_candidates(limit=10).values_list("id", flat=True)
+        )
+
+        self.assertEqual(selected, {missing_id, stale_id})
+
     def test_catalog_sync_upserts_catalog_and_relations_idempotently(self):
         item = TmdbCatalogItem(
             tmdb_id=9001,
@@ -80,6 +104,9 @@ class CatalogApiTests(ApiIntegrationTestCase):
             {18: "Dramat", 53: "Thriller"},
             catalog,
         )
+        Content.objects.filter(pk=first_ids[0]).update(
+            metadata={"source": "test", "runtimeMinutes": 98}
+        )
         second_ids = upsert_catalog(
             {18: "Dramat", 53: "Thriller"},
             [replace(item, title="Film ORM po aktualizacji"), *catalog[1:]],
@@ -88,6 +115,7 @@ class CatalogApiTests(ApiIntegrationTestCase):
         self.assertEqual(first_ids, second_ids)
         content = Content.objects.get(pk=first_ids[0])
         self.assertEqual(content.title, "Film ORM po aktualizacji")
+        self.assertEqual(content.metadata["runtimeMinutes"], 98)
         self.assertEqual(
             set(content.genres.values_list("name", flat=True)),
             {"Dramat", "Thriller"},

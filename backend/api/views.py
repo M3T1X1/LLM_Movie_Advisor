@@ -35,6 +35,7 @@ from backend.api.models import (
     UserPreference,
     UserProfile,
 )
+from backend.content_titles import display_content_title
 from backend.ollama import (
     OllamaConfigurationError,
     OllamaError,
@@ -288,12 +289,19 @@ def content_queryset():
 
 
 def serialize_content(item: Content) -> dict:
+    display_title = display_content_title(
+        item.title,
+        item.original_title,
+        item.metadata,
+    )
     return {
         "id": str(item.pk),
         "tmdbId": item.tmdb_id,
         "mediaType": item.media_type,
-        "title": item.title,
-        "originalTitle": item.original_title,
+        "title": display_title,
+        "originalTitle": (
+            item.title if display_title != item.title else item.original_title
+        ),
         "overview": item.overview,
         "releaseDate": iso(item.release_date),
         "originalLanguage": item.original_language,

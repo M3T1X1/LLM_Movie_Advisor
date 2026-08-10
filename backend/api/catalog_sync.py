@@ -22,6 +22,15 @@ def upsert_catalog(
         genre_objects[tmdb_genre_id] = genre
 
     for item in catalog:
+        existing_metadata = (
+            Content.objects.filter(
+                tmdb_id=item.tmdb_id,
+                media_type=item.media_type,
+            )
+            .values_list("metadata", flat=True)
+            .first()
+            or {}
+        )
         content, _ = Content.objects.update_or_create(
             tmdb_id=item.tmdb_id,
             media_type=item.media_type,
@@ -34,7 +43,7 @@ def upsert_catalog(
                 "poster_path": item.poster_path,
                 "vote_average": item.vote_average,
                 "popularity": item.popularity,
-                "metadata": item.metadata,
+                "metadata": {**existing_metadata, **item.metadata},
                 "tmdb_refreshed_at": now,
             },
         )

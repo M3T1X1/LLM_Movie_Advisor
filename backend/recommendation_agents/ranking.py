@@ -129,12 +129,32 @@ class RankingAgent:
             scores = self._validate_scores(json.loads(response.content), candidates)
             prompt_tokens = response.prompt_eval_count
             generated_tokens = response.eval_count
+            if not scores:
+                scores = self._fallback_scores(
+                    current_request,
+                    profile,
+                    candidates,
+                )
+                source = "fallback"
+                fallback_reason = "empty_model_scores"
+            elif len(scores) < len(candidates):
+                fallback_scores = self._fallback_scores(
+                    current_request,
+                    profile,
+                    candidates,
+                )
+                scores = {**fallback_scores, **scores}
+                source = "hybrid"
+                fallback_reason = "incomplete_model_scores"
         except (json.JSONDecodeError, RankingAgentError) as error:
             scores = self._fallback_scores(current_request, profile, candidates)
             source = "fallback"
             fallback_reason = type(error).__name__
         scores = self._apply_avoid_penalties(profile, candidates, scores)
-        scores = self._reject_explicit_mismatches(scores)
+        minimum_quality = self._requested_quality_minimum(
+            current_request,
+            profile,
+        )
         ordered = sorted(
             candidates,
             key=lambda item: (
@@ -147,6 +167,13 @@ class RankingAgent:
             for item in ordered
             if self._final_score(scores[item.content_id]) >= 0.30
             and scores[item.content_id][0] > 0
+            and (
+                minimum_quality is None
+                or (
+                    item.vote_average is not None
+                    and item.vote_average >= minimum_quality
+                )
+            )
         ][:3]
         selected_ids = {item.content_id for item in eligible}
         final_ranks = {
@@ -305,67 +332,73 @@ class RankingAgent:
         return adjusted
 
     @staticmethod
-    def _reject_explicit_mismatches(
-        scores: dict[int, tuple[float, float, str]],
-    ) -> dict[int, tuple[float, float, str]]:
-        mismatch = re.compile(
-            r"\b(?:nie\s+pasuje|nie\s+spełnia|nie\s+odpowiada|"
-            r"brak\s+dopasowania|sprzeczn\w*\s+z)\b",
-            re.IGNORECASE,
+    def _requested_quality_minimum(
+        current_request: str,
+        profile: ProfilingAgentOutput,
+    ) -> float | None:
+        explicit = profile.constraints.min_vote_average
+        normalized = re.sub(
+            r"\b(?:dobry\s+nastrój|dobry\s+humor)\b",
+            "",
+            current_request.casefold(),
         )
-        return {
-            content_id: (
-                (0.0, critic, reason)
-                if mismatch.search(reason)
-                else (relevance, critic, reason)
-            )
-            for content_id, (relevance, critic, reason) in scores.items()
-        }
+        qualitative = None
+        if re.search(
+            r"\b(?:wysoko\s+ocen\w*|najlepsz\w*|świetn\w*|znakomit\w*)",
+            normalized,
+        ):
+            qualitative = 7.0
+        elif re.search(r"\b(?:dobr\w*|wart\w*\s+obejrzenia)\b", normalized):
+            qualitative = 6.0
+        values = [value for value in (explicit, qualitative) if value is not None]
+        return max(values) if values else None
 
     @staticmethod
     def _validate_scores(
         raw: Any,
         candidates: tuple[RetrievalCandidate, ...],
     ) -> dict[int, tuple[float, float, str]]:
-        if (
-            not isinstance(raw, dict)
-            or set(raw) != {"scores"}
-            or not isinstance(raw["scores"], list)
-        ):
+        if not isinstance(raw, dict) or not isinstance(raw.get("scores"), list):
             raise RankingAgentError("Ranking agent returned an invalid object.")
         expected_ids = {item.content_id for item in candidates}
         values: dict[int, tuple[float, float, str]] = {}
         for item in raw["scores"]:
-            expected_keys = {
-                "content_id",
-                "relevance_score",
-                "critic_score",
-                "decision_reason",
-            }
-            if not isinstance(item, dict) or set(item) != expected_keys:
-                raise RankingAgentError("Ranking agent returned an invalid score.")
-            content_id = item["content_id"]
-            relevance = item["relevance_score"]
-            critic = item["critic_score"]
-            reason = item["decision_reason"]
+            if not isinstance(item, dict):
+                continue
+            content_id = item.get("content_id")
+            relevance = item.get("relevance_score")
+            critic = item.get("critic_score")
+            reason = item.get("decision_reason")
+            if isinstance(content_id, str) and content_id.isdigit():
+                content_id = int(content_id)
+            for field_name, score in (
+                ("relevance_score", relevance),
+                ("critic_score", critic),
+            ):
+                if isinstance(score, str):
+                    try:
+                        item[field_name] = float(score)
+                    except ValueError:
+                        pass
+            relevance = item.get("relevance_score")
+            critic = item.get("critic_score")
             if (
                 isinstance(content_id, bool)
                 or not isinstance(content_id, int)
                 or content_id in values
+                or content_id not in expected_ids
             ):
-                raise RankingAgentError("Ranking agent returned an invalid content ID.")
+                continue
             if any(
                 isinstance(score, bool)
                 or not isinstance(score, (int, float))
                 or not 0 <= score <= 1
                 for score in (relevance, critic)
             ):
-                raise RankingAgentError("Ranking agent returned a score outside 0-1.")
+                continue
             if not isinstance(reason, str) or not reason.strip() or len(reason.strip()) > 500:
-                raise RankingAgentError("Ranking agent returned an invalid reason.")
+                continue
             if contains_protected_model_output(reason):
-                raise RankingAgentError("Ranking agent returned protected content.")
+                continue
             values[content_id] = (float(relevance), float(critic), reason.strip())
-        if set(values) != expected_ids:
-            raise RankingAgentError("Ranking agent did not score every candidate exactly once.")
         return values

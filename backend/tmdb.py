@@ -96,6 +96,25 @@ class TmdbClient:
             raise CommandError("TMDB returned no genres.")
         return genres
 
+    def fetch_content_details(
+        self,
+        *,
+        media_type: str,
+        tmdb_id: int,
+    ) -> dict[str, Any]:
+        if media_type not in {"movie", "tv"}:
+            raise CommandError("TMDB media type must be movie or tv.")
+        if not isinstance(tmdb_id, int) or isinstance(tmdb_id, bool) or tmdb_id <= 0:
+            raise CommandError("TMDB content ID must be a positive integer.")
+        payload = self.get(
+            f"/{media_type}/{tmdb_id}",
+            language="pl-PL",
+            append_to_response=(
+                "credits,release_dates,content_ratings,translations,external_ids"
+            ),
+        )
+        return normalize_tmdb_details(payload, media_type)
+
     def fetch_release_catalog(
         self,
         *,
@@ -303,6 +322,149 @@ def normalize_tmdb_item(
         genre_ids=genre_ids,
         metadata=metadata,
     )
+
+
+def normalize_tmdb_details(
+    payload: Any,
+    media_type: str,
+) -> dict[str, Any]:
+    if not isinstance(payload, dict) or media_type not in {"movie", "tv"}:
+        return {}
+
+    metadata: dict[str, Any] = {}
+    if media_type == "movie":
+        runtime = positive_int_or_none(payload.get("runtime"))
+        if runtime:
+            metadata["runtimeMinutes"] = runtime
+    else:
+        runtimes = payload.get("episode_run_time")
+        episode_runtime = next(
+            (
+                value
+                for value in runtimes
+                if isinstance(value, int) and not isinstance(value, bool) and value > 0
+            ),
+            None,
+        ) if isinstance(runtimes, list) else None
+        if episode_runtime is None:
+            last_episode = payload.get("last_episode_to_air")
+            if isinstance(last_episode, dict):
+                value = last_episode.get("runtime")
+                if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+                    episode_runtime = value
+        if episode_runtime is not None:
+            metadata["episodeRuntimeMinutes"] = episode_runtime
+        seasons = positive_int_or_none(payload.get("number_of_seasons"))
+        episodes = positive_int_or_none(payload.get("number_of_episodes"))
+        if seasons is not None:
+            metadata["seasonCount"] = seasons
+        if episodes is not None:
+            metadata["episodeCount"] = episodes
+
+    credits = payload.get("credits")
+    if isinstance(credits, dict):
+        cast = _person_names(credits.get("cast"), limit=10)
+        directors = _crew_names(credits.get("crew"), job="Director", limit=6)
+        if cast:
+            metadata["cast"] = list(cast)
+        if directors:
+            metadata["directors"] = list(directors)
+    if media_type == "tv":
+        creators = _person_names(payload.get("created_by"), limit=6)
+        if creators:
+            metadata["directors"] = list(
+                dict.fromkeys((*metadata.get("directors", []), *creators))
+            )
+
+    age_rating = _age_rating(payload, media_type)
+    if age_rating:
+        metadata["ageRating"] = age_rating
+
+    translations = payload.get("translations")
+    if isinstance(translations, dict):
+        translations = translations.get("translations")
+    if isinstance(translations, list):
+        for language, key in (("pl", "polishTitle"), ("en", "englishTitle")):
+            title = _translated_title(translations, language, media_type)
+            if title:
+                metadata[key] = title
+
+    external_ids = payload.get("external_ids")
+    if isinstance(external_ids, dict):
+        imdb_id = nullable_string(external_ids.get("imdb_id"), limit=30)
+        if imdb_id:
+            metadata["imdbId"] = imdb_id
+    return metadata
+
+
+def _person_names(value: Any, *, limit: int) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        return ()
+    names = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        name = nullable_string(item.get("name"), limit=200)
+        if name and name not in names:
+            names.append(name)
+        if len(names) >= limit:
+            break
+    return tuple(names)
+
+
+def _crew_names(value: Any, *, job: str, limit: int) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        return ()
+    return _person_names(
+        [item for item in value if isinstance(item, dict) and item.get("job") == job],
+        limit=limit,
+    )
+
+
+def _age_rating(payload: dict[str, Any], media_type: str) -> str | None:
+    container_key = "release_dates" if media_type == "movie" else "content_ratings"
+    container = payload.get(container_key)
+    if not isinstance(container, dict) or not isinstance(container.get("results"), list):
+        return None
+    results = container["results"]
+    for country in ("PL", "US"):
+        for result in results:
+            if not isinstance(result, dict) or result.get("iso_3166_1") != country:
+                continue
+            if media_type == "tv":
+                certification = nullable_string(result.get("rating"), limit=30)
+                if certification:
+                    return certification
+                continue
+            dates = result.get("release_dates")
+            if not isinstance(dates, list):
+                continue
+            ordered = sorted(
+                (item for item in dates if isinstance(item, dict)),
+                key=lambda item: 0 if item.get("type") == 3 else 1,
+            )
+            for item in ordered:
+                certification = nullable_string(item.get("certification"), limit=30)
+                if certification:
+                    return certification
+    return None
+
+
+def _translated_title(
+    translations: list[Any],
+    language: str,
+    media_type: str,
+) -> str | None:
+    field = "title" if media_type == "movie" else "name"
+    for item in translations:
+        if not isinstance(item, dict) or item.get("iso_639_1") != language:
+            continue
+        data = item.get("data")
+        if isinstance(data, dict):
+            title = nullable_string(data.get(field), limit=500)
+            if title:
+                return title
+    return None
 
 
 def nullable_string(value: Any, *, limit: int | None = None) -> str | None:

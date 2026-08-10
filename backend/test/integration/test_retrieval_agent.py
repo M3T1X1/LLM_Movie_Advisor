@@ -133,3 +133,52 @@ class RetrievalGenreIntersectionTests(ApiIntegrationTestCase):
             [candidate.content_id for candidate in run.candidates],
             [comedy_id],
         )
+
+    def test_content_question_retrieves_only_referenced_previous_title(self):
+        referenced_id = self.insert_content(1007, "Luca")
+        self.insert_content(1008, "Inny film")
+        question_profile = ProfilingAgentOutput(
+            **{
+                **multi_genre_profile().__dict__,
+                "intent": "content_question",
+                "genres": (),
+                "reference_titles": ("Luca",),
+            }
+        )
+
+        run = RetrievalAgent(None).run(
+            "Kto reżyserował pierwszą propozycję?",
+            question_profile,
+        )
+
+        self.assertEqual(
+            [candidate.content_id for candidate in run.candidates],
+            [referenced_id],
+        )
+
+    def test_strong_heroine_theme_excludes_unrelated_male_story(self):
+        heroine_id = self.insert_content(1009, "Historia bohaterki")
+        unrelated_id = self.insert_content(1010, "Historia złodzieja")
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE content SET overview = %s WHERE id = %s",
+                ["Młoda kobieta walczy o swoją rodzinę.", heroine_id],
+            )
+            cursor.execute(
+                "UPDATE content SET overview = %s WHERE id = %s",
+                ["Złodziej planuje zemstę za krzywdę ojca.", unrelated_id],
+            )
+        heroine_profile = ProfilingAgentOutput(
+            **{
+                **multi_genre_profile().__dict__,
+                "genres": (),
+                "themes": ("silna bohaterka",),
+            }
+        )
+
+        run = RetrievalAgent(None).run("Film z silną bohaterką", heroine_profile)
+
+        self.assertEqual(
+            [candidate.content_id for candidate in run.candidates],
+            [heroine_id],
+        )

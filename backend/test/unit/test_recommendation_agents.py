@@ -108,6 +108,24 @@ class RetrievalAgentTests(SimpleTestCase):
 
         self.assertFalse(RetrievalAgent._runtime_matches(content, output))
 
+    def test_short_episode_theme_requires_verified_episode_runtime(self):
+        output = profile(
+            media_types=("tv",),
+            themes=("krótkie odcinki",),
+        )
+        short = MagicMock(
+            media_type="tv",
+            metadata={"episodeRuntimeMinutes": 24},
+        )
+        unknown = MagicMock(media_type="tv", metadata={})
+
+        self.assertTrue(
+            RetrievalAgent._candidate_matches_constraints(short, output)
+        )
+        self.assertFalse(
+            RetrievalAgent._candidate_matches_constraints(unknown, output)
+        )
+
     @override_settings(
         LLM_SEMANTIC_SEARCH_ENABLED=False,
         LLM_CATALOG_CANDIDATE_LIMIT=12,
@@ -264,7 +282,80 @@ class RankingAgentTests(SimpleTestCase):
 
         self.assertEqual(len(run.candidates), 2)
         self.assertEqual(len(run.selected), 2)
-        self.assertEqual(run.source, "fallback")
+        self.assertEqual(run.source, "hybrid")
+
+    def test_accepts_safe_numeric_strings_and_ignores_extra_model_fields(self):
+        self.client.chat.return_value = response(
+            {
+                "scores": [
+                    {
+                        "content_id": "1",
+                        "relevance_score": "0.8",
+                        "critic_score": "0.7",
+                        "decision_reason": "Pasuje.",
+                        "unused": "ignored",
+                    }
+                ],
+                "unused": True,
+            }
+        )
+
+        run = self.agent.run("Thriller", profile(), self.candidates)
+
+        first = next(item for item in run.candidates if item.candidate.content_id == 1)
+        self.assertEqual(first.relevance_score, 0.8)
+        self.assertEqual(run.source, "hybrid")
+
+    def test_ignores_malformed_individual_model_score(self):
+        self.client.chat.return_value = response(
+            {
+                "scores": [
+                    {"content_id": 1},
+                    {
+                        "content_id": 2,
+                        "relevance_score": 0.8,
+                        "critic_score": 0.7,
+                        "decision_reason": "Pasuje.",
+                    },
+                ]
+            }
+        )
+
+        run = self.agent.run("Thriller", profile(), self.candidates)
+
+        self.assertEqual(len(run.candidates), 2)
+        self.assertEqual(run.source, "hybrid")
+
+    def test_good_request_rejects_low_rated_candidate(self):
+        low = RetrievalCandidate(
+            **{**candidate(1).__dict__, "vote_average": 4.8}
+        )
+        good = RetrievalCandidate(
+            **{**candidate(2).__dict__, "vote_average": 7.2}
+        )
+        self.client.chat.return_value = response(
+            {
+                "scores": [
+                    {"content_id": 1, "relevance_score": 0.9, "critic_score": 0.9, "decision_reason": "Pasuje."},
+                    {"content_id": 2, "relevance_score": 0.8, "critic_score": 0.8, "decision_reason": "Pasuje."},
+                ]
+            }
+        )
+
+        run = self.agent.run("Poleć dobry horror", profile(), (low, good))
+
+        self.assertEqual(
+            [item.candidate.content_id for item in run.selected],
+            [2],
+        )
+
+    def test_good_mood_does_not_create_quality_threshold(self):
+        self.assertIsNone(
+            RankingAgent._requested_quality_minimum(
+                "Mam dobry nastrój, poleć komedię.",
+                profile(),
+            )
+        )
 
     def test_light_request_does_not_turn_explicit_genre_into_hard_exclusion(self):
         light_profile = profile(
@@ -293,7 +384,7 @@ class RankingAgentTests(SimpleTestCase):
         self.assertEqual(len(run.selected), 2)
         self.assertGreater(run.candidates[0].relevance_score, 0)
 
-    def test_rejects_candidate_when_model_reason_explicitly_says_it_does_not_fit(self):
+    def test_model_reason_cannot_override_catalog_eligibility(self):
         self.client.chat.return_value = response(
             {
                 "scores": [
@@ -315,9 +406,9 @@ class RankingAgentTests(SimpleTestCase):
 
         run = self.agent.run("Lekki film", profile(), self.candidates)
 
-        rejected = next(item for item in run.candidates if item.candidate.content_id == 1)
-        self.assertEqual(rejected.status, "rejected")
-        self.assertEqual(rejected.relevance_score, 0.0)
+        selected = next(item for item in run.candidates if item.candidate.content_id == 1)
+        self.assertEqual(selected.status, "selected")
+        self.assertEqual(selected.relevance_score, 0.95)
 
 
 class ExplanationAgentTests(SimpleTestCase):
@@ -333,12 +424,29 @@ class ExplanationAgentTests(SimpleTestCase):
         run = self.agent.run("Mroczny thriller", profile(), self.selected)
 
         self.assertIn("1. Film 1 — Mroczna tajemnica.", run.message)
-        self.assertIn("gatunki: Thriller", run.message)
+        self.assertIn("Pasuje: thriller", run.message)
         self.assertEqual(run.explanations[0].content_id, 1)
-        self.assertIn("ocena katalogowa: 8.0/10", run.explanations[0].explanation)
+        self.assertIn("8.0/10", run.explanations[0].explanation)
         self.assertEqual(run.model, "llama3.1:8b")
         self.assertEqual(run.source, "catalog")
         self.client.chat.assert_not_called()
+
+    def test_catalog_description_is_short(self):
+        long_candidate = RetrievalCandidate(
+            **{
+                **candidate(1).__dict__,
+                "overview": "Bardzo długi opis " * 40,
+            }
+        )
+        selected = (
+            RankedCandidate(
+                long_candidate, 0.9, 0.8, 0.865, "selected", 1, "Pasuje."
+            ),
+        )
+
+        run = self.agent.run("Thriller", profile(), selected)
+
+        self.assertLess(len(run.explanations[0].explanation), 260)
 
     def test_chat_message_describes_every_selected_title(self):
         second = RankedCandidate(
@@ -479,6 +587,33 @@ class ExplanationAgentTests(SimpleTestCase):
         )
 
         self.assertIn("nie mogę rzetelnie potwierdzić", run.message.casefold())
+
+    def test_answers_enriched_catalog_questions(self):
+        enriched = RetrievalCandidate(
+            **{
+                **candidate(1, title="Film testowy").__dict__,
+                "metadata": {
+                    "runtimeMinutes": 98,
+                    "directors": ["Jan Reżyser"],
+                    "cast": ["Anna Aktorka", "Piotr Aktor"],
+                    "ageRating": "12",
+                },
+            }
+        )
+
+        director = self.agent.answer_content_question(
+            "Kto reżyserował Film testowy?", (enriched,)
+        )
+        cast = self.agent.answer_content_question(
+            "Kto gra w Film testowy?", (enriched,)
+        )
+        age = self.agent.answer_content_question(
+            "Od ilu lat jest Film testowy?", (enriched,)
+        )
+
+        self.assertIn("Jan Reżyser", director.message)
+        self.assertIn("Anna Aktorka", cast.message)
+        self.assertIn("12", age.message)
 
     def test_stored_gore_avoidance_does_not_warn_on_unrelated_prompt(self):
         run = self.agent.run(
