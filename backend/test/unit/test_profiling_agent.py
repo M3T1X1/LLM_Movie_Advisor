@@ -152,12 +152,99 @@ class ProfilingAgentTests(SimpleTestCase):
         self.assertTrue(result.output.needs_clarification)
         self.assertIn("film czy serial", result.output.clarification_question)
 
-    def test_media_type_alone_still_requires_clarification(self):
+    def test_media_type_is_enough_to_start_a_broad_recommendation(self):
         result = self.agent.run(
             ProfilingAgentInput(current_request="Poleć film.")
         )
 
-        self.assertTrue(result.output.needs_clarification)
+        self.assertFalse(result.output.needs_clarification)
+        self.assertIsNone(result.output.clarification_question)
+
+    def test_media_type_answer_resolves_previous_clarification(self):
+        result = self.agent.run(
+            ProfilingAgentInput(
+                current_request="Serial",
+                conversation_history=(
+                    {"role": "user", "content": "Poleć mi coś."},
+                    {
+                        "role": "assistant",
+                        "content": "Wolisz film czy serial i na jaki masz dziś nastrój?",
+                    },
+                ),
+            )
+        )
+
+        self.assertEqual(result.output.intent, "recommendation")
+        self.assertEqual(result.output.media_types, ("tv",))
+        self.assertFalse(result.output.needs_clarification)
+        self.assertIsNone(result.output.clarification_question)
+
+    def test_media_type_and_mood_answer_does_not_repeat_clarification(self):
+        output = valid_output(
+            mood="Dobry nastrój",
+            media_types=["tv"],
+            needs_clarification=True,
+            clarification_question="Wolisz film czy serial?",
+        )
+        self.client.chat.return_value = OllamaChatResponse(
+            content=json.dumps(output),
+            model="llama3.1:8b",
+            done_reason="stop",
+            total_duration_ns=None,
+            prompt_eval_count=None,
+            eval_count=None,
+        )
+
+        result = self.agent.run(
+            ProfilingAgentInput(
+                current_request="Serial. Mam dobry nastrój.",
+                conversation_history=(
+                    {"role": "user", "content": "Coś fajnego."},
+                    {
+                        "role": "assistant",
+                        "content": "Wolisz film czy serial i na jaki masz dziś nastrój?",
+                    },
+                ),
+            )
+        )
+
+        self.assertFalse(result.output.needs_clarification)
+        self.assertIsNone(result.output.clarification_question)
+
+    def test_preserves_content_question_intent_without_clarification(self):
+        output = valid_output(
+            intent="content_question",
+            mood=None,
+            media_types=["movie"],
+            genres=[],
+            themes=[],
+            avoid=[],
+            reference_titles=["Incepcja"],
+            constraints={
+                "max_runtime_minutes": None,
+                "release_year_from": None,
+                "release_year_to": None,
+                "min_vote_average": None,
+            },
+            needs_clarification=False,
+            clarification_question=None,
+            evidence=["O czym jest film Incepcja?"],
+        )
+        self.client.chat.return_value = OllamaChatResponse(
+            content=json.dumps(output),
+            model="llama3.1:8b",
+            done_reason="stop",
+            total_duration_ns=None,
+            prompt_eval_count=None,
+            eval_count=None,
+        )
+
+        result = self.agent.run(
+            ProfilingAgentInput(current_request="O czym jest film Incepcja?")
+        )
+
+        self.assertEqual(result.output.intent, "content_question")
+        self.assertFalse(result.output.needs_clarification)
 
     def test_uses_specific_user_history_for_short_follow_up(self):
         result = self.agent.run(

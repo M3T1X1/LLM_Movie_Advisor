@@ -17,7 +17,7 @@ from backend.recommendation_agents.ranking import RankingAgent, RankingAgentRun
 from backend.recommendation_agents.retrieval import RetrievalAgent, RetrievalAgentRun
 
 
-GRAPH_VERSION = "recommendation-agents-v2"
+GRAPH_VERSION = "recommendation-agents-v3"
 
 
 class RecommendationGraphState(TypedDict, total=False):
@@ -94,7 +94,10 @@ def build_recommendation_graph(
 
     def route_after_profiling(state: RecommendationGraphState):
         output = state["profiling"].output
-        if output.intent == "recommendation" and not output.needs_clarification:
+        if (
+            output.intent in {"recommendation", "content_question"}
+            and not output.needs_clarification
+        ):
             return "retrieve"
         return "explain"
 
@@ -115,6 +118,11 @@ def build_recommendation_graph(
             lambda result: result.as_dict(),
         )
         return {"retrieval": run}
+
+    def route_after_retrieval(state: RecommendationGraphState):
+        if state["profiling"].output.intent == "content_question":
+            return "explain"
+        return "rank"
 
     def ranking_node(state: RecommendationGraphState):
         run = observed(
@@ -142,6 +150,23 @@ def build_recommendation_graph(
                 lambda: ExplanationAgentRun(
                     profile.clarification_question or "Jakiego filmu lub serialu szukasz?",
                     (), client.model, None, None, "fallback", "clarification_required",
+                ),
+                lambda result: result.as_dict(),
+            )
+            return {"explanation": run}
+        if profile.intent == "content_question":
+            run = observed(
+                "explanation",
+                {
+                    "reason": "content_question",
+                    "candidate_ids": [
+                        item.content_id for item in state["retrieval"].candidates
+                    ],
+                },
+                lambda: explanation_agent.answer_content_question(
+                    state["current_request"],
+                    state["retrieval"].candidates,
+                    state.get("conversation_history", ()),
                 ),
                 lambda result: result.as_dict(),
             )
@@ -202,7 +227,11 @@ def build_recommendation_graph(
         route_after_profiling,
         {"retrieve": "retrieve", "explain": "explain"},
     )
-    graph.add_edge("retrieve", "rank")
+    graph.add_conditional_edges(
+        "retrieve",
+        route_after_retrieval,
+        {"rank": "rank", "explain": "explain"},
+    )
     graph.add_edge("rank", "explain")
     graph.add_edge("explain", END)
     return graph.compile()

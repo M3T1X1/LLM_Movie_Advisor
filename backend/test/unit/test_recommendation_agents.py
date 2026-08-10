@@ -400,6 +400,35 @@ class ExplanationAgentTests(SimpleTestCase):
         self.assertIn("Nie mogę potwierdzić limitu 100 minut", run.message)
         self.client.chat.assert_not_called()
 
+    def test_answers_content_question_from_catalog_context(self):
+        self.client.chat.return_value = response(
+            {"message": "To opowieść o zagadce przedstawionej w opisie katalogowym."}
+        )
+
+        run = self.agent.answer_content_question(
+            "O czym jest ten film?",
+            (candidate(1, title="Zagadka"),),
+            ({"role": "assistant", "content": "Poleciłem tytuł Zagadka."},),
+        )
+
+        self.assertEqual(
+            run.message,
+            "To opowieść o zagadce przedstawionej w opisie katalogowym.",
+        )
+        self.assertEqual(run.explanations, ())
+        payload = json.loads(self.client.chat.call_args.args[0][1]["content"])
+        self.assertEqual(payload["current_question"], "O czym jest ten film?")
+        self.assertEqual(payload["catalog_candidates"][0]["title"], "Zagadka")
+        self.assertEqual(payload["conversation_history"][0]["role"], "assistant")
+
+    def test_content_question_falls_back_for_invalid_model_output(self):
+        self.client.chat.return_value = response({"unexpected": "value"})
+
+        run = self.agent.answer_content_question("Kto reżyserował ten film?", ())
+
+        self.assertIn("wystarczających danych", run.message)
+        self.assertEqual(run.source, "fallback")
+
 
 class RecommendationGraphTests(SimpleTestCase):
     @patch("backend.recommendation_agents.graph.build_profiling_input")
@@ -450,3 +479,58 @@ class RecommendationGraphTests(SimpleTestCase):
 
         self.assertEqual(result["explanation"].message, "Film czy serial?")
         retrieval_run.assert_not_called()
+
+    @patch("backend.recommendation_agents.graph.build_profiling_input")
+    @patch("backend.recommendation_agents.graph.ExplanationAgent.answer_content_question")
+    @patch("backend.recommendation_agents.graph.RankingAgent.run")
+    @patch("backend.recommendation_agents.graph.RetrievalAgent.run")
+    @patch("backend.recommendation_agents.graph.ProfilingAgent.run")
+    def test_content_question_retrieves_context_without_ranking(
+        self,
+        profiling_run,
+        retrieval_run,
+        ranking_run,
+        answer_content_question,
+        build_input,
+    ):
+        history = (
+            {"role": "assistant", "content": "Poleciłem film Zagadka."},
+        )
+        build_input.return_value = ProfilingAgentInput(
+            current_request="O czym jest ten film?",
+            conversation_history=history,
+        )
+        profiling_run.return_value = ProfilingAgentRun(
+            profile(
+                intent="content_question",
+                needs_clarification=False,
+                clarification_question=None,
+            ),
+            "model",
+            1,
+            1,
+            1,
+        )
+        retrieved = RetrievalAgentRun((candidate(1),), "semantic", "Zagadka")
+        retrieval_run.return_value = retrieved
+        answer_content_question.return_value = ExplanationAgentRun(
+            "Opis fabuły.", (), "model", 1, 1
+        )
+        client = MagicMock(model="model", embedding_model="embed")
+
+        result = build_recommendation_graph(client).invoke(
+            {
+                "user": object(),
+                "current_request": "O czym jest ten film?",
+                "conversation_history": history,
+            }
+        )
+
+        self.assertEqual(result["explanation"].message, "Opis fabuły.")
+        retrieval_run.assert_called_once()
+        ranking_run.assert_not_called()
+        answer_content_question.assert_called_once_with(
+            "O czym jest ten film?",
+            retrieved.candidates,
+            history,
+        )
