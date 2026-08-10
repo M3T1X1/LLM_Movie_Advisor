@@ -130,7 +130,7 @@ class TrendsApiTests(ApiIntegrationTestCase):
             str(first_id),
         )
 
-    def test_recommendation_trends_currently_count_every_candidate_status(self):
+    def test_recommendation_trends_count_only_selected_candidates(self):
         content_id = self.insert_content(6201, "Statusy")
         for status, run_status in (
             ("selected", "completed"),
@@ -145,8 +145,8 @@ class TrendsApiTests(ApiIntegrationTestCase):
 
         response = self.client.get(reverse("api:trends"), {"period": "day"})
 
-        self.assertEqual(response.json()["totalRecommendations"], 3)
+        self.assertEqual(response.json()["totalRecommendations"], 1)
         self.assertEqual(
             response.json()["contentTrends"][0]["recommendationCount"],
-            3,
+            1,
         )

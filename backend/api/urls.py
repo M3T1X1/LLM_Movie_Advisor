@@ -29,6 +29,11 @@ urlpatterns = [
         views.conversation_messages,
         name="conversation-messages",
     ),
+    path(
+        "conversations/<int:conversation_id>/recommendations/",
+        views.conversation_recommendations,
+        name="conversation-recommendations",
+    ),
     path("interactions/", views.interactions, name="interactions"),
     path(
         "interactions/<int:interaction_id>/",

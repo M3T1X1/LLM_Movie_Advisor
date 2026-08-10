@@ -9,7 +9,7 @@ import {
   login as loginRequest,
   logout as logoutRequest,
   register as registerRequest,
-  requestStatelessChat,
+  requestRecommendation,
   resetMoviePreferences as resetMoviePreferencesRequest,
   saveMoviePreferences as saveMoviePreferencesRequest,
   renameConversation as renameConversationRequest,
@@ -192,8 +192,16 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   };
 
   const sendChatMessage = async (content: string) => {
-    const conversationId =
-      session.currentConversationId ?? TRANSIENT_CHAT_CONVERSATION_ID;
+    let conversationId = session.currentConversationId;
+    if (!conversationId) {
+      const conversation = await createConversationRequest();
+      conversationId = conversation.id;
+      setSession((current) => ({
+        ...current,
+        conversations: [conversation, ...current.conversations],
+        currentConversationId: conversation.id,
+      }));
+    }
 
     const conversationMessages = session.messages.filter(
       (message) => message.conversationId === conversationId,
@@ -213,51 +221,28 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       messages: [...current.messages, userMessage],
     }));
 
-    const history = conversationMessages
-      .filter((message) => message.role === 'user' || message.role === 'assistant')
-      .filter(
-        (message) =>
-          !(
-            message.role === 'assistant' &&
-            message.content.startsWith('Nie udało się uzyskać odpowiedzi:')
-          ),
-      )
-      .slice(-10)
-      .map((message) => ({
-        role: message.role,
-        content: message.content.slice(0, 4000),
-      }));
-
     try {
-      const response = await requestStatelessChat(content, history);
-      const assistantMessageId = transientMessageId();
+      const response = await requestRecommendation(conversationId, content);
       const assistantMessage: ChatMessage = {
-        id: assistantMessageId,
-        conversationId,
-        role: 'assistant',
-        content: response.message,
-        sequenceNo: nextSequence + 1,
-        createdAt: new Date().toISOString(),
-        recommendations: (response.recommendations ?? []).map((recommendation) => ({
-          id: `${assistantMessageId}-recommendation-${recommendation.rank}`,
-          runId: '',
-          contentId: recommendation.content.id,
-          sourceRank: recommendation.rank,
-          relevanceScore: null,
-          criticScore: null,
-          finalScore: null,
-          status: 'selected',
-          finalRank: recommendation.rank,
-          decisionReason: null,
-          explanation: recommendation.explanation,
-          metadataSnapshot: {},
-          createdAt: new Date().toISOString(),
-          content: recommendation.content,
-        })),
+        ...response.assistantMessage,
+        recommendations: response.candidates,
       };
       setSession((current) => ({
         ...current,
-        messages: [...current.messages, assistantMessage],
+        conversations: current.conversations.map((conversation) =>
+          conversation.id === conversationId
+            ? {
+                ...conversation,
+                title: conversation.title ?? content.slice(0, 255),
+                updatedAt: assistantMessage.createdAt,
+              }
+            : conversation,
+        ),
+        messages: [
+          ...current.messages.filter((item) => item.id !== userMessage.id),
+          response.userMessage,
+          assistantMessage,
+        ],
       }));
       return assistantMessage;
     } catch (reason) {

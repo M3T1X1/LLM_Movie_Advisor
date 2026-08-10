@@ -76,7 +76,7 @@ export function ChatInterface({
               <span className="text-[9px] text-slate-700">{formatTime(message.createdAt)}</span>
             </div>
             <div
-              className={`rounded-md px-3.5 py-3 text-sm leading-6 ${
+              className={`whitespace-pre-line rounded-md px-3.5 py-3 text-sm leading-6 ${
                 message.role === 'user'
                   ? 'bg-violet-600 text-white'
                   : 'border-l-2 border-violet-500 bg-white/[0.025] text-slate-300'

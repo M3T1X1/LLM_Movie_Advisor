@@ -10,15 +10,14 @@ session-based authentication, TMDB catalog synchronization, user profiles,
 conversations, interactions, PostgreSQL with pgvector, Redis, Docker Compose,
 an AMD ROCm-backed Ollama runtime, and automated tests.
 
-The database schema and frontend contain the foundations for an LLM-based
-recommendation workflow. Docker Compose runs Ollama and downloads Llama 3.1
-8B into a persistent volume. The React chat exchanges temporary messages with
-the local model through Django. Django grounds the model with catalog, profile,
-preference, and interaction data from PostgreSQL and caches catalog candidates
-in Redis. Semantic catalog retrieval is implemented with Ollama embeddings and
-PostgreSQL/pgvector, with keyword search as a fallback. A live structured
-multi-agent pipeline is not implemented; one LLM returns a validated structured
-selection that the frontend renders as catalog-backed recommendation cards.
+The recommendation workflow is implemented as a four-stage LangGraph pipeline:
+profiling and context extraction, catalog retrieval, deterministic ranking and
+critique, and natural-language explanations. Docker Compose runs Ollama and
+downloads Llama 3.1 8B into a persistent volume. Django grounds the agents with
+catalog, profile, preference, and interaction data from PostgreSQL. Retrieval
+uses Ollama embeddings and PostgreSQL/pgvector with keyword fallback. Every run,
+agent execution, candidate score, message, and explanation is persisted and the
+React frontend renders the selected catalog-backed recommendation cards.
 
 ## Application screenshots
 
@@ -477,20 +476,16 @@ healthy, pull the chat and embedding models, and exit. Ollama stores downloaded
 layers in the `ollama_data` volume, so unchanged models are reused on later
 starts.
 
-Django includes a minimal HTTP client for model discovery and non-streaming
-chat calls. The application chat sends its current prompt and up to ten recent
-messages to `POST /api/chat/`. Before calling Ollama, Django loads the signed-in
-user's profile, preferences, and recent interactions from PostgreSQL. It embeds
-the query with Ollama and retrieves a bounded candidate list through pgvector
-cosine distance and the HNSW index. Keyword retrieval fills missing results and
-acts as a fallback. Candidate lists are cached in Redis and invalidated through
-the existing catalog version. Redis failures fall back to PostgreSQL. The
-model returns a message plus up to three catalog identifiers and explanations.
-Django discards identifiers outside the supplied candidate context and returns
-the matching catalog records for the recommendation cards. The prompt,
-response, and selected cards remain only in React memory and disappear after a page
-reload; this preliminary flow does not create `message`,
-`recommendation_request`, or `recommendation_run` records.
+Django includes an HTTP client for model discovery, embeddings, and
+non-streaming chat calls. The application sends prompts to
+`POST /api/conversations/:id/recommendations/`. The profiling agent analyzes up
+to ten sanitized conversation messages plus the user's profile, preferences,
+and interactions. The retrieval agent queries pgvector and applies catalog
+constraints, with relational keyword search as fallback. The ranking agent
+scores and rejects weak or conflicting candidates. The explanation agent
+returns a validated Polish response grounded in selected catalog metadata.
+Messages and the complete execution trace survive page reloads. The legacy
+`POST /api/chat/` endpoint remains available for isolated stateless diagnostics.
 
 Check the complete application health response:
 
@@ -751,6 +746,7 @@ health endpoint.
 | `PATCH` | `/api/conversations/:id/` | rename a conversation |
 | `DELETE` | `/api/conversations/:id/` | delete a conversation |
 | `POST` | `/api/conversations/:id/messages/` | store a user message |
+| `POST` | `/api/conversations/:id/recommendations/` | execute and persist the four-agent graph |
 | `POST` | `/api/interactions/` | store a title interaction |
 | `DELETE` | `/api/interactions/:id/` | delete the user's interaction |
 
@@ -777,14 +773,10 @@ unrelated to the catalog baseline process and the Bootstrap CSS framework.
 ### Recommendation data
 
 `RecommendationRequest`, `RecommendationRun`, `RunCandidate`, and
-`AgentExecution` provide persistence for recommendation-related data. The API
-does not execute or persist a recommendation run; `/api/chat/` obtains a
-structured selection directly from one model call. The dedicated
-`POST /api/conversations/:id/messages/` endpoint stores a user message in
-PostgreSQL without fabricating an assistant response. The current React chat
-uses the separate stateless `/api/chat/` endpoint and does not call the
-persistent-message endpoint, so newly exchanged chat messages disappear after
-a page reload.
+`AgentExecution` persist recommendation inputs, graph status, ranked candidates,
+per-agent snapshots, timings, and fallbacks. The React advisor uses the
+persistent four-agent endpoint and bootstrap restores both messages and their
+selected recommendation cards after a page reload.
 
 ## Frontend
 
@@ -1184,7 +1176,7 @@ automation, or CI/CD.
 
 ## Recommendation system scope
 
-The intended recommendation workflow consists of four roles:
+The implemented recommendation workflow consists of four roles:
 
 1. a profiling and context step that interprets the user's message,
    conversation history, profile, mood, themes, and constraints;
@@ -1194,19 +1186,11 @@ The intended recommendation workflow consists of four roles:
 4. an explanation and interaction step that returns a concise response and
    explains each selected title.
 
-The schema provides `recommendation_request`, `recommendation_run`,
-`run_candidate`, and `agent_execution` for storing this workflow. Implementing
-the workflow requires:
-
-- using the existing Ollama client in the recommendation workflow;
-- defining validated input and output contracts;
-- implementing ranking, rejection thresholds, and deterministic validation;
-- adding a recommendation API with errors, cancellation, retries, and
-  optional streaming;
-- connecting the existing frontend components to that API;
-- updating persistent preferences separately from a user's temporary mood;
-- evaluating recommendation accuracy, diversity, novelty, catalog coverage,
-  latency, and hardware requirements.
+LangGraph connects the stages as `profile -> retrieve -> rank -> explain`, with
+an early explanation branch for clarification and out-of-scope requests. LLM
+outputs have JSON schemas and Python validation; profiling and explanation use
+deterministic fallbacks, while retrieval and ranking remain bounded and
+reproducible.
 
 The configured chat model is Llama 3.1 8B and the embedding model is
 `nomic-embed-text:latest`. Changing to a model with dimensions other than 768
@@ -1217,12 +1201,9 @@ evaluation.
 ## Known limitations
 
 - semantic retrieval has not yet been evaluated against a labeled relevance set;
-- the preliminary Ollama chat does not persist messages or recommendation
-  runs and loses its temporary messages after a page reload;
-- no LangChain or LangGraph integration;
 - no automatic semantic-profile updates;
 - recommendation trends depend on stored records, which can be demo data;
-- agent-status components have no live pipeline;
+- the graph is synchronous and does not yet provide streaming or job retries;
 - upcoming releases cover movies, not future TV seasons;
 - `catalog-sync` uses a shell loop instead of a scheduler with job history;
 - local Redis has no password;
