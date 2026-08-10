@@ -298,7 +298,11 @@ class ExplanationAgentTests(SimpleTestCase):
         )
         run = self.agent.run("Mroczny thriller", profile(), self.selected)
 
-        self.assertEqual(run.message, "Mam dla Ciebie jeden tytuł.")
+        self.assertEqual(
+            run.message,
+            "Mam dla Ciebie te propozycje:\n"
+            "1. Film 1 — Mroczna tajemnica odpowiada prośbie.",
+        )
         self.assertEqual(run.explanations[0].content_id, 1)
         self.assertEqual(
             run.explanations[0].explanation,
@@ -315,6 +319,48 @@ class ExplanationAgentTests(SimpleTestCase):
         self.assertEqual(
             self.client.chat.call_args.kwargs["options"]["temperature"],
             0,
+        )
+
+    def test_chat_message_describes_every_selected_title(self):
+        second = RankedCandidate(
+            candidate(2, source_rank=2, title="Drugi film"),
+            relevance_score=0.8,
+            critic_score=0.7,
+            final_score=0.765,
+            status="selected",
+            final_rank=2,
+            decision_reason="Pasuje.",
+        )
+        self.client.chat.return_value = response(
+            {
+                "message": "Oto filmy, które mogą Ci się spodobać.",
+                "explanations": [
+                    {
+                        "content_id": 1,
+                        "explanation": "Mroczna zagadka pasuje do prośby.",
+                    },
+                    {
+                        "content_id": 2,
+                        "explanation": "Napięta historia ma podobny klimat.",
+                    },
+                ],
+            }
+        )
+
+        run = self.agent.run(
+            "Mroczne filmy",
+            profile(),
+            (*self.selected, second),
+        )
+
+        self.assertIn("1. Film 1 — Mroczna zagadka pasuje do prośby.", run.message)
+        self.assertIn(
+            "2. Drugi film — Napięta historia ma podobny klimat.",
+            run.message,
+        )
+        self.assertNotEqual(
+            run.message,
+            "Oto filmy, które mogą Ci się spodobać.",
         )
 
     def test_falls_back_for_explanation_of_unknown_candidate(self):
