@@ -26,6 +26,7 @@ class SyncTmdbCatalogCommandTests(SimpleTestCase):
             "max_pages": 10,
             "upcoming_days_ahead": 365,
             "upcoming_max_pages": 10,
+            "detail_limit": 100,
         }
         invalid_options = (
             {**valid_options, "baseline_movies": -1},
@@ -36,6 +37,8 @@ class SyncTmdbCatalogCommandTests(SimpleTestCase):
             {**valid_options, "upcoming_days_ahead": -1},
             {**valid_options, "upcoming_max_pages": 0},
             {**valid_options, "upcoming_max_pages": 501},
+            {**valid_options, "detail_limit": -1},
+            {**valid_options, "detail_limit": 1001},
         )
 
         for options in invalid_options:
@@ -174,6 +177,58 @@ class SyncTmdbCatalogCommandTests(SimpleTestCase):
             {18: "Dramat"},
             [movie, tv_show],
         )
+
+    @patch(
+        "backend.accounts.management.commands.sync_tmdb_catalog.Content.objects"
+    )
+    @patch(
+        "backend.accounts.management.commands.sync_tmdb_catalog.TmdbClient"
+    )
+    @patch(
+        "backend.accounts.management.commands.sync_tmdb_catalog.run_with_redis_lock",
+        side_effect=lambda key, operation, **kwargs: operation() or True,
+    )
+    def test_enriches_existing_catalog_metadata_in_bounded_batches(
+        self,
+        mocked_lock,
+        mocked_client_class,
+        mocked_content_objects,
+    ):
+        client = mocked_client_class.return_value
+        client.fetch_genres.return_value = {18: "Dramat"}
+        client.fetch_release_catalog.return_value = []
+        mocked_content_objects.filter.return_value.count.side_effect = [2000, 2000]
+        content = MagicMock(
+            media_type="movie",
+            tmdb_id=42,
+            metadata={"source": "tmdb"},
+        )
+        (
+            mocked_content_objects.filter.return_value.order_by.return_value
+            .__getitem__.return_value
+        ) = [content]
+        client.fetch_content_details.return_value = {
+            "runtimeMinutes": 98,
+            "directors": ["Jan Reżyser"],
+        }
+
+        self.command.handle(
+            baseline_movies=2000,
+            baseline_tv_shows=2000,
+            days_back=0,
+            max_pages=1,
+            upcoming_days_ahead=0,
+            upcoming_max_pages=1,
+            detail_limit=1,
+        )
+
+        client.fetch_content_details.assert_called_once_with(
+            media_type="movie",
+            tmdb_id=42,
+        )
+        self.assertEqual(content.metadata["runtimeMinutes"], 98)
+        self.assertIn("detailRefreshedAt", content.metadata)
+        content.save.assert_called_once_with(update_fields=["metadata"])
 
     @patch(
         "backend.accounts.management.commands.sync_tmdb_catalog.TmdbClient"

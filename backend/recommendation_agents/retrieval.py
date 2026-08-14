@@ -6,6 +6,7 @@ from django.conf import settings
 from django.db import DatabaseError
 from django.db.models import Q, QuerySet
 from backend.api.models import Content
+from backend.content_titles import display_content_title
 from backend.embeddings import SemanticContentMatch, semantic_content_search
 from backend.ollama import OllamaClient, OllamaError
 from backend.recommendation_agents.profiling import ProfilingAgentOutput
@@ -27,6 +28,8 @@ class RetrievalCandidate:
     popularity: float | None
     metadata: dict
     semantic_score: float | None
+    original_language: str | None = None
+    origin_countries: tuple[str, ...] = ()
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -84,7 +87,11 @@ class RetrievalAgent:
             limit,
         )
 
-        if not ordered_ids and len(profile.genres) > 1:
+        if (
+            not ordered_ids
+            and len(profile.genres) > 1
+            and profile.allow_genre_relaxation
+        ):
             relaxed_queryset = self._constrained_queryset(
                 profile,
                 require_all_genres=False,
@@ -138,7 +145,7 @@ class RetrievalAgent:
             if (
                 content_id in allowed_ids
                 and content_id not in semantic_scores
-                and self._runtime_matches(match.content, profile)
+                and self._candidate_matches_constraints(match.content, profile)
             ):
                 ordered_ids.append(content_id)
                 semantic_scores[content_id] = match.similarity
@@ -164,6 +171,12 @@ class RetrievalAgent:
                 terms.append("Familijny")
             if "lekki klimat" in profile.themes and not profile.genres:
                 terms.extend(("Komedia", "Familijny", "Romans", "Reality show"))
+            if "silna bohaterka" in profile.themes:
+                terms.extend(("bohaterka", "kobieta", "dziewczyna"))
+            if "podróż kosmiczna" in profile.themes:
+                terms.extend(("kosmos", "kosmiczna", "planeta", "astronauta"))
+            if "krótkie odcinki" in profile.themes:
+                terms = [term for term in terms if term != "krótkie odcinki"]
             keyword_filter = Q()
             for term in terms[:10]:
                 keyword_filter |= (
@@ -187,7 +200,7 @@ class RetrievalAgent:
                 for item in fallback_items:
                     if (
                         item.pk not in ordered_ids
-                        and self._runtime_matches(item, profile)
+                        and self._candidate_matches_constraints(item, profile)
                     ):
                         ordered_ids.append(item.pk)
                         contents_by_id[item.pk] = item
@@ -219,6 +232,32 @@ class RetrievalAgent:
         )
         if profile.media_types:
             queryset = queryset.filter(media_type__in=profile.media_types)
+        if profile.intent == "content_question" and profile.reference_titles:
+            reference_filter = Q()
+            for title in profile.reference_titles:
+                reference_filter |= (
+                    Q(title__iexact=title)
+                    | Q(original_title__iexact=title)
+                    | Q(metadata__englishTitle__iexact=title)
+                )
+            queryset = queryset.filter(reference_filter)
+        elif profile.exclude_reference_titles and profile.reference_titles:
+            for title in profile.reference_titles:
+                queryset = queryset.exclude(title__iexact=title).exclude(
+                    original_title__iexact=title
+                ).exclude(
+                    Q(metadata__has_key="englishTitle")
+                    & Q(metadata__englishTitle__iexact=title)
+                )
+        if profile.original_languages:
+            queryset = queryset.filter(
+                original_language__in=profile.original_languages,
+            )
+        if profile.origin_countries:
+            country_filter = Q()
+            for country in profile.origin_countries:
+                country_filter |= Q(metadata__originCountry__contains=[country])
+            queryset = queryset.filter(country_filter)
         if profile.genres:
             if require_all_genres:
                 for genre in profile.genres:
@@ -247,6 +286,18 @@ class RetrievalAgent:
                 | Q(genres__name__iexact="Romans")
                 | Q(genres__name__iexact="Reality show")
             )
+        if "silna bohaterka" in profile.themes:
+            queryset = queryset.filter(
+                Q(overview__iregex=r"\m(?:bohaterk|kobiet|dziewczyn|siostr|matk|córk)\w*")
+            )
+        if "podróż kosmiczna" in profile.themes:
+            queryset = queryset.filter(
+                Q(overview__iregex=r"\m(?:kosmos|kosmiczn|planet|galakty|astronaut)\w*")
+            )
+        if "krótkie odcinki" in profile.themes:
+            queryset = queryset.filter(
+                metadata__episodeRuntimeMinutes__lte=35,
+            )
         for avoided in profile.avoid:
             # "Gore" is not a catalog genre. A horror can be non-gory, so
             # excluding all horrors here silently changes the user's request.
@@ -273,12 +324,34 @@ class RetrievalAgent:
         maximum = profile.constraints.max_runtime_minutes
         if maximum is None:
             return True
-        runtime = (content.metadata or {}).get("runtimeMinutes")
+        runtime_key = (
+            "episodeRuntimeMinutes"
+            if getattr(content, "media_type", None) == "tv"
+            else "runtimeMinutes"
+        )
+        runtime = (content.metadata or {}).get(runtime_key)
         if runtime is None:
             return False
         return isinstance(runtime, (int, float)) and not isinstance(
             runtime, bool
         ) and runtime <= maximum
+
+    @classmethod
+    def _candidate_matches_constraints(
+        cls,
+        content: Content,
+        profile: ProfilingAgentOutput,
+    ) -> bool:
+        if not cls._runtime_matches(content, profile):
+            return False
+        if "krótkie odcinki" in profile.themes:
+            runtime = (content.metadata or {}).get("episodeRuntimeMinutes")
+            return (
+                isinstance(runtime, (int, float))
+                and not isinstance(runtime, bool)
+                and runtime <= 35
+            )
+        return True
 
     @staticmethod
     def _serialize_candidate(
@@ -290,7 +363,11 @@ class RetrievalAgent:
         return RetrievalCandidate(
             content_id=content.pk,
             source_rank=source_rank,
-            title=content.title,
+            title=display_content_title(
+                content.title,
+                content.original_title,
+                content.metadata,
+            ),
             media_type=content.media_type,
             overview=(content.overview or "")[: settings.LLM_CATALOG_OVERVIEW_MAX_LENGTH],
             genres=tuple(genre.name for genre in content.genres.all()),
@@ -299,4 +376,10 @@ class RetrievalAgent:
             popularity=float(content.popularity) if content.popularity is not None else None,
             metadata=content.metadata or {},
             semantic_score=semantic_score,
+            original_language=content.original_language or None,
+            origin_countries=tuple(
+                country
+                for country in (content.metadata or {}).get("originCountry", ())
+                if isinstance(country, str)
+            ),
         )

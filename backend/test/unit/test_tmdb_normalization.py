@@ -5,6 +5,7 @@ from django.test import SimpleTestCase
 from backend.tmdb import (
     bounded_float,
     normalize_tmdb_item,
+    normalize_tmdb_details,
     parse_date,
 )
 from backend.api.genre_normalization import canonical_genre_ids, canonical_genres
@@ -104,3 +105,62 @@ class TmdbNormalizationTests(SimpleTestCase):
         self.assertEqual(item.genre_ids, ())
         self.assertIsNone(parse_date("2026-02-31"))
         self.assertIsNone(bounded_float(True, 0, 10))
+
+    def test_normalizes_movie_details_for_grounded_answers(self):
+        metadata = normalize_tmdb_details(
+            {
+                "runtime": 98,
+                "credits": {
+                    "cast": [{"name": "Anna Aktorka"}, {"name": "Piotr Aktor"}],
+                    "crew": [
+                        {"name": "Jan Reżyser", "job": "Director"},
+                        {"name": "Ktoś Inny", "job": "Producer"},
+                    ],
+                },
+                "release_dates": {
+                    "results": [
+                        {
+                            "iso_3166_1": "PL",
+                            "release_dates": [
+                                {"type": 3, "certification": "12"},
+                            ],
+                        }
+                    ]
+                },
+                "translations": {
+                    "translations": [
+                        {
+                            "iso_639_1": "en",
+                            "data": {"title": "English title"},
+                        }
+                    ]
+                },
+            },
+            "movie",
+        )
+
+        self.assertEqual(metadata["runtimeMinutes"], 98)
+        self.assertEqual(metadata["directors"], ["Jan Reżyser"])
+        self.assertEqual(metadata["cast"], ["Anna Aktorka", "Piotr Aktor"])
+        self.assertEqual(metadata["ageRating"], "12")
+        self.assertEqual(metadata["englishTitle"], "English title")
+
+    def test_normalizes_tv_episode_and_season_details(self):
+        metadata = normalize_tmdb_details(
+            {
+                "episode_run_time": [24],
+                "number_of_seasons": 3,
+                "number_of_episodes": 36,
+                "created_by": [{"name": "Twórca Serialu"}],
+                "content_ratings": {
+                    "results": [{"iso_3166_1": "US", "rating": "TV-14"}]
+                },
+            },
+            "tv",
+        )
+
+        self.assertEqual(metadata["episodeRuntimeMinutes"], 24)
+        self.assertEqual(metadata["seasonCount"], 3)
+        self.assertEqual(metadata["episodeCount"], 36)
+        self.assertEqual(metadata["directors"], ["Twórca Serialu"])
+        self.assertEqual(metadata["ageRating"], "TV-14")

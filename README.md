@@ -405,6 +405,7 @@ destination. Use <http://localhost:8000> on the machine running Compose.
 | `TMDB_SYNC_MAX_PAGES` | `10` | page limit per content type |
 | `TMDB_UPCOMING_DAYS_AHEAD` | `365` | upcoming movie window |
 | `TMDB_UPCOMING_MAX_PAGES` | `10` | upcoming movie page limit |
+| `TMDB_DETAIL_ENRICHMENT_LIMIT` | `100` | titles enriched per sync with runtime, credits, age rating and localized title |
 
 ### Ollama
 

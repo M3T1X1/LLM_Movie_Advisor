@@ -66,6 +66,21 @@ class TmdbClientTests(SimpleTestCase):
         )
         self.assertEqual(client.get.call_count, 2)
 
+    def test_fetch_content_details_requests_appended_metadata(self):
+        client = TmdbClient(api_key="key", access_token=None)
+        client.get = MagicMock(return_value={"runtime": 105})
+
+        details = client.fetch_content_details(media_type="movie", tmdb_id=42)
+
+        self.assertEqual(details["runtimeMinutes"], 105)
+        client.get.assert_called_once_with(
+            "/movie/42",
+            language="pl-PL",
+            append_to_response=(
+                "credits,release_dates,content_ratings,translations,external_ids"
+            ),
+        )
+
     @patch("backend.tmdb.time.sleep")
     @patch("backend.tmdb.urlopen")
     def test_retries_rate_limited_request(self, mocked_urlopen, mocked_sleep):

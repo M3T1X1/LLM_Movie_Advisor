@@ -17,7 +17,7 @@ from backend.recommendation_agents.ranking import RankingAgent, RankingAgentRun
 from backend.recommendation_agents.retrieval import RetrievalAgent, RetrievalAgentRun
 
 
-GRAPH_VERSION = "recommendation-agents-v4"
+GRAPH_VERSION = "recommendation-agents-v6"
 
 
 class RecommendationGraphState(TypedDict, total=False):

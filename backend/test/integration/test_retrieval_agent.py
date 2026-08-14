@@ -94,6 +94,72 @@ class RetrievalGenreIntersectionTests(ApiIntegrationTestCase):
             {horror_id, science_fiction_id},
         )
 
+    def test_does_not_relax_to_or_for_explicit_strict_request(self):
+        horror_id = self.insert_content(1011, "Czysty horror")
+        science_fiction_id = self.insert_content(1012, "Czyste science fiction")
+        self.attach_genres(horror_id, "Horror")
+        self.attach_genres(science_fiction_id, "Science Fiction")
+        strict_profile = ProfilingAgentOutput(
+            **{
+                **multi_genre_profile().__dict__,
+                "genre_match_mode": "all",
+                "allow_genre_relaxation": False,
+            }
+        )
+
+        run = RetrievalAgent(None).run(
+            "Horror i science fiction, nie luzuj warunków",
+            strict_profile,
+        )
+
+        self.assertEqual(run.candidates, ())
+
+    def test_filters_by_original_language_and_origin_country(self):
+        polish_id = self.insert_content(1013, "Polski film")
+        korean_id = self.insert_content(1014, "Koreański film")
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE content SET metadata = %s::jsonb WHERE id = %s",
+                ['{"originCountry":["PL"]}', polish_id],
+            )
+            cursor.execute(
+                "UPDATE content SET original_language = 'ko', "
+                "metadata = %s::jsonb WHERE id = %s",
+                ['{"originCountry":["KR"]}', korean_id],
+            )
+        language_profile = ProfilingAgentOutput(
+            **{
+                **multi_genre_profile().__dict__,
+                "genres": (),
+                "original_languages": ("pl",),
+                "origin_countries": ("PL",),
+            }
+        )
+
+        run = RetrievalAgent(None).run("Polski film po polsku", language_profile)
+
+        self.assertEqual(
+            [candidate.content_id for candidate in run.candidates],
+            [polish_id],
+        )
+
+    def test_excludes_reference_title_from_recommendations(self):
+        reference_id = self.insert_content(1015, "Dark")
+        other_id = self.insert_content(1016, "Dark: inna historia")
+        similarity_profile = ProfilingAgentOutput(
+            **{
+                **multi_genre_profile().__dict__,
+                "genres": (),
+                "reference_titles": ("Dark",),
+                "exclude_reference_titles": True,
+            }
+        )
+
+        run = RetrievalAgent(None).run("Coś podobnego do Dark", similarity_profile)
+
+        self.assertNotIn(reference_id, [item.content_id for item in run.candidates])
+        self.assertIn(other_id, [item.content_id for item in run.candidates])
+
     def test_child_movie_request_accepts_catalog_family_movies(self):
         family_movie_id = self.insert_content(1004, "Familijny film")
         self.attach_genres(family_movie_id, "Familijny")
@@ -132,4 +198,53 @@ class RetrievalGenreIntersectionTests(ApiIntegrationTestCase):
         self.assertEqual(
             [candidate.content_id for candidate in run.candidates],
             [comedy_id],
+        )
+
+    def test_content_question_retrieves_only_referenced_previous_title(self):
+        referenced_id = self.insert_content(1007, "Luca")
+        self.insert_content(1008, "Inny film")
+        question_profile = ProfilingAgentOutput(
+            **{
+                **multi_genre_profile().__dict__,
+                "intent": "content_question",
+                "genres": (),
+                "reference_titles": ("Luca",),
+            }
+        )
+
+        run = RetrievalAgent(None).run(
+            "Kto reżyserował pierwszą propozycję?",
+            question_profile,
+        )
+
+        self.assertEqual(
+            [candidate.content_id for candidate in run.candidates],
+            [referenced_id],
+        )
+
+    def test_strong_heroine_theme_excludes_unrelated_male_story(self):
+        heroine_id = self.insert_content(1009, "Historia bohaterki")
+        unrelated_id = self.insert_content(1010, "Historia złodzieja")
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE content SET overview = %s WHERE id = %s",
+                ["Młoda kobieta walczy o swoją rodzinę.", heroine_id],
+            )
+            cursor.execute(
+                "UPDATE content SET overview = %s WHERE id = %s",
+                ["Złodziej planuje zemstę za krzywdę ojca.", unrelated_id],
+            )
+        heroine_profile = ProfilingAgentOutput(
+            **{
+                **multi_genre_profile().__dict__,
+                "genres": (),
+                "themes": ("silna bohaterka",),
+            }
+        )
+
+        run = RetrievalAgent(None).run("Film z silną bohaterką", heroine_profile)
+
+        self.assertEqual(
+            [candidate.content_id for candidate in run.candidates],
+            [heroine_id],
         )

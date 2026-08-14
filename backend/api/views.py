@@ -35,6 +35,7 @@ from backend.api.models import (
     UserPreference,
     UserProfile,
 )
+from backend.content_titles import display_content_title
 from backend.ollama import (
     OllamaConfigurationError,
     OllamaError,
@@ -288,12 +289,19 @@ def content_queryset():
 
 
 def serialize_content(item: Content) -> dict:
+    display_title = display_content_title(
+        item.title,
+        item.original_title,
+        item.metadata,
+    )
     return {
         "id": str(item.pk),
         "tmdbId": item.tmdb_id,
         "mediaType": item.media_type,
-        "title": item.title,
-        "originalTitle": item.original_title,
+        "title": display_title,
+        "originalTitle": (
+            item.title if display_title != item.title else item.original_title
+        ),
         "overview": item.overview,
         "releaseDate": iso(item.release_date),
         "originalLanguage": item.original_language,
@@ -1411,6 +1419,8 @@ def conversation_messages(
 ) -> JsonResponse:
     user_id = get_business_user_id(request.user)
     data = request_data(request)
+    if data is None:
+        return JsonResponse({"detail": "Invalid JSON body."}, status=400)
     content = data.get("content") if data else None
     if not isinstance(content, str) or not content.strip():
         return JsonResponse({"detail": "Message content is required."}, status=400)
@@ -1455,6 +1465,8 @@ def conversation_recommendations(
     conversation_id: int,
 ) -> JsonResponse:
     data = request_data(request)
+    if data is None:
+        return JsonResponse({"detail": "Invalid JSON body."}, status=400)
     prompt = data.get("message") if data else None
     if not isinstance(prompt, str) or not prompt.strip():
         return JsonResponse({"detail": "Message content is required."}, status=400)
