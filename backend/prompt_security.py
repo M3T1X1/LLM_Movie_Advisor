@@ -55,6 +55,8 @@ _SENSITIVE_DATA_REQUEST_PATTERNS = tuple(
         r"psql|pg_dump)\b",
         r"\b(?:hasło|password|secret|token|api key|klucz api)\b.{0,80}\b"
         r"(?:użytkownik\w*|user\w*|baz\w*|database|postgres\w*|redis\w*)\b",
+        r"\b(?:podaj|pokaż|ujawnij|wyświetl|wypisz|show|reveal|print)\b"
+        r".{0,80}\b(?:secret[_ -]?key|secret|api[_ -]?key|klucz\s+api|token)\b",
         r"\b(?:podaj|pokaż|wypisz|zacytuj|opisz|ujawnij|wymień|zwróć)\b"
         r".{0,120}\b(?:pełn\w* informacj\w*|informacj\w* przechowywan\w*|"
         r"profil\w* użytkownik\w*|profil\w* konta|ostatni\w* aktywnoś\w*|"
@@ -128,7 +130,24 @@ def normalize_security_text(value: str) -> str:
 
 def contains_prompt_injection(value: str) -> bool:
     normalized = normalize_security_text(value)
-    return any(pattern.search(normalized) for pattern in _PROMPT_INJECTION_PATTERNS)
+    matched = any(pattern.search(normalized) for pattern in _PROMPT_INJECTION_PATTERNS)
+    if not matched:
+        return False
+    fictional_quote = bool(
+        re.search(
+            r"\b(?:film\w*|serial\w*)\b.{0,100}\b(?:bohater\w*|postać\w*)\b"
+            r".{0,50}\b(?:mówi\w*|powiada\w*|cytuje\w*|says?|quotes?)\b",
+            normalized,
+        )
+    )
+    follow_up_attack = bool(
+        re.search(
+            r"\b(?:a\s+teraz|następnie|potem|and\s+then)\b.{0,100}\b"
+            r"(?:pokaż|ujawnij|wyświetl|wypisz|podaj|show|reveal|print|execute)\b",
+            normalized,
+        )
+    )
+    return not fictional_quote or follow_up_attack
 
 
 def contains_sensitive_data_request(value: str) -> bool:

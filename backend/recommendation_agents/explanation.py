@@ -112,6 +112,44 @@ class ExplanationAgent:
                 "katalog nie przechowuje takiej informacji. Nie będę zgadywać ani "
                 "zdradzać zakończeń."
             )
+        if len(candidates) > 1 and re.search(
+            r"\b(?:najwyższ\w*|najlepsz\w*|highest)\b", normalized
+        ) and re.search(r"\b(?:ocen\w*|rating\w*)\b", normalized):
+            rated = tuple(
+                candidate
+                for candidate in candidates
+                if candidate.vote_average is not None
+            )
+            if rated:
+                highest = max(candidate.vote_average for candidate in rated)
+                titles = [
+                    candidate.title
+                    for candidate in rated
+                    if candidate.vote_average == highest
+                ]
+                return (
+                    f"Najwyższą ocenę katalogową ma {', '.join(titles)}: "
+                    f"{highest:.1f}/10."
+                )
+        if len(candidates) > 1 and re.search(
+            r"\b(?:najniższ\w*|lowest)\b", normalized
+        ) and re.search(r"\b(?:ocen\w*|rating\w*)\b", normalized):
+            rated = tuple(
+                candidate
+                for candidate in candidates
+                if candidate.vote_average is not None
+            )
+            if rated:
+                lowest = min(candidate.vote_average for candidate in rated)
+                titles = [
+                    candidate.title
+                    for candidate in rated
+                    if candidate.vote_average == lowest
+                ]
+                return (
+                    f"Najniższą ocenę katalogową ma {', '.join(titles)}: "
+                    f"{lowest:.1f}/10."
+                )
         ordinal = cls._requested_ordinal(normalized)
         candidate = next(
             (
@@ -259,6 +297,8 @@ class ExplanationAgent:
             overview = ExplanationAgent._short_overview(candidate.overview)
             catalog_fit = ExplanationAgent._fit_summary(profile, candidate)
             explanation = f"{overview} {catalog_fit}" if overview else catalog_fit
+            if item.decision_reason.startswith("Wagi użytkownika:"):
+                explanation = f"{explanation} {item.decision_reason}"
             explanations.append(
                 CandidateExplanation(candidate.content_id, explanation)
             )
@@ -344,7 +384,13 @@ class ExplanationAgent:
             normalized_request,
         ):
             warnings.append(
-                "Uwaga: katalog nie ma pełnych oznaczeń brutalności ani gore; nie mogę zagwarantować ich braku."
+                "Uwaga: katalog nie ma pełnych oznaczeń brutalności ani gore; "
+                "nie mogę potwierdzić ich obecności ani braku."
+            )
+        if re.search(r"\b(?:dubbing\w*|wersj\w*\s+dubbingowan\w*)", normalized_request):
+            warnings.append(
+                "Uwaga: katalog nie przechowuje danych o dubbingu, więc polska "
+                "wersja językowa nie jest potwierdzona."
             )
         if "Dla dzieci" in profile.genres:
             missing_age_ratings = any(
@@ -361,6 +407,30 @@ class ExplanationAgent:
 
     @staticmethod
     def _no_candidates_message(profile: ProfilingAgentOutput) -> str:
+        if profile.original_languages or profile.origin_countries:
+            conditions = []
+            if profile.origin_countries:
+                conditions.append(
+                    "krajem produkcji " + ", ".join(profile.origin_countries)
+                )
+            if profile.original_languages:
+                conditions.append(
+                    "językiem oryginalnym " + ", ".join(profile.original_languages)
+                )
+            return (
+                "Nie znalazłem w katalogu pozycji z potwierdzonym "
+                + " i ".join(conditions)
+                + ", które spełniają pozostałe warunki."
+            )
+        if (
+            len(profile.genres) > 1
+            and not profile.allow_genre_relaxation
+        ):
+            return (
+                "Nie znalazłem pozycji spełniających jednocześnie wszystkie "
+                f"wymagane gatunki: {', '.join(profile.genres)}. Nie poluzowałem "
+                "warunku do dopasowania tylko jednego gatunku."
+            )
         maximum = profile.constraints.max_runtime_minutes
         if maximum is not None:
             return (

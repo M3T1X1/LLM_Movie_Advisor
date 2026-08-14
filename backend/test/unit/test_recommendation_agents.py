@@ -250,6 +250,41 @@ class RetrievalAgentTests(SimpleTestCase):
             ],
         )
 
+    @override_settings(
+        LLM_SEMANTIC_SEARCH_ENABLED=False,
+        LLM_CATALOG_CANDIDATE_LIMIT=12,
+    )
+    def test_strict_multi_genre_request_never_relaxes_to_or(self):
+        output = profile(
+            genres=("Horror", "Science Fiction"),
+            themes=(),
+            genre_match_mode="all",
+            allow_genre_relaxation=False,
+        )
+        strict_queryset = MagicMock()
+        agent = RetrievalAgent(None)
+
+        with (
+            patch.object(
+                RetrievalAgent,
+                "_constrained_queryset",
+                return_value=strict_queryset,
+            ) as constrained_queryset,
+            patch.object(
+                RetrievalAgent,
+                "_retrieve_from_queryset",
+                return_value=([], {}, {}),
+            ) as retrieve,
+        ):
+            run = agent.run("Oba gatunki bez luzowania", output)
+
+        self.assertEqual(run.candidates, ())
+        constrained_queryset.assert_called_once_with(
+            output,
+            require_all_genres=True,
+        )
+        retrieve.assert_called_once_with(strict_queryset, output, (), 12)
+
 
 class RankingAgentTests(SimpleTestCase):
     def setUp(self):
@@ -283,6 +318,108 @@ class RankingAgentTests(SimpleTestCase):
         self.assertEqual(len(run.candidates), 2)
         self.assertEqual(len(run.selected), 2)
         self.assertEqual(run.source, "hybrid")
+
+    def test_retries_only_missing_model_scores(self):
+        self.client.chat.side_effect = (
+            response(
+                {
+                    "scores": [
+                        {
+                            "content_id": 1,
+                            "relevance_score": 0.8,
+                            "critic_score": 0.8,
+                            "decision_reason": "Pierwszy wynik.",
+                        }
+                    ]
+                }
+            ),
+            response(
+                {
+                    "scores": [
+                        {
+                            "content_id": 2,
+                            "relevance_score": 0.9,
+                            "critic_score": 0.9,
+                            "decision_reason": "Uzupełniony wynik.",
+                        }
+                    ]
+                }
+            ),
+        )
+
+        run = self.agent.run("Thriller", profile(), self.candidates)
+
+        self.assertEqual(run.source, "model_retry")
+        self.assertEqual(self.client.chat.call_count, 2)
+        retried_payload = json.loads(
+            self.client.chat.call_args_list[1].args[0][1]["content"]
+        )
+        self.assertEqual(
+            [item["content_id"] for item in retried_payload["candidates"]],
+            [2],
+        )
+
+    def test_normalizes_model_scores_returned_on_a_ten_point_scale(self):
+        self.client.chat.return_value = response(
+            {
+                "scores": [
+                    {
+                        "content_id": 1,
+                        "relevance_score": 8.0,
+                        "critic_score": 6.75,
+                        "decision_reason": "Dopasowanie.",
+                    },
+                    {
+                        "content_id": 2,
+                        "relevance_score": 7.0,
+                        "critic_score": 7.5,
+                        "decision_reason": "Dopasowanie.",
+                    },
+                ]
+            }
+        )
+
+        run = self.agent.run("Thriller", profile(), self.candidates)
+
+        first = next(
+            item for item in run.candidates if item.candidate.content_id == 1
+        )
+        self.assertEqual(first.relevance_score, 0.8)
+        self.assertEqual(first.critic_score, 0.675)
+        self.assertEqual(run.source, "model")
+
+    def test_applies_user_supplied_ranking_weights_deterministically(self):
+        long_high = RetrievalCandidate(
+            **{
+                **candidate(1).__dict__,
+                "vote_average": 9.0,
+                "popularity": 100.0,
+                "metadata": {"runtimeMinutes": 120},
+            }
+        )
+        short_lower = RetrievalCandidate(
+            **{
+                **candidate(2).__dict__,
+                "vote_average": 7.0,
+                "popularity": 50.0,
+                "metadata": {"runtimeMinutes": 80},
+            }
+        )
+
+        run = self.agent.run(
+            (
+                "Zastosuj wagi: gatunek 40%, ocena 30%, krótki czas 20%, "
+                "popularność 10%."
+            ),
+            profile(),
+            (long_high, short_lower),
+        )
+
+        self.assertEqual(run.source, "weighted")
+        self.assertEqual(run.candidates[0].candidate.content_id, 1)
+        self.assertIn("gatunek 40%", run.candidates[0].decision_reason)
+        self.assertIn("krótki czas 20%", run.candidates[0].decision_reason)
+        self.client.chat.assert_not_called()
 
     def test_accepts_safe_numeric_strings_and_ignores_extra_model_fields(self):
         self.client.chat.return_value = response(
@@ -614,6 +751,32 @@ class ExplanationAgentTests(SimpleTestCase):
         self.assertIn("Jan Reżyser", director.message)
         self.assertIn("Anna Aktorka", cast.message)
         self.assertIn("12", age.message)
+
+    def test_compares_ratings_across_multiple_catalog_candidates(self):
+        lower = RetrievalCandidate(
+            **{**candidate(1, title="Pierwszy").__dict__, "vote_average": 7.1}
+        )
+        higher = RetrievalCandidate(
+            **{**candidate(2, title="Drugi").__dict__, "vote_average": 8.4}
+        )
+
+        run = self.agent.answer_content_question(
+            "Który z tych filmów ma najwyższą ocenę?",
+            (lower, higher),
+        )
+
+        self.assertIn("Drugi", run.message)
+        self.assertIn("8.4/10", run.message)
+        self.assertNotIn("Pierwszy", run.message)
+
+    def test_warns_that_polish_dubbing_is_not_verified(self):
+        run = self.agent.run(
+            "Poleć animację z polskim dubbingiem.",
+            profile(genres=("Animacja",)),
+            self.selected,
+        )
+
+        self.assertIn("nie przechowuje danych o dubbingu", run.message)
 
     def test_stored_gore_avoidance_does_not_warn_on_unrelated_prompt(self):
         run = self.agent.run(

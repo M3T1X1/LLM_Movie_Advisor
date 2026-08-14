@@ -28,6 +28,8 @@ class RetrievalCandidate:
     popularity: float | None
     metadata: dict
     semantic_score: float | None
+    original_language: str | None = None
+    origin_countries: tuple[str, ...] = ()
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -85,7 +87,11 @@ class RetrievalAgent:
             limit,
         )
 
-        if not ordered_ids and len(profile.genres) > 1:
+        if (
+            not ordered_ids
+            and len(profile.genres) > 1
+            and profile.allow_genre_relaxation
+        ):
             relaxed_queryset = self._constrained_queryset(
                 profile,
                 require_all_genres=False,
@@ -235,6 +241,23 @@ class RetrievalAgent:
                     | Q(metadata__englishTitle__iexact=title)
                 )
             queryset = queryset.filter(reference_filter)
+        elif profile.exclude_reference_titles and profile.reference_titles:
+            for title in profile.reference_titles:
+                queryset = queryset.exclude(title__iexact=title).exclude(
+                    original_title__iexact=title
+                ).exclude(
+                    Q(metadata__has_key="englishTitle")
+                    & Q(metadata__englishTitle__iexact=title)
+                )
+        if profile.original_languages:
+            queryset = queryset.filter(
+                original_language__in=profile.original_languages,
+            )
+        if profile.origin_countries:
+            country_filter = Q()
+            for country in profile.origin_countries:
+                country_filter |= Q(metadata__originCountry__contains=[country])
+            queryset = queryset.filter(country_filter)
         if profile.genres:
             if require_all_genres:
                 for genre in profile.genres:
@@ -353,4 +376,10 @@ class RetrievalAgent:
             popularity=float(content.popularity) if content.popularity is not None else None,
             metadata=content.metadata or {},
             semantic_score=semantic_score,
+            original_language=content.original_language or None,
+            origin_countries=tuple(
+                country
+                for country in (content.metadata or {}).get("originCountry", ())
+                if isinstance(country, str)
+            ),
         )

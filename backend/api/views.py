@@ -1419,6 +1419,8 @@ def conversation_messages(
 ) -> JsonResponse:
     user_id = get_business_user_id(request.user)
     data = request_data(request)
+    if data is None:
+        return JsonResponse({"detail": "Invalid JSON body."}, status=400)
     content = data.get("content") if data else None
     if not isinstance(content, str) or not content.strip():
         return JsonResponse({"detail": "Message content is required."}, status=400)
@@ -1463,6 +1465,8 @@ def conversation_recommendations(
     conversation_id: int,
 ) -> JsonResponse:
     data = request_data(request)
+    if data is None:
+        return JsonResponse({"detail": "Invalid JSON body."}, status=400)
     prompt = data.get("message") if data else None
     if not isinstance(prompt, str) or not prompt.strip():
         return JsonResponse({"detail": "Message content is required."}, status=400)

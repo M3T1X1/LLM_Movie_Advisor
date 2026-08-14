@@ -542,6 +542,313 @@ class ProfilingAgentTests(SimpleTestCase):
 
         self.assertEqual(result.output.reference_titles, ())
 
+    def test_out_of_scope_request_after_recommendation_stays_other(self):
+        output = valid_output(
+            intent="recommendation",
+            media_types=[],
+            genres=[],
+            themes=[],
+            avoid=[],
+            reference_titles=[],
+            constraints={
+                "max_runtime_minutes": None,
+                "release_year_from": None,
+                "release_year_to": None,
+                "min_vote_average": None,
+            },
+            evidence=["Napisz program w Pythonie."],
+        )
+        self.client.chat.return_value = OllamaChatResponse(
+            content=json.dumps(output),
+            model="llama3.1:8b",
+            done_reason="stop",
+            total_duration_ns=None,
+            prompt_eval_count=None,
+            eval_count=None,
+        )
+
+        result = self.agent.run(
+            ProfilingAgentInput(
+                current_request="Napisz program w Pythonie sortujący pliki.",
+                conversation_history=(
+                    {"role": "user", "content": "Poleć trzy thrillery."},
+                    {
+                        "role": "assistant",
+                        "content": "1. Labirynt — Opis filmu.",
+                    },
+                ),
+                stored_preferences=(
+                    {
+                        "preference_type": "violence",
+                        "preference_value": "Gore",
+                        "polarity": -1,
+                    },
+                ),
+            )
+        )
+
+        self.assertEqual(result.output.intent, "other")
+        self.assertFalse(result.output.needs_clarification)
+        self.assertEqual(result.output.genres, ())
+
+    def test_not_recommend_clause_creates_avoids_not_positive_genres(self):
+        result = self.agent.run(
+            ProfilingAgentInput(
+                current_request=(
+                    "Nie polecaj dramatu, romansu ani kina familijnego. "
+                    "Chcę komedię akcji."
+                )
+            )
+        )
+
+        self.assertEqual(result.output.genres, ("Komedia", "Akcja"))
+        self.assertIn("Dramat", result.output.avoid)
+        self.assertIn("Romans", result.output.avoid)
+        self.assertIn("Familijny", result.output.avoid)
+
+    def test_semicolon_terminates_explicit_avoid_phrase(self):
+        result = self.agent.run(
+            ProfilingAgentInput(
+                current_request=(
+                    "Poleć thriller bez spoilerów; przy każdym tytule podaj "
+                    "jedno zdanie uzasadnienia."
+                )
+            )
+        )
+
+        self.assertNotIn("spoilerów", result.output.avoid)
+        self.assertEqual(result.output.avoid, ())
+
+    def test_later_explicit_gore_request_overrides_earlier_avoidance(self):
+        result = self.agent.run(
+            ProfilingAgentInput(
+                current_request=(
+                    "Mimo że zwykle unikam gore, dziś chcę trzy brutalne "
+                    "horrory gore."
+                ),
+                stored_preferences=(
+                    {
+                        "preference_type": "violence",
+                        "preference_value": "Gore",
+                        "polarity": -1,
+                    },
+                ),
+            )
+        )
+
+        self.assertEqual(result.output.genres, ("Horror",))
+        self.assertNotIn("Gore", result.output.avoid)
+
+    def test_comparison_of_last_three_is_a_content_question(self):
+        output = valid_output(intent="recommendation", genres=[])
+        self.client.chat.return_value = OllamaChatResponse(
+            content=json.dumps(output),
+            model="llama3.1:8b",
+            done_reason="stop",
+            total_duration_ns=None,
+            prompt_eval_count=None,
+            eval_count=None,
+        )
+
+        result = self.agent.run(
+            ProfilingAgentInput(
+                current_request=(
+                    "Który tytuł z ostatniej trójki ma najwyższą ocenę widzów?"
+                ),
+                conversation_history=(
+                    {
+                        "role": "assistant",
+                        "content": (
+                            "1. Labirynt — Opis.\n"
+                            "2. W cieniu zbrodni — Opis.\n"
+                            "3. To my — Opis."
+                        ),
+                    },
+                ),
+            )
+        )
+
+        self.assertEqual(result.output.intent, "content_question")
+        self.assertEqual(
+            result.output.reference_titles,
+            ("Labirynt", "W cieniu zbrodni", "To my"),
+        )
+
+    def test_extracts_explicit_similarity_reference_during_fallback(self):
+        self.client.chat.return_value = OllamaChatResponse(
+            content="not-json",
+            model="llama3.1:8b",
+            done_reason="stop",
+            total_duration_ns=None,
+            prompt_eval_count=None,
+            eval_count=None,
+        )
+
+        result = self.agent.run(
+            ProfilingAgentInput(
+                current_request=(
+                    "Poleć trzy filmy podobne klimatem do Dark, ale bez romansu."
+                )
+            )
+        )
+
+        self.assertEqual(result.output.reference_titles, ("Dark",))
+
+    def test_evidence_is_grounded_in_current_request(self):
+        output = valid_output(
+            genres=["Dokumentalny"],
+            evidence=["Poleć science fiction i thriller po 2015 roku."],
+        )
+        self.client.chat.return_value = OllamaChatResponse(
+            content=json.dumps(output),
+            model="llama3.1:8b",
+            done_reason="stop",
+            total_duration_ns=None,
+            prompt_eval_count=None,
+            eval_count=None,
+        )
+        current_request = "Poleć filmy dokumentalne od 2010 do 2020 roku."
+
+        result = self.agent.run(
+            ProfilingAgentInput(
+                current_request=current_request,
+                conversation_history=(
+                    {
+                        "role": "user",
+                        "content": "Poleć science fiction i thriller po 2015 roku.",
+                    },
+                ),
+            )
+        )
+
+        self.assertEqual(result.output.evidence, (current_request,))
+
+    def test_conflicting_result_counts_require_clarification(self):
+        result = self.agent.run(
+            ProfilingAgentInput(
+                current_request=(
+                    "Poleć dokładnie 3, ale jednocześnie maksymalnie 2 "
+                    "filmy westernowe."
+                )
+            )
+        )
+
+        self.assertTrue(result.output.needs_clarification)
+        self.assertIn("dwa czy trzy", result.output.clarification_question.casefold())
+
+    def test_parses_english_recommendation_constraints(self):
+        result = self.agent.run(
+            ProfilingAgentInput(
+                current_request=(
+                    "Recommend three crime TV series released after 2020, "
+                    "each episode at most 60 minutes, rating at least 7.5/10."
+                )
+            )
+        )
+
+        self.assertEqual(result.output.intent, "recommendation")
+        self.assertEqual(result.output.media_types, ("tv",))
+        self.assertEqual(result.output.genres, ("Kryminał",))
+        self.assertEqual(result.output.constraints.release_year_from, 2021)
+        self.assertEqual(result.output.constraints.max_runtime_minutes, 60)
+        self.assertEqual(result.output.constraints.min_vote_average, 7.5)
+
+    def test_parses_year_runtime_and_rating_written_in_words(self):
+        result = self.agent.run(
+            ProfilingAgentInput(
+                current_request=(
+                    "Poleć filmy z lat dwa tysiące osiemnastego do dwa "
+                    "tysiące dwudziestego czwartego, krótsze niż "
+                    "stodwadzieścia minut, z oceną widzów minimum siedem."
+                )
+            )
+        )
+
+        self.assertEqual(result.output.constraints.release_year_from, 2018)
+        self.assertEqual(result.output.constraints.release_year_to, 2024)
+        self.assertEqual(result.output.constraints.max_runtime_minutes, 120)
+        self.assertEqual(result.output.constraints.min_vote_average, 7.0)
+
+    def test_extracts_compact_year_range(self):
+        result = self.agent.run(
+            ProfilingAgentInput(
+                current_request="Poleć thrillery z lat 2010-2020."
+            )
+        )
+
+        self.assertEqual(result.output.constraints.release_year_from, 2010)
+        self.assertEqual(result.output.constraints.release_year_to, 2020)
+
+    def test_marks_explicit_multi_genre_request_as_strict(self):
+        result = self.agent.run(
+            ProfilingAgentInput(
+                current_request=(
+                    "Poleć filmy będące jednocześnie komedią i akcją. Każdy "
+                    "ma mieć oba gatunki; nie przechodź na OR."
+                )
+            )
+        )
+
+        self.assertEqual(result.output.genres, ("Komedia", "Akcja"))
+        self.assertEqual(result.output.genre_match_mode, "all")
+        self.assertFalse(result.output.allow_genre_relaxation)
+
+    def test_extracts_original_language_and_country(self):
+        result = self.agent.run(
+            ProfilingAgentInput(
+                current_request=(
+                    "Poleć polskie filmy kryminalne, oryginalnie po polsku."
+                )
+            )
+        )
+
+        self.assertEqual(result.output.original_languages, ("pl",))
+        self.assertEqual(result.output.origin_countries, ("PL",))
+
+    def test_vague_new_request_requires_clarification_despite_old_history(self):
+        result = self.agent.run(
+            ProfilingAgentInput(
+                current_request="Poleć coś fajnego.",
+                conversation_history=(
+                    {"role": "user", "content": "Szukam mrocznego thrillera."},
+                    {"role": "assistant", "content": "1. Dark — opis"},
+                ),
+            )
+        )
+
+        self.assertTrue(result.output.needs_clarification)
+
+    def test_excludes_previous_titles_for_no_repeat_follow_up(self):
+        result = self.agent.run(
+            ProfilingAgentInput(
+                current_request="Poleć kolejne tajemnice, nie powtarzaj tytułów.",
+                conversation_history=(
+                    {
+                        "role": "assistant",
+                        "content": "1. Dark — opis\n2. Lost — opis",
+                    },
+                ),
+            )
+        )
+
+        self.assertEqual(result.output.reference_titles, ("Dark", "Lost"))
+        self.assertTrue(result.output.exclude_reference_titles)
+
+    def test_does_not_store_catalog_instructions_as_avoid_preferences(self):
+        result = self.agent.run(
+            ProfilingAgentInput(
+                current_request=(
+                    "Poleć thriller bez spoilerów i bez generowania nowych "
+                    "rekomendacji wydanych po 2015 roku."
+                )
+            )
+        )
+
+        self.assertNotIn("spoilerów", result.output.avoid)
+        self.assertFalse(
+            any("generowania" in value.casefold() for value in result.output.avoid)
+        )
+
     def test_rejects_invalid_input_history(self):
         with self.assertRaisesMessage(ValueError, "invalid role"):
             self.agent.run(

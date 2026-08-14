@@ -306,3 +306,30 @@ class ConversationsApiTests(ApiIntegrationTestCase):
             content_type="application/json",
         )
         self.assertEqual(boundary.status_code, 201)
+
+    def test_chat_endpoints_report_malformed_json_explicitly(self):
+        conversation_id = self.client.post(
+            reverse("api:conversations"),
+            data="{}",
+            content_type="application/json",
+        ).json()["id"]
+        urls = (
+            reverse(
+                "api:conversation-messages",
+                kwargs={"conversation_id": conversation_id},
+            ),
+            reverse(
+                "api:conversation-recommendations",
+                kwargs={"conversation_id": conversation_id},
+            ),
+        )
+
+        for url in urls:
+            with self.subTest(url=url):
+                response = self.client.post(
+                    url,
+                    data="{",
+                    content_type="application/json",
+                )
+                self.assertEqual(response.status_code, 400)
+                self.assertEqual(response.json()["detail"], "Invalid JSON body.")
