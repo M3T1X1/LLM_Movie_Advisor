@@ -380,6 +380,7 @@ class RetrievalAgent:
         queryset = Content.objects.filter(
             Q(release_date__lte=date.today()) | Q(release_date__isnull=True)
         )
+        
         if profile.media_types:
             queryset = queryset.filter(media_type__in=profile.media_types)
         if profile.intent == "content_question" and profile.reference_titles:
