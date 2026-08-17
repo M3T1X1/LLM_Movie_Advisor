@@ -53,42 +53,6 @@ CANONICAL_GENRES = (
     "Wojenny",
 )
 
-GENRE_ALIASES = {
-    "science fiction": "Science Fiction",
-    "sci-fi": "Science Fiction",
-    "sci fi": "Science Fiction",
-    "fantastyka naukowa": "Science Fiction",
-    "thriller": "Thriller",
-    "western": "Western",
-    "komedia": "Komedia",
-    "horror": "Horror",
-    "dramat": "Dramat",
-    "kryminał": "Kryminał",
-    "kryminalny": "Kryminał",
-    "animacja": "Animacja",
-    "animowany": "Animacja",
-    "fantasy": "Fantasy",
-    "romans": "Romans",
-    "romantyczny": "Romans",
-    "dokumentalny": "Dokumentalny",
-    "dokument": "Dokumentalny",
-    "przygodowy": "Przygodowy",
-    "akcja": "Akcja",
-    "historyczny": "Historyczny",
-    "wojenny": "Wojenny",
-    "muzyczny": "Muzyczny",
-    "tajemnica": "Tajemnica",
-    "familijny": "Familijny",
-    "dla dzieci": "Dla dzieci",
-    "film telewizyjny": "Film telewizyjny",
-    "opera mydlana": "Opera mydlana",
-    "polityczny": "Polityczny",
-    "reality show": "Reality show",
-    "talk-show": "Talk-show",
-    "talk show": "Talk-show",
-    "wiadomości": "Wiadomości",
-}
-
 GENRE_PATTERNS = (
     (
         r"(?<!\w)(?:science fiction|sci[- ]?fi|fantastyk\w* naukow\w*|"

@@ -18,7 +18,6 @@ from backend.recommendation_agents.profiling import (
 from backend.recommendation_agents.ranking import (
     RankedCandidate,
     RankingAgent,
-    RankingAgentError,
     RankingAgentRun,
 )
 from backend.recommendation_agents.retrieval import (
@@ -75,6 +74,52 @@ def response(payload):
 
 
 class RetrievalAgentTests(SimpleTestCase):
+    @override_settings(
+        LLM_SEMANTIC_SEARCH_ENABLED=True,
+        LLM_CATALOG_CANDIDATE_LIMIT=12,
+    )
+    @patch("backend.recommendation_agents.retrieval.semantic_content_search")
+    def test_uses_llm_query_plan_before_embedding_search(self, semantic_search):
+        client = MagicMock(
+            model="llama3.1:8b",
+            embedding_model="nomic-embed-text:latest",
+        )
+        client.chat.return_value = response(
+            {"semantic_query": "mroczny thriller o tajemnicy i izolacji"}
+        )
+        semantic_search.return_value = ()
+        queryset = MagicMock()
+        agent = RetrievalAgent(client)
+
+        with (
+            patch.object(
+                RetrievalAgent,
+                "_constrained_queryset",
+                return_value=queryset,
+            ),
+            patch.object(
+                RetrievalAgent,
+                "_retrieve_from_queryset",
+                return_value=([], {}, {}),
+            ),
+        ):
+            run = agent.run(
+                "Mroczny film",
+                profile(themes=("izolacja",)),
+                preference_hints=("lubię tajemnice",),
+            )
+
+        self.assertEqual(run.source, "model")
+        self.assertIn("mroczny thriller o tajemnicy i izolacji", run.query)
+        self.assertIn("Mroczny film | Thriller | izolacja", run.query)
+        client.chat.assert_called_once()
+        semantic_search.assert_called_once_with(
+            run.query,
+            ["lubię tajemnice"],
+            limit=120,
+            client=client,
+        )
+
     def test_builds_query_and_applies_runtime_constraint(self):
         output = profile(
             themes=("izolacja",),
@@ -406,6 +451,25 @@ class RankingAgentTests(SimpleTestCase):
             }
         )
 
+        self.client.chat.return_value = response(
+            {
+                "scores": [
+                    {
+                        "content_id": 1,
+                        "relevance_score": 0.8,
+                        "critic_score": 0.8,
+                        "decision_reason": "Dobre dopasowanie.",
+                    },
+                    {
+                        "content_id": 2,
+                        "relevance_score": 0.7,
+                        "critic_score": 0.7,
+                        "decision_reason": "Dobre dopasowanie.",
+                    },
+                ]
+            }
+        )
+
         run = self.agent.run(
             (
                 "Zastosuj wagi: gatunek 40%, ocena 30%, krótki czas 20%, "
@@ -415,11 +479,11 @@ class RankingAgentTests(SimpleTestCase):
             (long_high, short_lower),
         )
 
-        self.assertEqual(run.source, "weighted")
+        self.assertEqual(run.source, "weighted_model")
         self.assertEqual(run.candidates[0].candidate.content_id, 1)
         self.assertIn("gatunek 40%", run.candidates[0].decision_reason)
         self.assertIn("krótki czas 20%", run.candidates[0].decision_reason)
-        self.client.chat.assert_not_called()
+        self.client.chat.assert_called_once()
 
     def test_accepts_safe_numeric_strings_and_ignores_extra_model_fields(self):
         self.client.chat.return_value = response(
@@ -551,6 +615,19 @@ class RankingAgentTests(SimpleTestCase):
 class ExplanationAgentTests(SimpleTestCase):
     def setUp(self):
         self.client = MagicMock(model="llama3.1:8b")
+        self.client.chat.return_value = response(
+            {
+                "message": "Mam dla Ciebie trafną propozycję.",
+                "explanations": [
+                    {
+                        "content_id": 1,
+                        "explanation": (
+                            "Mroczna tajemnica. Pasuje: thriller • 2020 • 8.0/10."
+                        ),
+                    }
+                ],
+            }
+        )
         base = candidate(1)
         self.selected = (
             RankedCandidate(base, 0.9, 0.8, 0.865, "selected", 1, "Pasuje."),
@@ -565,8 +642,8 @@ class ExplanationAgentTests(SimpleTestCase):
         self.assertEqual(run.explanations[0].content_id, 1)
         self.assertIn("8.0/10", run.explanations[0].explanation)
         self.assertEqual(run.model, "llama3.1:8b")
-        self.assertEqual(run.source, "catalog")
-        self.client.chat.assert_not_called()
+        self.assertEqual(run.source, "model")
+        self.client.chat.assert_called_once()
 
     def test_catalog_description_is_short(self):
         long_candidate = RetrievalCandidate(
@@ -595,14 +672,23 @@ class ExplanationAgentTests(SimpleTestCase):
             final_rank=2,
             decision_reason="Pasuje.",
         )
+        self.client.chat.return_value = response(
+            {
+                "message": "Mam dla Ciebie dwie propozycje.",
+                "explanations": [
+                    {"content_id": 1, "explanation": "Pierwsze dopasowanie."},
+                    {"content_id": 2, "explanation": "Drugie dopasowanie."},
+                ],
+            }
+        )
         run = self.agent.run(
             "Mroczne filmy",
             profile(),
             (*self.selected, second),
         )
 
-        self.assertIn("1. Film 1 — Mroczna tajemnica.", run.message)
-        self.assertIn("2. Drugi film — Mroczna tajemnica.", run.message)
+        self.assertIn("1. Film 1 — Pierwsze dopasowanie.", run.message)
+        self.assertIn("2. Drugi film — Drugie dopasowanie.", run.message)
 
     def test_falls_back_for_explanation_of_unknown_candidate(self):
         self.client.chat.return_value = response(
@@ -613,13 +699,13 @@ class ExplanationAgentTests(SimpleTestCase):
         self.assertIn("Film 1", run.message)
         self.assertEqual(run.explanations[0].content_id, 1)
 
-    def test_catalog_description_does_not_call_model(self):
+    def test_recommendation_description_calls_model(self):
         run = self.agent.run("Thriller", profile(), self.selected)
 
         self.assertIn("Film 1", run.message)
         self.assertEqual(run.explanations[0].content_id, 1)
-        self.assertEqual(run.source, "catalog")
-        self.client.chat.assert_not_called()
+        self.assertEqual(run.source, "model")
+        self.client.chat.assert_called_once()
 
     def test_falls_back_for_duplicate_candidate_explanation(self):
         self.client.chat.return_value = response(
@@ -636,6 +722,7 @@ class ExplanationAgentTests(SimpleTestCase):
 
         self.assertIn("Film 1", run.message)
         self.assertEqual(len(run.explanations), 1)
+        self.assertEqual(run.source, "fallback")
 
     def test_falls_back_for_protected_model_output(self):
         self.client.chat.return_value = response(
@@ -651,13 +738,20 @@ class ExplanationAgentTests(SimpleTestCase):
 
         self.assertNotIn("user_profile", run.message)
         self.assertIn("Film 1", run.message)
+        self.assertEqual(run.source, "fallback")
 
-    def test_does_not_call_model_when_no_candidate_was_selected(self):
+    def test_calls_model_when_no_candidate_was_selected(self):
+        self.client.chat.return_value = response(
+            {
+                "message": "Nie znalazłem pozycji spełniających wszystkie warunki.",
+            }
+        )
         run = self.agent.run("Thriller", profile(), ())
 
         self.assertIn("Nie znalazłem", run.message)
         self.assertEqual(run.explanations, ())
-        self.client.chat.assert_not_called()
+        self.assertEqual(run.source, "model")
+        self.client.chat.assert_called_once()
 
     def test_discloses_missing_runtime_instead_of_claiming_constraint_match(self):
         without_runtime = candidate(1)
@@ -677,9 +771,12 @@ class ExplanationAgentTests(SimpleTestCase):
         )
 
         self.assertIn("Limit 100 minut", run.message)
-        self.client.chat.assert_not_called()
+        self.client.chat.assert_called_once()
 
     def test_answers_content_question_from_catalog_context(self):
+        self.client.chat.return_value = response(
+            {"message": "Zagadka — Mroczna tajemnica."}
+        )
         run = self.agent.answer_content_question(
             "O czym jest ten film?",
             (candidate(1, title="Zagadka"),),
@@ -688,13 +785,21 @@ class ExplanationAgentTests(SimpleTestCase):
 
         self.assertEqual(run.message, "Zagadka — Mroczna tajemnica.")
         self.assertEqual(run.explanations, ())
-        self.client.chat.assert_not_called()
+        self.assertEqual(run.source, "model")
+        self.client.chat.assert_called_once()
 
     def test_content_question_is_honest_when_catalog_has_no_answer(self):
+        self.client.chat.return_value = response(
+            {
+                "message": (
+                    "Nie mam w katalogu danych potrzebnych do rzetelnej odpowiedzi."
+                )
+            }
+        )
         run = self.agent.answer_content_question("Kto reżyserował ten film?", ())
 
         self.assertIn("danych potrzebnych", run.message)
-        self.assertEqual(run.source, "catalog")
+        self.assertEqual(run.source, "model")
 
     def test_answers_question_about_first_previous_recommendation(self):
         history = (

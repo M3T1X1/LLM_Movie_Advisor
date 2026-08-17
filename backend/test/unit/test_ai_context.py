@@ -33,7 +33,7 @@ class AiCatalogContextTests(SimpleTestCase):
     )
     def test_semantic_failure_falls_back_to_keyword_candidates(
         self,
-        mocked_cache_get,
+        _mocked_cache_get,
         mocked_semantic_search,
         mocked_keyword_search,
         mocked_cache_set,
@@ -73,7 +73,7 @@ class AiCatalogContextTests(SimpleTestCase):
     )
     def test_valid_cached_context_skips_ollama_and_database(
         self,
-        mocked_cache_get,
+        _mocked_cache_get,
         mocked_keyword_search,
         mocked_semantic_search,
         mocked_cache_set,
@@ -103,7 +103,7 @@ class AiCatalogContextTests(SimpleTestCase):
     )
     def test_vague_request_can_use_positive_profile_hints(
         self,
-        mocked_cache_get,
+        _mocked_cache_get,
         mocked_semantic_search,
         mocked_keyword_search,
         mocked_cache_set,

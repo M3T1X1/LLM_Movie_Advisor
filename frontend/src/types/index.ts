@@ -1,9 +1,9 @@
 export type DatabaseId = string;
-export type MediaType = 'movie' | 'tv';
-export type MessageRole = 'user' | 'assistant' | 'system';
-export type RecommendationRunStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
-export type CandidateStatus = 'pending' | 'selected' | 'rejected';
-export type AgentExecutionStatus = 'pending' | 'running' | 'success' | 'failed';
+type MediaType = 'movie' | 'tv';
+type MessageRole = 'user' | 'assistant' | 'system';
+type RecommendationRunStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+type CandidateStatus = 'pending' | 'selected' | 'rejected';
+type AgentExecutionStatus = 'pending' | 'running' | 'success' | 'failed';
 export type InteractionType =
   | 'details_opened'
   | 'liked'
@@ -102,7 +102,7 @@ export interface StatelessChatResponse {
   };
 }
 
-export interface RecommendationRequestRecord {
+interface RecommendationRequestRecord {
   id: DatabaseId;
   conversationId: DatabaseId;
   triggerMessageId: DatabaseId | null;
@@ -112,7 +112,7 @@ export interface RecommendationRequestRecord {
   createdAt: string;
 }
 
-export interface RecommendationRun {
+interface RecommendationRun {
   id: DatabaseId;
   requestId: DatabaseId;
   status: RecommendationRunStatus;
@@ -122,13 +122,13 @@ export interface RecommendationRun {
   finishedAt: string | null;
 }
 
-export interface Genre {
+interface Genre {
   id: DatabaseId;
   tmdbGenreId: number;
   name: string;
 }
 
-export interface ContentMetadata {
+interface ContentMetadata {
   runtimeMinutes?: number;
   voteCount?: number;
   certification?: string;
@@ -154,14 +154,14 @@ export interface Content {
   genres: Genre[];
 }
 
-export interface StatelessChatRecommendation {
+interface StatelessChatRecommendation {
   rank: number;
   explanation: string;
   content: Content;
 }
 
-export type CatalogMediaFilter = 'all' | MediaType;
-export type CatalogSort = 'popularity' | 'rating' | 'newest' | 'title';
+type CatalogMediaFilter = 'all' | MediaType;
+type CatalogSort = 'popularity' | 'rating' | 'newest' | 'title';
 
 export interface CatalogQuery {
   page: number;
@@ -206,7 +206,7 @@ export interface RunCandidate {
   content: Content;
 }
 
-export type AgentKey = 'profiling' | 'retrieval' | 'ranking' | 'explanation';
+type AgentKey = 'profiling' | 'retrieval' | 'ranking' | 'explanation';
 
 export interface AgentStep {
   key: AgentKey;
@@ -215,7 +215,7 @@ export interface AgentStep {
   status: AgentExecutionStatus;
 }
 
-export interface AgentExecution {
+interface AgentExecution {
   id: DatabaseId;
   runId: DatabaseId;
   agentType: string;
@@ -252,7 +252,7 @@ export interface RecommendationResponse {
 
 export type TrendPeriod = 'day' | 'week' | 'month';
 
-export interface GenreRecommendationTrend {
+interface GenreRecommendationTrend {
   genreName: string;
   recommendationCount: number;
 }

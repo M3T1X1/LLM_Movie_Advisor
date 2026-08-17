@@ -17,7 +17,7 @@ from backend.recommendation_agents.ranking import RankingAgent, RankingAgentRun
 from backend.recommendation_agents.retrieval import RetrievalAgent, RetrievalAgentRun
 
 
-GRAPH_VERSION = "recommendation-agents-v6"
+GRAPH_VERSION = "recommendation-agents-v7"
 
 
 class RecommendationGraphState(TypedDict, total=False):
@@ -43,7 +43,7 @@ def build_recommendation_graph(
     execution_observer: ExecutionObserver | None = None,
 ):
     profiling_agent = ProfilingAgent(client)
-    retrieval_agent = RetrievalAgent(client if client.embedding_model else None)
+    retrieval_agent = RetrievalAgent(client)
     ranking_agent = RankingAgent(client)
     explanation_agent = ExplanationAgent(client)
 
@@ -147,9 +147,11 @@ def build_recommendation_graph(
             run = observed(
                 "explanation",
                 {"reason": "clarification_required"},
-                lambda: ExplanationAgentRun(
-                    profile.clarification_question or "Jakiego filmu lub serialu szukasz?",
-                    (), client.model, None, None, "fallback", "clarification_required",
+                lambda: explanation_agent.respond(
+                    profile.clarification_question
+                    or "Jakiego filmu lub serialu szukasz?",
+                    reason="clarification_required",
+                    current_request=state["current_request"],
                 ),
                 lambda result: result.as_dict(),
             )
@@ -194,9 +196,10 @@ def build_recommendation_graph(
             run = observed(
                 "explanation",
                 {"reason": reason},
-                lambda: ExplanationAgentRun(
+                lambda: explanation_agent.respond(
                     message,
-                    (), client.model, None, None, "fallback", reason,
+                    reason=reason,
+                    current_request=state["current_request"],
                 ),
                 lambda result: result.as_dict(),
             )

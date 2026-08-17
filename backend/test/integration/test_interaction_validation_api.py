@@ -1,17 +1,10 @@
 import json
 
 from django.contrib.auth import get_user_model
-from django.db import IntegrityError, transaction
-from django.db.models.deletion import ProtectedError
 from django.urls import reverse
 
 from backend.accounts.services import sync_business_user
-from backend.api.models import (
-    Content,
-    Conversation,
-    Interaction,
-    Message,
-)
+from backend.api.models import Interaction
 from backend.test.integration.api_base import ApiIntegrationTestCase
 
 

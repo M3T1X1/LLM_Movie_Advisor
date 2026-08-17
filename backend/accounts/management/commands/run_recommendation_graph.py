@@ -60,6 +60,16 @@ class Command(BaseCommand):
                     if result.get("retrieval")
                     else None
                 ),
+                "retrieval_source": (
+                    result["retrieval"].source
+                    if result.get("retrieval")
+                    else None
+                ),
+                "retrieval_model": (
+                    result["retrieval"].model
+                    if result.get("retrieval")
+                    else None
+                ),
                 "retrieved_count": (
                     len(result["retrieval"].candidates)
                     if result.get("retrieval")

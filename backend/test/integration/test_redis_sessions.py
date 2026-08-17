@@ -37,7 +37,7 @@ UNAVAILABLE_CACHE = {
 
 
 class UnavailableCache(BaseCache):
-    def __init__(self, location, params):
+    def __init__(self, _location, params):
         super().__init__(params)
 
     def get(self, key, default=None, version=None):

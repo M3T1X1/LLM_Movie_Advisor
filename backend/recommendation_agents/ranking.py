@@ -107,69 +107,78 @@ class RankingAgent:
         prompt_tokens = None
         generated_tokens = None
         requested_weights = self._requested_ranking_weights(current_request)
-        if requested_weights:
-            scores = self._fallback_scores(current_request, profile, candidates)
-            source = "weighted"
-        else:
-            try:
-                response = self._request_model_scores(
+        try:
+            response = self._request_model_scores(
+                current_request,
+                profile,
+                candidates,
+            )
+            scores = self._validate_scores(json.loads(response.content), candidates)
+            prompt_tokens = response.prompt_eval_count
+            generated_tokens = response.eval_count
+            if len(scores) < len(candidates):
+                missing = tuple(
+                    candidate
+                    for candidate in candidates
+                    if candidate.content_id not in scores
+                )
+                try:
+                    retry_response = self._request_model_scores(
+                        current_request,
+                        profile,
+                        missing,
+                    )
+                    retry_scores = self._validate_scores(
+                        json.loads(retry_response.content),
+                        missing,
+                    )
+                    scores.update(retry_scores)
+                    prompt_tokens = self._sum_optional(
+                        prompt_tokens,
+                        retry_response.prompt_eval_count,
+                    )
+                    generated_tokens = self._sum_optional(
+                        generated_tokens,
+                        retry_response.eval_count,
+                    )
+                    if len(scores) == len(candidates):
+                        source = "model_retry"
+                except (
+                    json.JSONDecodeError,
+                    TypeError,
+                    RankingAgentError,
+                    OllamaError,
+                ):
+                    pass
+            if not scores:
+                scores = self._fallback_scores(current_request, profile, candidates)
+                source = "fallback"
+                fallback_reason = "empty_model_scores"
+            elif len(scores) < len(candidates):
+                fallback_scores = self._fallback_scores(
                     current_request,
                     profile,
                     candidates,
                 )
-                scores = self._validate_scores(json.loads(response.content), candidates)
-                prompt_tokens = response.prompt_eval_count
-                generated_tokens = response.eval_count
-                if len(scores) < len(candidates):
-                    missing = tuple(
-                        candidate
-                        for candidate in candidates
-                        if candidate.content_id not in scores
-                    )
-                    try:
-                        retry_response = self._request_model_scores(
-                            current_request,
-                            profile,
-                            missing,
-                        )
-                        retry_scores = self._validate_scores(
-                            json.loads(retry_response.content),
-                            missing,
-                        )
-                        scores.update(retry_scores)
-                        prompt_tokens = self._sum_optional(
-                            prompt_tokens,
-                            retry_response.prompt_eval_count,
-                        )
-                        generated_tokens = self._sum_optional(
-                            generated_tokens,
-                            retry_response.eval_count,
-                        )
-                        if len(scores) == len(candidates):
-                            source = "model_retry"
-                    except (json.JSONDecodeError, RankingAgentError, OllamaError):
-                        pass
-                if not scores:
-                    scores = self._fallback_scores(
-                        current_request,
-                        profile,
-                        candidates,
-                    )
-                    source = "fallback"
-                    fallback_reason = "empty_model_scores"
-                elif len(scores) < len(candidates):
-                    fallback_scores = self._fallback_scores(
-                        current_request,
-                        profile,
-                        candidates,
-                    )
-                    scores = {**fallback_scores, **scores}
-                    source = "hybrid"
-                    fallback_reason = "incomplete_model_scores"
-            except (json.JSONDecodeError, RankingAgentError, OllamaError) as error:
-                scores = self._fallback_scores(current_request, profile, candidates)
-                source = "fallback"
-                fallback_reason = type(error).__name__
+                scores = {**fallback_scores, **scores}
+                source = "hybrid"
+                fallback_reason = "incomplete_model_scores"
+        except (
+            json.JSONDecodeError,
+            TypeError,
+            RankingAgentError,
+            OllamaError,
+        ) as error:
+            scores = self._fallback_scores(current_request, profile, candidates)
+            source = "fallback"
+            fallback_reason = type(error).__name__
+        if requested_weights:
+            source = {
+                "model": "weighted_model",
+                "model_retry": "weighted_model_retry",
+                "hybrid": "weighted_hybrid",
+                "fallback": "weighted_fallback",
+            }[source]
         scores = self._apply_avoid_penalties(profile, candidates, scores)
         weighted_results = (
             self._weighted_results(profile, candidates, requested_weights)

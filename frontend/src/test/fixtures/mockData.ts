@@ -1,5 +1,4 @@
 import type {
-  AgentExecution,
   AgentStep,
   AppUser,
   ChatMessage,
@@ -8,8 +7,6 @@ import type {
   Interaction,
   MoviePreferenceOptions,
   RecommendationTrends,
-  RecommendationRequestRecord,
-  RecommendationRun,
   RunCandidate,
   UserPreference,
   UserSemanticProfile,
@@ -133,31 +130,6 @@ export const initialAgentSteps: AgentStep[] = [
     status: 'pending',
   },
 ];
-
-export const demoRequest: RecommendationRequestRecord = {
-  id: '1',
-  conversationId: '1',
-  triggerMessageId: '2',
-  mood: 'mroczny',
-  extractedContext: {
-    themes: ['twist fabularny'],
-    desired_tone: 'mroczny',
-  },
-  constraintsData: {
-    ending: 'bez happy endu',
-  },
-  createdAt: now,
-};
-
-export const demoRun: RecommendationRun = {
-  id: '1',
-  requestId: '1',
-  status: 'completed',
-  graphVersion: '1.0',
-  modelName: 'mock-model',
-  startedAt: now,
-  finishedAt: now,
-};
 
 export const demoCandidates: RunCandidate[] = [
   {
@@ -545,19 +517,6 @@ export const demoRecommendationTrends: Record<TrendPeriod, RecommendationTrends>
   },
 };
 
-export const demoAgentExecutions: AgentExecution[] = initialAgentSteps.map((step, index) => ({
-  id: String(index + 1),
-  runId: '1',
-  agentType: step.key,
-  sequenceNo: index + 1,
-  status: 'success',
-  inputSnapshot: {},
-  outputSnapshot: {},
-  durationMs: 500 + index * 120,
-  startedAt: now,
-  finishedAt: now,
-}));
-
 export const demoInteractions: Interaction[] = [
   {
     id: '1',
@@ -619,12 +578,6 @@ export const demoInteractions: Interaction[] = [
     metadata: {},
     createdAt: '2026-06-28T20:20:00.000Z',
   },
-];
-
-export const promptSuggestions = [
-  'Coś mrocznego z twistem, bez happy endu',
-  'Lekki serial na dwa wieczory',
-  'Ambitne sci-fi, które daje do myślenia',
 ];
 
 function createPreference(

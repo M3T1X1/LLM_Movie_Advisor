@@ -7,7 +7,6 @@ from backend.ollama import OllamaChatResponse
 from backend.recommendation_agents.profiling import (
     PROFILING_OUTPUT_SCHEMA,
     ProfilingAgent,
-    ProfilingAgentError,
     ProfilingAgentInput,
 )
 

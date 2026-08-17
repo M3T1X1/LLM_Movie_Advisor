@@ -11,10 +11,11 @@ conversations, interactions, PostgreSQL with pgvector, Redis, Docker Compose,
 an AMD ROCm-backed Ollama runtime, and automated tests.
 
 The recommendation workflow is implemented as a four-stage LangGraph pipeline:
-profiling and context extraction, catalog retrieval, deterministic ranking and
-critique, and natural-language explanations. Docker Compose runs Ollama and
-downloads Llama 3.1 8B into a persistent volume. Django grounds the agents with
-catalog, profile, preference, and interaction data from PostgreSQL. Retrieval
+profiling and context extraction, LLM-planned catalog retrieval, ranking and
+critique, and natural-language explanations. Every agent invokes the configured
+chat model on its normal execution path. Docker Compose runs Ollama and downloads
+Llama 3.1 8B into a persistent volume. Django grounds the agents with catalog,
+profile, preference, and interaction data from PostgreSQL. Retrieval additionally
 uses Ollama embeddings and PostgreSQL/pgvector with keyword fallback. Every run,
 agent execution, candidate score, message, and explanation is persisted and the
 React frontend renders the selected catalog-backed recommendation cards.
@@ -481,12 +482,14 @@ Django includes an HTTP client for model discovery, embeddings, and
 non-streaming chat calls. The application sends prompts to
 `POST /api/conversations/:id/recommendations/`. The profiling agent analyzes up
 to ten sanitized conversation messages plus the user's profile, preferences,
-and interactions. The retrieval agent queries pgvector and applies catalog
-constraints, with relational keyword search as fallback. The ranking agent
-scores and rejects weak or conflicting candidates. The explanation agent
-returns a validated Polish response grounded in selected catalog metadata.
-Messages and the complete execution trace survive page reloads. The legacy
-`POST /api/chat/` endpoint remains available for isolated stateless diagnostics.
+and interactions. The retrieval agent uses the chat model to produce a validated
+semantic query, embeds that query, queries pgvector, and applies catalog
+constraints, with relational keyword search as fallback. The ranking agent uses
+the chat model for scoring and criticism while deterministic rules enforce hard
+constraints. The explanation agent returns a validated, LLM-generated Polish
+response grounded in selected catalog metadata. Messages and the complete
+execution trace survive page reloads. The legacy `POST /api/chat/` endpoint
+remains available for isolated stateless diagnostics.
 
 Check the complete application health response:
 
@@ -1189,9 +1192,10 @@ The implemented recommendation workflow consists of four roles:
 
 LangGraph connects the stages as `profile -> retrieve -> rank -> explain`, with
 an early explanation branch for clarification and out-of-scope requests. LLM
-outputs have JSON schemas and Python validation; profiling and explanation use
-deterministic fallbacks, while retrieval and ranking remain bounded and
-reproducible.
+outputs have JSON schemas and Python validation. All four roles invoke the chat
+model in their normal paths; retrieval also invokes the embedding model before
+pgvector search. Deterministic filters, validation, and fallbacks keep retrieval,
+ranking, and explanations bounded when model output is missing or unsafe.
 
 The configured chat model is Llama 3.1 8B and the embedding model is
 `nomic-embed-text:latest`. Changing to a model with dimensions other than 768
