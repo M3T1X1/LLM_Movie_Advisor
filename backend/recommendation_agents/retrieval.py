@@ -296,6 +296,10 @@ class RetrievalAgent:
             queryset = queryset.filter(
                 Q(overview__iregex=r"\m(?:kosmos|kosmiczn|galakty|astronaut)\w*")
             )
+        if "podróż kosmiczna" in profile.excluded_themes:
+            queryset = queryset.exclude(
+                overview__iregex=r"\m(?:kosmos|kosmiczn|galakty|astronaut|astronom|komet|orbit|wszechświat|planet|rakiet|nasa)\w*"
+            )
         if "krótkie odcinki" in profile.themes:
             queryset = queryset.filter(
                 metadata__episodeRuntimeMinutes__lte=35,

@@ -130,11 +130,11 @@ GENRE_PATTERNS = (
 NEGATIVE_PREFERENCE_DIRECTIVE = (
     r"(?:bez|unikam|wyklucz(?:am)?|żadn\w*|nie\s+chcę|nie\s+chce|"
     r"nie\s+lubię|nie\s+lubie|nie\s+polecaj|nie\s+rekomenduj|"
-    r"do\s+not\s+recommend|avoid|exclude)"
+    r"do\s+not\s+recommend|avoid|exclude|nie(?!\s+tylko\b)|not(?!\s+only\b)|no)"
 )
 POSITIVE_PREFERENCE_DIRECTIVE = (
     r"(?:chcę|chce|poproszę|poprosze|może\s+być|moze\s+byc|tym\s+razem|"
-    r"dziś\s+chcę|dzis\s+chce|want|recommend)"
+    r"dziś\s+chcę|dzis\s+chce|wolę|wole|prefer|want|recommend)"
 )
 
 PROFILING_OUTPUT_SCHEMA: dict[str, Any] = {
@@ -278,6 +278,7 @@ class ProfilingAgentOutput:
     exclude_reference_titles: bool = False
     result_count: int = 3
     excluded_origin_countries: tuple[str, ...] = ()
+    excluded_themes: tuple[str, ...] = ()
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -441,6 +442,8 @@ class ProfilingAgent:
         previous = cls._continuation_profile(agent_input)
         explicit_genres = cls._explicit_genres(normalized)
         explicit_themes = cls._explicit_themes(normalized)
+        excluded_themes = cls._theme_matches(normalized, negated=True)
+        current_excluded_themes = excluded_themes
         inherited_genres = (
             ()
             if explicit_genres
@@ -448,13 +451,17 @@ class ProfilingAgent:
         )
         genres = explicit_genres or inherited_genres or (previous.genres if previous else ())
         if previous and not explicit_themes and not explicit_genres:
-            explicit_themes = previous.themes
+            explicit_themes = tuple(theme for theme in previous.themes if theme not in excluded_themes)
+        if previous:
+            excluded_themes = tuple(dict.fromkeys((*previous.excluded_themes, *excluded_themes)))
+        excluded_themes = tuple(theme for theme in excluded_themes if theme not in explicit_themes)
+        explicit_themes = tuple(theme for theme in explicit_themes if theme not in excluded_themes)
         explicit_reference_titles = cls._explicit_reference_titles(request)
         media_types = output.media_types
-        mentions_movie = bool(re.search(r"\b(?:film\w*|movies?)\b", normalized))
-        mentions_tv = bool(
-            re.search(r"\b(?:serial\w*|tv\s+(?:series|shows?)|series)\b", normalized)
-        )
+        mentions_movie = any(not cls._match_is_negated(normalized, m.start())
+                             for m in re.finditer(r"\b(?:film\w*|movies?)\b", normalized))
+        mentions_tv = any(not cls._match_is_negated(normalized, m.start())
+                          for m in re.finditer(r"\b(?:serial\w*|tv\s+(?:series|shows?)|series)\b", normalized))
         if mentions_movie and not mentions_tv:
             media_types = ("movie",)
         elif mentions_tv and not mentions_movie:
@@ -484,6 +491,7 @@ class ProfilingAgent:
             if value.casefold() not in {item.casefold() for item in avoid}:
                 avoid.append(value)
 
+        genres = tuple(genre for genre in genres if genre not in avoid)
         year_from, year_to = cls._explicit_years(normalized)
         max_runtime = cls._explicit_runtime(normalized)
         min_vote = cls._explicit_min_vote(normalized)
@@ -572,6 +580,18 @@ class ProfilingAgent:
             intent = "recommendation"
         else:
             intent = "other"
+        # A continuation must not turn an explicitly unrelated current request
+        # into a recommendation solely because history contains film genres.
+        denies_film_scope = bool(re.search(
+            r"\bnie\s+(?:pytam|chcę|chce|szukam)\s+(?:o\s+)?film\w*", normalized
+        ))
+        current_scope = bool(explicit_genres or mentions_movie or mentions_tv
+                             or explicit_reference_titles or explicit_recommendation
+                             or (previous and (current_excluded_themes or explicit_avoid)))
+        if denies_film_scope and not (explicit_genres or explicit_recommendation):
+            intent = "other"
+        elif output.intent == "other" and not current_scope and not cls._looks_like_recall(normalized):
+            intent = "other"
         mood = output.mood
         if mood and mood.casefold() in {
             "brak danych",
@@ -656,6 +676,7 @@ class ProfilingAgent:
             exclude_reference_titles=exclude_reference_titles,
             result_count=cls._requested_result_count(normalized) or (previous.result_count if previous else 3),
             excluded_origin_countries=excluded_countries,
+            excluded_themes=excluded_themes,
         )
 
     @classmethod
@@ -941,6 +962,8 @@ class ProfilingAgent:
             for separator in (".", ";", "!", "?")
         )
         prefix = normalized[clause_start + 1 : start]
+        # Contrast starts a new preference; lists joined by ani/nor keep polarity.
+        prefix = re.split(r"\b(?:ale|lecz|jednak|tylko|za\s+to|but|however|instead)\b", prefix)[-1]
         directives = list(
             re.finditer(
                 rf"\b(?:(?P<negative>{NEGATIVE_PREFERENCE_DIRECTIVE})|"
@@ -961,8 +984,8 @@ class ProfilingAgent:
             if phrase in {"ograniczeń", "innych ograniczeń", "limitu długości"}:
                 continue
             phrase = re.split(
-                r"\b(?:ale|lecz|jednak|za\s+to|but|however|"
-                r"chcę|chce|szukam|poleć|recommend)\b",
+                r"\b(?:ale|lecz|jednak|tylko|za\s+to|but|however|"
+                r"chcę|chce|wolę|wole|prefer|szukam|poleć|recommend)\b",
                 phrase,
                 maxsplit=1,
             )[0]
@@ -987,6 +1010,10 @@ class ProfilingAgent:
                     }
                 ):
                     values.append(value)
+        for pattern, canonical in GENRE_PATTERNS:
+            if any(cls._match_is_negated(normalized, match.start())
+                   for match in re.finditer(pattern, normalized)) and canonical not in values:
+                values.append(canonical)
         return tuple(values)
 
     @staticmethod
@@ -1051,8 +1078,12 @@ class ProfilingAgent:
                 decision = directives[-1].lastgroup == "positive"
         return decision is True
 
-    @staticmethod
-    def _explicit_themes(normalized: str) -> tuple[str, ...]:
+    @classmethod
+    def _explicit_themes(cls, normalized: str) -> tuple[str, ...]:
+        return cls._theme_matches(normalized, negated=False)
+
+    @classmethod
+    def _theme_matches(cls, normalized: str, *, negated: bool) -> tuple[str, ...]:
         patterns = (
             (r"\bzagadk\w*", "zagadka"),
             (r"\bmocn\w* fina\w*", "mocny finał"),
@@ -1063,7 +1094,9 @@ class ProfilingAgent:
             (r"\bkrótk\w*\s+odcink\w*", "krótkie odcinki"),
             (r"\b(?:siln\w*|mocn\w*)\s+(?:bohaterk\w*|kobiet\w*)", "silna bohaterka"),
         )
-        return tuple(label for pattern, label in patterns if re.search(pattern, normalized))
+        return tuple(label for pattern, label in patterns
+                     if any(cls._match_is_negated(normalized, match.start()) == negated
+                            for match in re.finditer(pattern, normalized)))
 
     @classmethod
     def _explicit_years(cls, normalized: str) -> tuple[int | None, int | None]:

@@ -38,3 +38,28 @@ class ManualChatRetrievalRegressions(ApiIntegrationTestCase):
         item = normalize_tmdb_item({'id': 1001, 'title': 'Film', 'genre_ids': []}, 'movie')
         upsert_catalog({}, [item])
         self.assertEqual(Content.objects.get(pk=pk).metadata['originCountry'], ['PL'])
+
+    def test_negated_animation_is_excluded_from_retrieval(self):
+        comedy = Genre.objects.create(tmdb_genre_id=35, name='Komedia')
+        animation = Genre.objects.create(tmdb_genre_id=16, name='Animacja')
+        live = self.insert_content(1001, 'Komedia aktorska')
+        animated = self.insert_content(1002, 'Animowana komedia')
+        for pk in (live, animated):
+            ContentGenre.objects.create(content_id=pk, genre=comedy)
+        ContentGenre.objects.create(content_id=animated, genre=animation)
+        from backend.recommendation_agents.profiling import ProfilingAgent, ProfilingAgentInput
+        text = 'Komedia, ale nie animacja.'
+        output = ProfilingAgent._ground_output(ProfilingAgentInput(text), ProfilingAgent._fallback_output(text))
+        result = RetrievalAgent(None).run(text, output)
+        self.assertEqual([c.content_id for c in result.candidates], [live])
+
+    def test_negated_space_is_a_hard_filter(self):
+        earth = self.insert_content(1001, 'Ziemska historia')
+        space = self.insert_content(1002, 'Wyprawa')
+        Content.objects.filter(pk=earth).update(overview='Naukowiec buduje robota w mieście.')
+        Content.objects.filter(pk=space).update(overview='Astronauci wyruszają w kosmos.')
+        comet = self.insert_content(1003, 'Kometa')
+        Content.objects.filter(pk=comet).update(overview='Astronomowie ostrzegają przed kometą.')
+        result = RetrievalAgent(None).run('Nie o kosmosie',
+            profile(genres=(), themes=(), excluded_themes=('podróż kosmiczna',)))
+        self.assertEqual([c.content_id for c in result.candidates], [earth])
