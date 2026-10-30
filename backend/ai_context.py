@@ -9,7 +9,7 @@ from django.db import DatabaseError
 from django.db.models import Q
 
 from backend.accounts.services import get_business_user_id
-from backend.api.models import Content, Interaction, UserPreference, UserProfile
+from backend.api.models import Content, Interaction, InteractionType, UserPreference, UserProfile
 from backend.embeddings import semantic_content_search
 from backend.ollama import OllamaClient, OllamaError
 from backend.redis import (
@@ -157,6 +157,8 @@ def _catalog_candidates(
     prompt: str,
     preference_hints: list[str],
     embedding_client: OllamaClient | None,
+    *,
+    excluded_ids: tuple[int, ...] = (),
 ) -> tuple[list[dict], bool, str]:
     prompt_terms = _search_terms(prompt, [])
     retrieval_preference_hints = [] if prompt_terms else preference_hints
@@ -175,6 +177,8 @@ def _catalog_candidates(
         "embedding_language": settings.LLM_EMBEDDING_SOURCE_LANGUAGE,
         "minimum_similarity": settings.LLM_SEMANTIC_MIN_SIMILARITY,
     }
+    if excluded_ids:
+        cache_params['excluded_ids'] = sorted(set(excluded_ids))
     cache_key, cached_context = get_cached_llm_catalog_context(cache_params)
     cached_candidates = (
         cached_context.get("candidates")
@@ -194,6 +198,7 @@ def _catalog_candidates(
             and isinstance(item.get("title"), str)
             for item in cached_candidates
         )
+        and not any(item['id'] in excluded_ids for item in cached_candidates)
     ):
         return cached_candidates, True, cached_mode
 
@@ -213,6 +218,7 @@ def _catalog_candidates(
                     semantic_score=match.similarity,
                 )
                 for match in matches
+                if match.content.pk not in excluded_ids
             ]
             retrieval_mode = "semantic" if candidates else "keyword_fallback"
         except (OllamaError, DatabaseError) as error:
@@ -227,7 +233,7 @@ def _catalog_candidates(
             _query_catalog_candidates(
                 terms,
                 limit=settings.LLM_CATALOG_CANDIDATE_LIMIT - len(candidates),
-                exclude_ids=[item["id"] for item in candidates],
+                exclude_ids=[*excluded_ids, *(item["id"] for item in candidates)],
             )
         )
     set_cached_llm_catalog_context(
@@ -321,6 +327,9 @@ def build_llm_application_context(
         prompt,
         preference_hints,
         embedding_client,
+        excluded_ids=tuple(Interaction.objects.filter(
+            user_id=user_id, interaction_type=InteractionType.WATCHED,
+        ).order_by('content_id').values_list('content_id', flat=True).distinct()),
     )
     semantic_summary = (
         profile.semantic_summary.strip()[: settings.LLM_PROFILE_SUMMARY_MAX_LENGTH]

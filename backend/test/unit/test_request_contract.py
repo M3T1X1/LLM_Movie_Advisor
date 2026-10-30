@@ -15,6 +15,22 @@ def ground(text, **context):
 
 
 class RequestContractTests(SimpleTestCase):
+    def test_watched_titles_are_always_excluded_and_combined_with_conversation_exclusions(self):
+        result = ground('Poleć thriller.', watched_content_ids=(1, 2))
+        self.assertEqual(result.excluded_content_ids, (1, 2))
+        question = ground('O czym jest ten film?', watched_content_ids=(1, 2))
+        self.assertEqual(question.intent, 'content_question')
+        self.assertEqual(question.excluded_content_ids, ())
+        result = ground('Poleć kolejne thrillery.', watched_content_ids=(1, 2), seen_content_ids=(2, 3))
+        self.assertEqual(set(result.excluded_content_ids), {1, 2, 3})
+        client = MagicMock(model='test')
+        client.chat.return_value = response({})
+        ranked = RankingAgent(client).run('Thriller', result, (candidate(1), candidate(4)))
+        self.assertNotIn(1, {item.candidate.content_id for item in ranked.selected})
+        selected = (RankedCandidate(candidate(1), .9, .9, .9, 'selected', 1, ''),)
+        explained = ExplanationAgent(client).run('Thriller', result, selected)
+        self.assertEqual(explained.explanations, ())
+
     def test_quantities_belong_to_content_not_runtime_or_rating(self):
         for text, count in (
             ('Poleć dwie komedie romantyczne.', 2), ('Poleć jeden mroczny thriller.', 1),

@@ -8,6 +8,7 @@ from django.conf import settings
 from backend.api.models import (
     BusinessUser,
     Interaction,
+    InteractionType,
     UserPreference,
     UserProfile,
 )
@@ -251,6 +252,7 @@ class ProfilingAgentInput:
     previous_profile: dict[str, Any] | None = None
     previous_recommendations: tuple[dict[str, Any], ...] = ()
     seen_content_ids: tuple[int, ...] = ()
+    watched_content_ids: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -358,6 +360,9 @@ def build_profiling_input(
         previous_profile=previous_profile,
         previous_recommendations=previous_recommendations,
         seen_content_ids=seen_content_ids,
+        watched_content_ids=tuple(Interaction.objects.filter(
+            user=user, interaction_type=InteractionType.WATCHED,
+        ).order_by('content_id').values_list('content_id', flat=True).distinct()),
         semantic_profile=(
             profile.semantic_summary[: settings.LLM_PROFILE_SUMMARY_MAX_LENGTH]
             if profile and profile.semantic_summary
@@ -700,6 +705,8 @@ class ProfilingAgent:
             r"\b(?:kolejn\w*|następn\w*|jeszcze|inne|inny|innych|bez\s+powtórek|nie\s+powtarz\w*|bez\s+powtarzania|other|another|more)\b", normalized
         ):
             excluded_ids = agent_input.seen_content_ids
+        if intent == 'recommendation':
+            excluded_ids = tuple(dict.fromkeys((*excluded_ids, *agent_input.watched_content_ids)))
         require_all_genres = len(genres) > 1
         allow_genre_relaxation = False
         exclude_reference_titles = bool(
