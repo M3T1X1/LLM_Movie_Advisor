@@ -1,0 +1,63 @@
+{
+  "account": {
+    "user": {
+      "id": "9",
+      "email": "manual-chat-1793259937@example.test",
+      "username": "manual-chat-1793259937",
+      "dateJoined": "2026-10-29T07:45:37.762755+00:00",
+      "isActive": true
+    }
+  },
+  "preferences": {
+    "preferences": [
+      {
+        "id": "49",
+        "userId": "9",
+        "preferenceType": "narrative",
+        "preferenceValue": "Skomplikowana fabuła",
+        "polarity": 1,
+        "weight": 1.0,
+        "confidence": 1.0,
+        "createdAt": "2026-10-29T07:45:38.011307+00:00",
+        "updatedAt": "2026-10-29T07:45:38.011307+00:00"
+      },
+      {
+        "id": "50",
+        "userId": "9",
+        "preferenceType": "humor",
+        "preferenceValue": "Humor",
+        "polarity": 1,
+        "weight": 1.0,
+        "confidence": 1.0,
+        "createdAt": "2026-10-29T07:45:38.011307+00:00",
+        "updatedAt": "2026-10-29T07:45:38.011307+00:00"
+      },
+      {
+        "id": "51",
+        "userId": "9",
+        "preferenceType": "violence",
+        "preferenceValue": "Gore",
+        "polarity": -1,
+        "weight": 1.0,
+        "confidence": 1.0,
+        "createdAt": "2026-10-29T07:45:38.011307+00:00",
+        "updatedAt": "2026-10-29T07:45:38.011307+00:00"
+      }
+    ],
+    "semanticProfile": {
+      "userId": "9",
+      "semanticSummary": null,
+      "version": 2,
+      "lastRebuiltAt": null,
+      "updatedAt": "2026-10-29T07:45:38.011307+00:00"
+    }
+  },
+  "health": {
+    "status": "ok",
+    "services": {
+      "database": "ok",
+      "redis": "ok",
+      "ollama": "ok"
+    }
+  }
+}

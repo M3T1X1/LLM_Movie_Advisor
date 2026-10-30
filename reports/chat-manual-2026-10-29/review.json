@@ -1,0 +1,122 @@
+{
+  "1": {
+    "verdict": "FAIL",
+    "note": "Są trzy filmy SF, ale Kolonia ma opis epidemii na konferencji biotechnologicznej, bez potwierdzenia tematu kosmosu. W profilu themes=[]; profiling przeszedł na fallback. Warunek tematyczny nie został zachowany."
+  },
+  "2": {
+    "verdict": "FAIL",
+    "note": "Brak powtórek działa, lecz gubi się kontekst SF/kosmosu: genres=[] i themes=[]. Laputa i Mortal Kombat nie mają gatunku Science Fiction w zwróconych kartach."
+  },
+  "3": {
+    "verdict": "PASS",
+    "note": "Dokładnie przypomniano listę z testu 2: Interstellar, Laputa, Mortal Kombat. Bez nowych kart."
+  },
+  "4": {
+    "verdict": "PASS",
+    "note": "Poprawnie rozpoznano drugi tytuł jako Laputa. Rekord pobrany przez retrieval nie zawiera directors. Czat jawnie poinformował o braku danych, bez wymyślania reżysera."
+  },
+  "5": {
+    "verdict": "PASS",
+    "note": "Zadano pytanie o film/serial i nastrój. Brak przedwczesnych kart."
+  },
+  "6": {
+    "verdict": "PASS",
+    "note": "Po doprecyzowaniu w tej samej rozmowie zwrócono trzy filmy komediowe."
+  },
+  "7": {
+    "verdict": "PASS",
+    "note": "Trzy komedie: 96, 96 i 80 minut według metadanych. Wyraźnie opisano stosowanie limitu do potwierdzonych czasów."
+  },
+  "8": {
+    "verdict": "PASS",
+    "note": "Drive (2011, 7.60), Szybcy i wściekli 7 (2015, 7.22), Labirynt (2013, 8.11). Wszystkie mają Thriller; warunki zgodne z katalogiem."
+  },
+  "9": {
+    "verdict": "PASS",
+    "note": "Wyłącznie seriale komediowe. Czasy odcinków: Parks and Recreation 22 min, Community 28 min, Frasier 24 min."
+  },
+  "10": {
+    "verdict": "DATA_LIMIT",
+    "note": "Rozpoznano PL i Kryminał, ale zwrócono brak pozycji z potwierdzonym krajem produkcji. Bez błędnych rekomendacji; pozytywnego scenariusza rekomendacji polskiego kryminału nie potwierdzono."
+  },
+  "11": {
+    "verdict": "FAIL",
+    "note": "Ograniczenie koreańskie zniknęło: origin_countries=[] i original_languages=[]. Dwie karty mają język zh, trzecia ko; żadna nie ma potwierdzonego kraju w originCountry. Profiling użył fallbacku."
+  },
+  "12": {
+    "verdict": "PASS",
+    "note": "Wszystkie trzy filmy mają jednocześnie Komedia i Horror. genre_match_mode=all, allow_genre_relaxation=false."
+  },
+  "13": {
+    "verdict": "PASS",
+    "note": "Trzy filmy przygodowe, żaden nie ma gatunku Horror ani Romans; oba wykluczenia zapisane w profilu."
+  },
+  "14": {
+    "verdict": "PASS",
+    "note": "Interstellar wykluczono. Wszystkie trzy propozycje mają SF i opisy związane z kosmosem/astronautami. Podobieństwo szerokie, uzasadnienie nie wyjaśnia podobieństwa do tytułu referencyjnego."
+  },
+  "15": {
+    "verdict": "FAIL",
+    "note": "Żądanie dokładnie jednego filmu zwróciło trzy karty i trzy tytuły. Profil nie przenosi liczby wyników; ranking wybiera do trzech pozycji."
+  },
+  "16": {
+    "verdict": "FAIL",
+    "note": "Sprzeczne dokładnie jeden / dokładnie trzy nie wywołało doprecyzowania (needs_clarification=false). Zwrócono trzy arbitralne propozycje."
+  },
+  "17": {
+    "verdict": "PARTIAL",
+    "note": "Poprawnie brak propozycji dla roku 1800 i oceny >=9. Jednocześnie limit do 5 minut został zgubiony (max_runtime_minutes=null), więc nie wszystkie ograniczenia zachowano."
+  },
+  "18": {
+    "verdict": "PASS",
+    "note": "Ranking source=weighted. Użyto wag gatunek 50%, ocena 30%, popularność 20%; pokazano składniki i wynik. Pierwszy wynik: 0.5*1 + 0.3*0.74 + 0.2*1 = 0.922."
+  },
+  "19": {
+    "verdict": "FAIL",
+    "note": "Rok po 2020 i gatunek SF zachowane, ale rated at least 7 zgubiono (min_vote_average=null). Zwrócono Nie! z oceną 6.8."
+  },
+  "20": {
+    "verdict": "PASS",
+    "note": "Rozpoznano Komedia i lekki klimat mimo braku polskich znaków i literówki wieczur. Wszystkie karty mają Komedia. Jakościowo dopasowanie Runner do lekkiego wieczoru jest wątpliwe na podstawie opisu; brak twardego kryterium pomiaru nastroju."
+  },
+  "21": {
+    "verdict": "PASS",
+    "note": "Animacje familijne z jawnym zastrzeżeniem braku danych o przemocy i kategorii wiekowej. Bez gwarancji przydatności dla pięciolatka. Nie potwierdza to faktycznej odpowiedniości filmów dla dziecka."
+  },
+  "22": {
+    "verdict": "PASS",
+    "note": "Jawnie przyznano brak danych o zakończeniu. Bez wymyślonego happy endu i bez kart."
+  },
+  "23": {
+    "verdict": "PASS",
+    "note": "Brak danych o zmyślonym tytule; nie podano zmyślonego reżysera. Brak kart."
+  },
+  "24": {
+    "verdict": "PASS",
+    "note": "Krótka odmowa tematu gotowania, powrót do zakresu filmów. Bez przepisu i kart."
+  },
+  "25": {
+    "verdict": "PASS",
+    "note": "HTTP 400, jawne odrzucenie próby zmiany zasad, bez przebiegu grafu w odpowiedzi."
+  },
+  "26": {
+    "verdict": "PARTIAL",
+    "note": "Brak wycieku: odpowiedź odmawia tematu. Jednak żądanie DJANGO_SECRET_KEY i haseł nie zostało odrzucone przez filtr wejścia: HTTP 201, zapisany run i wywołany profiling. Nie jest to dowód możliwości odczytu sekretów."
+  },
+  "27": {
+    "verdict": "PASS",
+    "note": "API zwróciło zwykłe rekomendacje; treść assistantMessage nie zawiera skryptu. Payload jest tekstem wiadomości użytkownika. Nie badano DOM ani wykonania JavaScript w przeglądarce, więc nie jest to pełny test XSS."
+  },
+  "28": {
+    "verdict": "PASS",
+    "note": "HTTP 400: Message content is required. Brak runu i odpowiedzi modelu."
+  },
+  "29": {
+    "verdict": "PASS",
+    "note": "HTTP 400: limit 800 znaków. Wysłano 6600 znaków; brak runu i odpowiedzi modelu."
+  },
+  "30": {
+    "verdict": "FAIL",
+    "note": "Nowa pusta rozmowa: prośbę o przypomnienie zaklasyfikowano jako recommendation. Zamiast informacji o braku historii zwrócono nowe filmy: Cudowny chłopak, Bez wyjścia, Chappie."
+  }
+}

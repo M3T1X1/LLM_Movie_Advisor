@@ -42,6 +42,8 @@ _PROMPT_INJECTION_PATTERNS = tuple(
 _SENSITIVE_DATA_REQUEST_PATTERNS = tuple(
     re.compile(pattern)
     for pattern in (
+        r"\b(?:podaj|pokaż|ujawnij|wypisz|odczytaj|show|reveal|print|give)\b.{0,160}"
+        r"\b(?:[a-z_]*secret[_ -]?key|hasł\w*|passwords?|api[_ -]?key|tokens?)\b",
         r"\b(?:app_user|user_profile|user_preference|recommendation_request|"
         r"recommendation_run|agent_execution|content_embedding)\b",
         r"\b(?:select|insert|update|delete|drop|alter|truncate|copy)\b"

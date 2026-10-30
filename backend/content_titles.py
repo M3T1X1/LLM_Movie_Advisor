@@ -32,3 +32,18 @@ def display_content_title(
         ):
             return alternative.strip()[:500]
     return normalized
+
+
+def parse_recommendation_list(text: str) -> tuple[tuple[str, str], ...]:
+    """Parse our numbered answers without splitting hyphens inside titles."""
+    items = []
+    for line in text.splitlines():
+        match = re.match(r"^\s*\d+\.\s+(.+)$", line)
+        if not match:
+            continue
+        body = match.group(1)
+        separator = " — " if " — " in body else " - "
+        title, found, description = body.partition(separator)
+        if found and title.strip() and description.strip():
+            items.append((title.strip(), description.strip()))
+    return tuple(items)

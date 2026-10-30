@@ -1,6 +1,7 @@
 import re
 from dataclasses import dataclass
 
+from backend.content_titles import parse_recommendation_list
 from backend.ollama import OllamaClient
 from backend.recommendation_agents.profiling import ProfilingAgentOutput
 from backend.recommendation_agents.ranking import RankedCandidate
@@ -255,15 +256,9 @@ class ExplanationAgent:
         for message in reversed(conversation_history):
             if message.get("role") != "assistant":
                 continue
-            matches = re.findall(
-                r"(?m)^\s*\d+\.\s+(.+?)\s+[—-]\s+(.+?)\s*$",
-                str(message.get("content", "")),
-            )
+            matches = parse_recommendation_list(str(message.get("content", "")))
             if matches:
-                return tuple(
-                    (title.strip(), description.strip())
-                    for title, description in matches
-                )
+                return matches
         return ()
 
     @staticmethod

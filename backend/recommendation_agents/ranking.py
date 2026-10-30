@@ -207,7 +207,7 @@ class RankingAgent:
                     and item.vote_average >= minimum_quality
                 )
             )
-        ][:3]
+        ][:profile.result_count]
         selected_ids = {item.content_id for item in eligible}
         final_ranks = {
             item.content_id: index

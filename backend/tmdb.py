@@ -1,3 +1,4 @@
+import re
 import json
 import time
 from dataclasses import dataclass
@@ -332,6 +333,14 @@ def normalize_tmdb_details(
         return {}
 
     metadata: dict[str, Any] = {}
+    countries = payload.get("origin_country")
+    if not isinstance(countries, list) or not countries:
+        productions = payload.get("production_countries")
+        countries = [item.get("iso_3166_1") for item in productions if isinstance(item, dict)] if isinstance(productions, list) else []
+    countries = list(dict.fromkeys(country for country in countries
+                                  if isinstance(country, str) and re.fullmatch(r"[A-Z]{2}", country)))
+    if countries:
+        metadata["originCountry"] = countries
     if media_type == "movie":
         runtime = positive_int_or_none(payload.get("runtime"))
         if runtime:

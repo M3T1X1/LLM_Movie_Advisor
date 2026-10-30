@@ -258,6 +258,8 @@ class RetrievalAgent:
             for country in profile.origin_countries:
                 country_filter |= Q(metadata__originCountry__contains=[country])
             queryset = queryset.filter(country_filter)
+        for country in profile.excluded_origin_countries:
+            queryset = queryset.exclude(metadata__originCountry__contains=[country])
         if profile.genres:
             if require_all_genres:
                 for genre in profile.genres:
@@ -292,7 +294,7 @@ class RetrievalAgent:
             )
         if "podróż kosmiczna" in profile.themes:
             queryset = queryset.filter(
-                Q(overview__iregex=r"\m(?:kosmos|kosmiczn|planet|galakty|astronaut)\w*")
+                Q(overview__iregex=r"\m(?:kosmos|kosmiczn|galakty|astronaut)\w*")
             )
         if "krótkie odcinki" in profile.themes:
             queryset = queryset.filter(

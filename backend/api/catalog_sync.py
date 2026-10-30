@@ -31,6 +31,10 @@ def upsert_catalog(
             .first()
             or {}
         )
+        incoming_metadata = dict(item.metadata)
+        # Discovery responses for movies omit countries; keep enriched details.
+        if not incoming_metadata.get("originCountry") and existing_metadata.get("originCountry"):
+            incoming_metadata.pop("originCountry", None)
         content, _ = Content.objects.update_or_create(
             tmdb_id=item.tmdb_id,
             media_type=item.media_type,
@@ -43,7 +47,7 @@ def upsert_catalog(
                 "poster_path": item.poster_path,
                 "vote_average": item.vote_average,
                 "popularity": item.popularity,
-                "metadata": {**existing_metadata, **item.metadata},
+                "metadata": {**existing_metadata, **incoming_metadata},
                 "tmdb_refreshed_at": now,
             },
         )

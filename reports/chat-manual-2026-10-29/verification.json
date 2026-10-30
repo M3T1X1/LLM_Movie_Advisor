@@ -1,0 +1,20 @@
+{
+  "verdicts": {
+    "FAIL": 7,
+    "PASS": 20,
+    "DATA_LIMIT": 1,
+    "PARTIAL": 2
+  },
+  "http": {
+    "201": 27,
+    "400": 3
+  },
+  "seconds_total_requests": 236.56,
+  "median_seconds": 10.52,
+  "max_seconds": 16.98,
+  "selected_cards_outside_retrieval": [],
+  "resume_runs_expected": 20,
+  "resume_runs_missing": [],
+  "resume_messages_expected": 40,
+  "resume_messages_missing": []
+}
