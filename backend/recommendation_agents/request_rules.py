@@ -27,7 +27,7 @@ LANGUAGES = (
 # These patterns are evidence of a topic in a catalog description, not a claim
 # that the catalog exhaustively describes every scene of a film.
 TOPIC_EVIDENCE = {
-    "podróż kosmiczna": r"kosmos\w*|kosmiczn\w*|galakty\w*|astronaut\w*|space\w*|orbit\w*",
+    "podróż kosmiczna": r"kosmos\w*|kosmiczn\w*|galakty\w*|astronaut\w*|space(?:ship|craft|flight|walk)?|orbit\w*",
     "podróże w czasie": r"podróż\w*\s+w\s+czas\w*|czas\w*\s+podróż\w*|wehikuł\w*|pętl\w*\s+czas\w*|cof\w*\s+(?:się\s+)?w\s+czas\w*|time\s+travel\w*",
     "sztuczna inteligencja": r"sztuczn\w*\s+inteligenc\w*|robot\w*|android\w*|droid\w*|artificial\s+intelligence|\bhal\b",
     "przetrwanie": r"przetrwa\w*|przeży\w*|ocal\w*|surviv\w*",
@@ -57,7 +57,7 @@ def normalize_request(text):
 
 def topic_patterns(topic):
     if topic in TOPIC_EVIDENCE:
-        return (TOPIC_EVIDENCE[topic],)
+        return (r"\b(?:" + TOPIC_EVIDENCE[topic] + r")\b",)
     if topic.startswith('temat: '):
         terms = [word for word in re.findall(r'\w+', topic[7:]) if len(word)>3]
         patterns = []

@@ -11,7 +11,7 @@ from backend.prompt_security import contains_protected_model_output
 from backend.recommendation_agents.profiling import ProfilingAgentOutput
 from backend.recommendation_agents.ranking import RankedCandidate
 from backend.recommendation_agents.retrieval import RetrievalCandidate
-from backend.recommendation_agents.request_rules import candidate_violations
+from backend.recommendation_agents.request_rules import candidate_violations, topic_patterns
 
 
 EXPLANATION_SCHEMA = {
@@ -35,7 +35,8 @@ EXPLANATION_SCHEMA = {
 }
 EXPLANATION_PROMPT = (
     "You are a film catalog editor. For EACH selected item write a fluent POLISH "
-    "plot teaser: one short sentence, about 15–30 words, at most 350 characters. "
+    "plot teaser focused on the requested themes: one short sentence, about 15–30 words, at most 350 characters. "
+    "Explain the connection through concrete plot facts; do not merely copy the opening sentence. "
     "Start directly with the protagonist and their situation or main conflict. "
     "Use ONLY facts explicitly stated in that item's overview and genres. "
     "Prefer character roles over proper names. Do not invent details or use "
@@ -111,7 +112,7 @@ class ExplanationAgent:
                 {"content_id": item.candidate.content_id,
                  "overview": item.candidate.overview,
                  "genres": item.candidate.genres,
-                 "evidence_options": self._evidence_options(item.candidate)}
+                 "evidence_options": self._evidence_options(item.candidate, profile.themes)}
                 for item in selected
             ],
         }
@@ -122,7 +123,7 @@ class ExplanationAgent:
             item.candidate.content_id for item in selected
         ]
         options = list(dict.fromkeys(
-            quote for item in selected for quote in self._evidence_options(item.candidate)
+            quote for item in selected for quote in self._evidence_options(item.candidate, profile.themes)
         ))
         if options:
             rows["items"]["properties"]["evidence"]["enum"] = options
@@ -156,6 +157,7 @@ class ExplanationAgent:
                 if len(verified) != len(selected):
                     raise ExplanationAgentError('Summary contains claims unsupported by catalog.')
                 explanations = tuple(verified[item.candidate.content_id] for item in selected)
+                explanations = self._theme_explanations(explanations, selected, profile)
                 warnings = self._catalog_warnings(profile, current_request, selected)
                 message = self._descriptive_chat_message(
                     selected, explanations, preface=" ".join(warnings) or None,
@@ -182,6 +184,9 @@ class ExplanationAgent:
                 selected, explanations,
                 preface=' '.join(self._catalog_warnings(profile, current_request, selected)) or None,
             )
+        explanations = self._theme_explanations(explanations, selected, profile)
+        message = self._descriptive_chat_message(selected, explanations,
+            preface=' '.join(self._catalog_warnings(profile, current_request, selected)) or None)
         return ExplanationAgentRun(
             message, explanations, self.client.model,
             usage["prompt_eval_count"], usage["eval_count"],
@@ -189,15 +194,35 @@ class ExplanationAgent:
         )
 
     @staticmethod
-    def _evidence_options(candidate):
+    def _theme_explanations(explanations, selected, profile):
+        by_id = {item.candidate.content_id: item.candidate for item in selected}
+        values = []
+        for item in explanations:
+            candidate = by_id[item.content_id]
+            themes = [theme for theme in profile.themes if topic_patterns(theme)]
+            if not themes:
+                values.append(item)
+                continue
+            quotes = ExplanationAgent._evidence_options(candidate, themes)
+            supported = [theme for theme in themes if all(
+                re.search(pattern, candidate.overview, re.I) for pattern in topic_patterns(theme))]
+            if supported and quotes:
+                text = f"Motyw: {', '.join(supported)}. {quotes[0]}"
+                values.append(CandidateExplanation(item.content_id, text))
+            else:
+                values.append(item)
+        return tuple(values)
+
+    @staticmethod
+    def _evidence_options(candidate, themes=()):
         # Excerpts are literal substrings, including their original punctuation.
         quotes = []
         for sentence in re.split(r"(?<=[.!?])\s+", candidate.overview.strip()):
             if sentence:
                 quotes.append(sentence[:280])
-            if len(quotes) >= 3:
-                break
-        return list(dict.fromkeys(quotes or [genre for genre in candidate.genres if genre.strip()]))
+        patterns = [pattern for theme in themes for pattern in topic_patterns(theme)]
+        quotes.sort(key=lambda quote: -sum(bool(re.search(p, quote, re.I)) for p in patterns))
+        return list(dict.fromkeys(quotes or [genre for genre in candidate.genres if genre.strip()]))[:3]
 
     @staticmethod
     def _validate_explanations(value, selected):
@@ -553,7 +578,8 @@ class ExplanationAgent:
         explanations = []
         for item in selected:
             candidate = item.candidate
-            overview = ExplanationAgent._short_overview(candidate.overview)
+            options = ExplanationAgent._evidence_options(candidate, profile.themes)
+            overview = (options[0] if any(topic_patterns(t) for t in profile.themes) else ExplanationAgent._short_overview(candidate.overview)) if candidate.overview.strip() and options else ""
             explanation = overview or (
                 f"Gatunek: {', '.join(candidate.genres)}."
                 if candidate.genres else 'Brak opisu fabuły w katalogu.'
@@ -589,6 +615,11 @@ class ExplanationAgent:
     ) -> tuple[str, ...]:
         warnings = []
         normalized_request = current_request.casefold()
+        if selected and profile.mood:
+            warnings.append(
+                "Opis i gatunki nie potwierdzają w pełni oczekiwanego nastroju. "
+                "Traktuj te propozycje jako możliwe, częściowe dopasowanie."
+            )
         if 0 < len(selected) < profile.result_count:
             warnings.append(f"Znalazłem {len(selected)} z {profile.result_count} zamówionych propozycji. Pozostałych warunków nie poluzowałem.")
         if re.search(r"netflix|platform\w*|prime video|disney\+|hbo|maxie", normalized_request):

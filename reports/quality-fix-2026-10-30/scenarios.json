@@ -1,0 +1,64 @@
+[
+  {
+    "id": "q23",
+    "group": "negacja",
+    "prompt": "Poleć trzy filmy science fiction, ale bez horrorów.",
+    "expect": {
+      "count": 3,
+      "media": "movie",
+      "genre": "Science Fiction",
+      "avoid": [
+        "Horror"
+      ]
+    }
+  },
+  {
+    "id": "q27",
+    "group": "negacja",
+    "prompt": "Poleć jeden film, który nie jest horrorem ani thrillerem.",
+    "expect": {
+      "count": 1,
+      "media": "movie",
+      "avoid": [
+        "Horror",
+        "Thriller"
+      ]
+    }
+  },
+  {
+    "id": "q46",
+    "group": "semantyka",
+    "prompt": "Poleć jeden refleksyjny film o samotności w kosmosie i uzasadnij wybór.",
+    "expect": {
+      "count": 1,
+      "media": "movie"
+    }
+  },
+  {
+    "id": "q47",
+    "group": "semantyka",
+    "prompt": "Poleć jeden film o podróży w czasie i wyjaśnij dopasowanie.",
+    "expect": {
+      "count": 1,
+      "media": "movie"
+    }
+  },
+  {
+    "id": "q48",
+    "group": "semantyka",
+    "prompt": "Poleć jeden pogodny film na poprawę humoru.",
+    "expect": {
+      "count": 1,
+      "media": "movie"
+    }
+  },
+  {
+    "id": "q49",
+    "group": "semantyka",
+    "prompt": "Poleć jeden film o przyjaźni i wyjaśnij wybór.",
+    "expect": {
+      "count": 1,
+      "media": "movie"
+    }
+  }
+]

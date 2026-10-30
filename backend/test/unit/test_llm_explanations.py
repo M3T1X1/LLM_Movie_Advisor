@@ -192,3 +192,24 @@ class LlmExplanationTests(SimpleTestCase):
         for quote in self.agent._evidence_options(item):
             self.assertLessEqual(len(quote), 300)
             self.assertTrue(quote in item.overview or quote in item.genres)
+
+    def test_theme_evidence_comes_from_later_sentence(self):
+        overview = 'Połowa lat 80. Marty przenosi się w czasie za pomocą wehikułu czasu.'
+        item = replace(self.selected[0], candidate=replace(candidate(1), overview=overview))
+        self.client.chat.side_effect = OllamaUnavailableError('offline')
+        result = self.agent.run('Film o podróżach w czasie', profile(themes=('podróże w czasie',)), (item,))
+        self.assertIn('Motyw: podróże w czasie.', result.message)
+        self.assertIn('wehikułu czasu', result.message)
+        self.assertNotIn('Połowa lat', result.message)
+
+    def test_alone_does_not_match_inside_polish_word(self):
+        from backend.recommendation_agents.request_rules import candidate_violations
+        item = replace(candidate(1), overview='Astronauci lądują na oddalonej planecie.')
+        self.assertIn('topic:samotność', candidate_violations(item, profile(themes=('samotność',))))
+        for overview in ('Astronauta jest samotny na orbicie.', 'An astronaut is alone in space.'):
+            self.assertNotIn('topic:samotność', candidate_violations(
+                replace(item, overview=overview), profile(themes=('samotność',))))
+
+    def test_mood_is_not_presented_as_verified_catalog_fact(self):
+        result = self.agent.run('Refleksyjny thriller', profile(mood='refleksyjny'), self.selected)
+        self.assertIn('częściowe dopasowanie', result.message)
