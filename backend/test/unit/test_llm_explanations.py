@@ -1,3 +1,5 @@
+import json
+from dataclasses import replace
 from unittest.mock import MagicMock
 from django.test import SimpleTestCase
 from backend.ollama import OllamaUnavailableError
@@ -23,11 +25,12 @@ class LlmExplanationTests(SimpleTestCase):
         self.client.chat.return_value = response(self.payload)
         self.agent = ExplanationAgent(self.client)
 
-    def test_model_selects_evidence_and_server_renders_verified_facts(self):
+    def test_chat_contains_description_without_metadata_or_matching_reason(self):
         result = self.agent.run('Mroczny thriller', profile(), self.selected)
         self.assertEqual(result.source, 'model')
         self.assertIn('Mroczna tajemnica.', result.explanations[0].explanation)
-        self.assertIn('8.0/10', result.explanations[0].explanation)
+        for unwanted in ('Opis katalogowy', 'Pasuje:', '8.0/10', 'W profilu', 'Szukany nastrój'):
+            self.assertNotIn(unwanted, result.message)
         self.assertNotIn(self.payload['explanations'][0]['explanation'], result.message)
         self.assertIn('1. Film 1 —', result.message)
         self.assertEqual(result.prompt_tokens, 20)
@@ -35,6 +38,88 @@ class LlmExplanationTests(SimpleTestCase):
         payload = self.client.chat.call_args.args[0][1]['content']
         self.assertIn('Mroczna tajemnica.', payload)
         self.assertIn('current_request', payload)
+
+    def test_model_paraphrase_is_verified_before_display_and_usage_is_counted(self):
+        summary = 'Historia pełna mrocznych zagadek.'
+        self.client.chat.side_effect = [
+            response({'explanations': [{'content_id': 1, 'evidence': 'Mroczna tajemnica.', 'summary': summary}]}),
+            response({'supported': True}),
+        ]
+        result = self.agent.run('Thriller', profile(), self.selected)
+        self.assertEqual(result.source, 'model')
+        self.assertIn('1. Film 1 — ' + summary, result.message)
+        self.assertEqual(result.prompt_tokens, 40)
+        verification = self.client.chat.call_args.args[0][1]['content']
+        self.assertIn('Mroczna tajemnica.', verification)
+        self.assertIn(summary, verification)
+
+    def test_valid_evidence_does_not_license_invented_summary(self):
+        generated = response({'explanations': [{'content_id': 1,
+            'evidence': 'Mroczna tajemnica.', 'summary': 'Detektyw szuka zaginionej córki.'}]})
+        self.client.chat.side_effect = [generated, response({'supported': False})] * 2
+        result = self.agent.run('Thriller', profile(), self.selected)
+        self.assertEqual(result.source, 'catalog')
+        self.assertNotIn('Detektyw', result.message)
+        self.assertIn('Mroczna tajemnica.', result.message)
+
+    def test_each_summary_is_verified_against_only_its_own_catalog_entry(self):
+        second = replace(self.selected[0], candidate=replace(
+            candidate(2), overview='Młoda pianistka przygotowuje się do koncertu.'), final_rank=2)
+        self.client.chat.side_effect = [
+            response({'explanations': [
+                {'content_id': 1, 'evidence': 'Mroczna tajemnica.', 'summary': 'Historia pełna zagadek.'},
+                {'content_id': 2, 'evidence': second.candidate.overview, 'summary': 'Pianistka ćwiczy przed występem.'},
+            ]}),
+            response({'supported': True}), response({'supported': True}),
+        ]
+        result = self.agent.run('Thriller', profile(result_count=2), (*self.selected, second))
+        self.assertEqual(result.source, 'model')
+        checks = [json.loads(call.args[0][1]['content']) for call in self.client.chat.call_args_list[1:]]
+        self.assertEqual([check['overview'] for check in checks],
+                         ['Mroczna tajemnica.', second.candidate.overview])
+        self.assertEqual(result.prompt_tokens, 60)
+
+    def test_invalid_summary_does_not_discard_other_verified_descriptions(self):
+        second = replace(self.selected[0], candidate=candidate(2), final_rank=2)
+        generated = response({'explanations': [
+            {'content_id': 1, 'evidence': 'Mroczna tajemnica.', 'summary': 'Historia pełna zagadek.'},
+            {'content_id': 2, 'evidence': 'Mroczna tajemnica.', 'summary': 'Detektyw szuka córki.'},
+        ]})
+        self.client.chat.side_effect = [generated, response({'supported': True}),
+                                      response({'supported': False})] * 2
+        result = self.agent.run('Thriller', profile(result_count=2), (*self.selected, second))
+        self.assertEqual(result.source, 'model_catalog')
+        self.assertIn('1. Film 1 — Historia pełna zagadek.', result.message)
+        self.assertIn('2. Film 2 — Mroczna tajemnica.', result.message)
+        self.assertNotIn('Detektyw', result.message)
+
+    def test_summary_with_metadata_or_guarantees_is_rejected(self):
+        for summary in ('Pasuje: thriller • 2009 • 8.2/10.', 'Film gwarantuje happy end.'):
+            with self.subTest(summary=summary):
+                self.client.chat.return_value = response({'explanations': [{'content_id': 1,
+                    'evidence': 'Mroczna tajemnica.', 'summary': summary}]})
+                result = self.agent.run('Thriller', profile(), self.selected)
+                self.assertEqual(result.source, 'catalog')
+                self.assertNotIn(summary, result.message)
+
+    def test_verifier_transport_failure_uses_plain_catalog_fallback(self):
+        self.client.chat.side_effect = [
+            response({'explanations': [{'content_id': 1, 'evidence': 'Mroczna tajemnica.',
+                                       'summary': 'Historia pełna zagadek.'}]}),
+            OllamaUnavailableError('timeout'),
+        ]
+        result = self.agent.run('Thriller', profile(), self.selected)
+        self.assertEqual(result.source, 'catalog')
+        self.assertTrue(result.message.endswith('\n1. Film 1 — Mroczna tajemnica.'))
+        self.assertNotIn('Historia pełna zagadek.', result.message)
+
+    def test_fallback_without_overview_does_not_invent_plot(self):
+        from dataclasses import replace
+        item = replace(self.selected[0], candidate=replace(candidate(1), overview=''))
+        self.client.chat.side_effect = OllamaUnavailableError('timeout')
+        result = self.agent.run('Thriller', profile(), (item,))
+        self.assertIn('Gatunek: Thriller.', result.message)
+        self.assertNotIn('/10', result.message)
 
     def test_falls_back_for_unsupported_evidence_or_claim(self):
         for change in ({'evidence':'Nieistniejąca scena.'},

@@ -561,9 +561,9 @@ class ExplanationAgentTests(SimpleTestCase):
         run = self.agent.run("Mroczny thriller", profile(), self.selected)
 
         self.assertIn("1. Film 1 — Mroczna tajemnica.", run.message)
-        self.assertIn("Pasuje: thriller", run.message)
+        self.assertNotIn("Pasuje:", run.message)
         self.assertEqual(run.explanations[0].content_id, 1)
-        self.assertIn("8.0/10", run.explanations[0].explanation)
+        self.assertNotIn("8.0/10", run.explanations[0].explanation)
         self.assertEqual(run.model, "llama3.1:8b")
         self.assertEqual(run.source, "catalog")
         self.assertEqual(self.client.chat.call_count, 2)
