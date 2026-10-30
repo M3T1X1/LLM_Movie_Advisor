@@ -58,7 +58,7 @@ from backend.redis import (
     set_cached_catalog_search,
     sync_from_tmdb,
 )
-from backend.recommendation_agents.explanation import ExplanationAgentError
+from backend.recommendation_agents.explanation import ExplanationAgent, ExplanationAgentError
 from backend.recommendation_agents.profiling import ProfilingAgentError
 from backend.recommendation_agents.ranking import RankingAgentError
 from backend.recommendation_agents.service import run_persistent_recommendation
@@ -418,6 +418,17 @@ def serialize_recommendation_run(item: RecommendationRun) -> dict:
 
 
 def serialize_run_candidate(item: RunCandidate) -> dict:
+    explanation = item.explanation
+    if item.status == CandidateStatus.SELECTED:
+        context = json_object(item.run.request.extracted_context)
+        snapshot = json_object(item.metadata_snapshot)
+        genres = snapshot.get('genres') or [genre.name for genre in item.content.genres.all()]
+        explanation = ExplanationAgent.recommendation_reason(
+            genres,
+            context.get('positive_preferences', ()),
+            context.get('genres', ()),
+            mood=context.get('mood') or item.run.request.mood,
+        )
     return {
         "id": str(item.pk),
         "runId": str(item.run_id),
@@ -435,7 +446,7 @@ def serialize_run_candidate(item: RunCandidate) -> dict:
         "status": item.status,
         "finalRank": item.final_rank,
         "decisionReason": item.decision_reason,
-        "explanation": item.explanation,
+        "explanation": explanation,
         "metadataSnapshot": json_object(item.metadata_snapshot),
         "createdAt": iso(item.created_at),
         "content": serialize_content(item.content),
@@ -763,7 +774,7 @@ def bootstrap(request: HttpRequest) -> JsonResponse:
     run_ids = [item.pk for item in recommendation_runs]
     candidates = list(
         RunCandidate.objects.filter(run_id__in=run_ids)
-        .select_related("content")
+        .select_related("content", "run__request")
         .prefetch_related("content__genres")
         .order_by("run_id", "final_rank", "source_rank", "id")
     )
@@ -1546,7 +1557,7 @@ def conversation_recommendations(
     ]
     serialized_candidates = [
         serialize_run_candidate(
-            RunCandidate.objects.select_related("content")
+            RunCandidate.objects.select_related("content", "run__request")
             .prefetch_related("content__genres")
             .get(pk=item.pk)
         )

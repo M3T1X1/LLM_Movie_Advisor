@@ -7,6 +7,13 @@ from backend.test.unit.test_recommendation_agents import candidate, profile, res
 
 
 class LlmExplanationTests(SimpleTestCase):
+    def test_match_reason_preserves_request_reason_and_adds_mood_without_synopsis(self):
+        result = ExplanationAgent.recommendation_reason((), mood='wesoły')
+        self.assertEqual(result, 'Ten tytuł wybrano na podstawie kryteriów Twojej prośby. Szukany nastrój: wesoły.')
+        result = ExplanationAgent.recommendation_reason(('Dramat',), ('Dramat',), mood='refleksyjny')
+        self.assertEqual(result, 'W profilu lubisz gatunek Dramat; ta pozycja ma go w katalogu. Szukany nastrój: refleksyjny.')
+        self.assertNotIn('Szukany nastrój', ExplanationAgent.recommendation_reason(('Dramat',), ('Dramat',)))
+
     def setUp(self):
         self.client = MagicMock(model='test')
         self.selected = (RankedCandidate(candidate(1), .9, .8, .86, 'selected', 1, 'Pasuje.'),)

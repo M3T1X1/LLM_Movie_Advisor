@@ -226,15 +226,33 @@ class ExplanationAgent:
 
     @staticmethod
     def _preference_fit(candidate, preferences):
+        return ExplanationAgent.profile_match_reason(candidate.genres, preferences)
+
+    @staticmethod
+    def profile_match_reason(genres, preferences):
         liked = {p.casefold() for p in preferences}
-        if 'humor' in liked and 'Komedia' in candidate.genres:
-            return 'Gatunek Komedia może odpowiadać Twojej preferencji Humor.'
-        for genre in candidate.genres:
+        for genre in genres:
             if genre.casefold() in liked:
                 return f'W profilu lubisz gatunek {genre}; ta pozycja ma go w katalogu.'
-        if 'skomplikowana fabuła' in liked and 'Tajemnica' in candidate.genres:
+        if 'humor' in liked and 'Komedia' in genres:
+            return 'Gatunek Komedia może odpowiadać Twojej preferencji Humor.'
+        if 'skomplikowana fabuła' in liked and 'Tajemnica' in genres:
             return 'Gatunek Tajemnica może odpowiadać zainteresowaniu skomplikowaną fabułą; to interpretacja dopasowania.'
         return ''
+
+    @classmethod
+    def recommendation_reason(cls, genres, preferences=(), requested_genres=(), mood=None):
+        """A short reason for the card/modal, separate from the chat synopsis."""
+        reason = cls.profile_match_reason(genres, preferences)
+        if not reason:
+            matches = [genre for genre in requested_genres if genre in genres]
+            reason = (
+                f"Ten tytuł odpowiada gatunkom wskazanym w Twojej prośbie: {', '.join(matches)}."
+                if matches else 'Ten tytuł wybrano na podstawie kryteriów Twojej prośby.'
+            )
+        if isinstance(mood, str) and mood.strip():
+            reason += f" Szukany nastrój: {mood.strip()}."
+        return reason
 
     def answer_content_question(
         self,

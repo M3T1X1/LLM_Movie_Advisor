@@ -1,4 +1,5 @@
 from unittest.mock import Mock, patch
+from dataclasses import replace
 
 from django.urls import reverse
 
@@ -171,6 +172,36 @@ class RecommendationPipelineApiTests(ApiIntegrationTestCase):
         self.assertEqual(len(bootstrap["recommendationRuns"]), 1)
         self.assertEqual(len(bootstrap["candidates"]), 1)
         self.assertEqual(len(bootstrap["agentExecutions"]), 4)
+
+    def test_card_and_restored_conversation_show_match_reason_and_requested_mood(self):
+        graph_result = self._graph_result()
+        graph_result['profiling'] = replace(graph_result['profiling'], output=replace(
+            graph_result['profiling'].output, positive_preferences=('Dramat',)))
+        stored_text = 'Opis katalogowy: „Ruby jest jedyną słyszącą osobą w rodzinie.” W profilu lubisz gatunek Dramat; ta pozycja ma go w katalogu.'
+        graph_result['explanation'] = replace(graph_result['explanation'],
+            explanations=(CandidateExplanation(self.content_id, stored_text),))
+        graph = Mock()
+        graph.invoke.return_value = graph_result
+        with patch('backend.api.views.get_ollama_client', return_value=self._client()), patch(
+            'backend.recommendation_agents.service.build_recommendation_graph', return_value=graph):
+            result = self.client.post(reverse('api:conversation-recommendations',
+                kwargs={'conversation_id': self.conversation.pk}), data={'message': 'Poleć dramat'},
+                content_type='application/json')
+        self.assertEqual(result.status_code, 201)
+        expected = 'W profilu lubisz gatunek Dramat; ta pozycja ma go w katalogu. Szukany nastrój: spokojny.'
+        self.assertEqual(result.json()['candidates'][0]['explanation'], expected)
+        # Existing stored explanations also render correctly without rewriting history.
+        self.assertEqual(RunCandidate.objects.get().explanation, stored_text)
+        restored = self.client.get(reverse('api:bootstrap')).json()
+        self.assertEqual(restored['candidates'][0]['explanation'], expected)
+        assistant = next(m for m in restored['messages'] if m['role'] == 'assistant')
+        self.assertEqual(assistant['recommendations'][0]['explanation'], expected)
+        self.assertEqual(restored['candidates'][0]['content']['overview'], 'Opis')
+        request = RecommendationRequest.objects.get()
+        request.extracted_context.pop('mood')
+        request.save(update_fields=['extracted_context'])
+        legacy = self.client.get(reverse('api:bootstrap')).json()
+        self.assertEqual(legacy['candidates'][0]['explanation'], expected)
 
     def test_stored_prompt_injection_is_removed_before_graph_invocation(self):
         messages = (
