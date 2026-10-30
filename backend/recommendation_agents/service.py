@@ -57,6 +57,22 @@ def run_persistent_recommendation(
             for item in reversed(historical_messages)
         ]
         history = tuple(sanitize_untrusted_history(raw_history))
+        accepted = RecommendationRequest.objects.filter(
+            conversation=locked, extracted_context__intent='recommendation',
+            extracted_context__needs_clarification=False,
+            runs__status=RunStatus.COMPLETED,
+        ).order_by('-id').first()
+        previous_profile = accepted.extracted_context if accepted else None
+        seen_candidates = list(RunCandidate.objects.filter(
+            run__request__conversation=locked, run__status=RunStatus.COMPLETED,
+            status=CandidateStatus.SELECTED,
+        ).select_related('content').prefetch_related('content__genres').order_by('-run_id','final_rank'))
+        latest_run = seen_candidates[0].run_id if seen_candidates else None
+        previous_recommendations = tuple(
+            {**item.metadata_snapshot, 'content_id':item.content_id, 'explanation':item.explanation or ''}
+            for item in seen_candidates if item.run_id==latest_run
+        )
+        seen_content_ids = tuple(dict.fromkeys(item.content_id for item in seen_candidates))
         maximum = Message.objects.filter(conversation=locked).aggregate(
             maximum=Max("sequence_no")
         )["maximum"]
@@ -141,6 +157,9 @@ def run_persistent_recommendation(
                 "user": user,
                 "current_request": prompt,
                 "conversation_history": history,
+                "previous_profile": previous_profile,
+                "previous_recommendations": previous_recommendations,
+                "seen_content_ids": seen_content_ids,
             }
         )
     except Exception:

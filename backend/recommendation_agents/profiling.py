@@ -1,6 +1,6 @@
 import json
 import re
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass, fields, replace
 from typing import Any
 
 from django.conf import settings
@@ -13,6 +13,7 @@ from backend.api.models import (
 )
 from backend.ollama import OllamaClient, OllamaError
 from backend.content_titles import parse_recommendation_list
+from backend.recommendation_agents.request_rules import COUNTRIES, LANGUAGES, TOPIC_REQUESTS, normalize_request
 
 
 MAX_PROFILE_LIST_ITEMS = 10
@@ -109,14 +110,14 @@ GENRE_PATTERNS = (
     (r"(?<!\w)(?:dokument\w*|documentar(?:y|ies))(?!\w)", "Dokumentalny"),
     (r"(?<!\w)(?:przygod\w*|adventure)(?!\w)", "Przygodowy"),
     (r"(?<!\w)(?:akcj\w*|action)(?!\w)", "Akcja"),
-    (r"(?<!\w)(?:historycz\w*|historical)(?!\w)", "Historyczny"),
-    (r"(?<!\w)(?:wojenn\w*|war)(?!\w)", "Wojenny"),
+    (r"(?<!\w)(?:historycz\w*|historię|historical)(?!\w)", "Historyczny"),
+    (r"(?<!\w)(?:wojenn\w*|wojn\w*|war)(?!\w)", "Wojenny"),
     (r"(?<!\w)(?:muzycz\w*|musical)(?!\w)", "Muzyczny"),
     (r"(?<!\w)(?:tajemnic\w*|mystery)(?!\w)", "Tajemnica"),
-    (r"(?<!\w)familijn\w*", "Familijny"),
+    (r"(?<!\w)(?:familijn\w*|rodzinn\w*)", "Familijny"),
     (
         r"(?<!\w)(?:dla\s+dzieci|dziecięc\w*|dla\s+(?:dziecka|\d{1,2}[- ]?latk\w*|"
-        r"[a-ząćęłńóśźż]+latk\w*))",
+        r"[a-ząćęłńóśźż]+latk\w*|(?:osoby|dziecka)\s+w\s+wieku\s+\d{1,2}\s+lat))",
         "Dla dzieci",
     ),
     (r"(?<!\w)film\w*\s+telewizyjn\w*", "Film telewizyjny"),
@@ -130,11 +131,11 @@ GENRE_PATTERNS = (
 NEGATIVE_PREFERENCE_DIRECTIVE = (
     r"(?:bez|unikam|wyklucz(?:am)?|żadn\w*|nie\s+chcę|nie\s+chce|"
     r"nie\s+lubię|nie\s+lubie|nie\s+polecaj|nie\s+rekomenduj|"
-    r"do\s+not\s+recommend|avoid|exclude|nie(?!\s+tylko\b)|not(?!\s+only\b)|no)"
+    r"do\s+not\s+recommend|avoid|exclude|zamiast|nie(?!\s+(?:tylko|wiem|wiadomo)\b)|not(?!\s+only\b)|no)"
 )
 POSITIVE_PREFERENCE_DIRECTIVE = (
     r"(?:chcę|chce|poproszę|poprosze|może\s+być|moze\s+byc|tym\s+razem|"
-    r"dziś\s+chcę|dzis\s+chce|wolę|wole|prefer|want|recommend)"
+    r"dziś\s+chcę|dzis\s+chce|wolę|wole|poleć|polec|wybieram|prefer|want|recommend)"
 )
 
 PROFILING_OUTPUT_SCHEMA: dict[str, Any] = {
@@ -247,6 +248,9 @@ class ProfilingAgentInput:
     semantic_profile: str | None = None
     stored_preferences: tuple[dict[str, Any], ...] = ()
     recent_interactions: tuple[dict[str, Any], ...] = ()
+    previous_profile: dict[str, Any] | None = None
+    previous_recommendations: tuple[dict[str, Any], ...] = ()
+    seen_content_ids: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -279,6 +283,9 @@ class ProfilingAgentOutput:
     result_count: int = 3
     excluded_origin_countries: tuple[str, ...] = ()
     excluded_themes: tuple[str, ...] = ()
+    reference_content_ids: tuple[int, ...] = ()
+    excluded_content_ids: tuple[int, ...] = ()
+    positive_preferences: tuple[str, ...] = ()
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -311,6 +318,9 @@ def build_profiling_input(
     current_request: str,
     *,
     conversation_history: tuple[dict[str, str], ...] = (),
+    previous_profile: dict[str, Any] | None = None,
+    previous_recommendations: tuple[dict[str, Any], ...] = (),
+    seen_content_ids: tuple[int, ...] = (),
 ) -> ProfilingAgentInput:
     profile = UserProfile.objects.filter(user=user).first()
     stored_preferences = (
@@ -345,6 +355,9 @@ def build_profiling_input(
     return ProfilingAgentInput(
         current_request=current_request,
         conversation_history=conversation_history,
+        previous_profile=previous_profile,
+        previous_recommendations=previous_recommendations,
+        seen_content_ids=seen_content_ids,
         semantic_profile=(
             profile.semantic_summary[: settings.LLM_PROFILE_SUMMARY_MAX_LENGTH]
             if profile and profile.semantic_summary
@@ -405,7 +418,7 @@ class ProfilingAgent:
         normalized = request.casefold()
         explicit_recommendation = bool(
             re.search(r"\b(?:poleć|polec|rekomend|szukam|film|serial)\w*", normalized)
-        )
+        ) or bool(re.search(r"\b(?:co\s+obejrzeć|nie\s+wiem.*obejrzeć|coś\s+(?:krótkiego|dla\s+mnie)|na\s+co\s+mam\s+ochotę)\b", normalized))
         content_question = cls._looks_like_content_question(normalized)
         recommendation = explicit_recommendation and not content_question
         vague = recommendation and not cls._explicit_genres(normalized) and not re.search(
@@ -438,10 +451,18 @@ class ProfilingAgent:
         output: ProfilingAgentOutput,
     ) -> ProfilingAgentOutput:
         request = agent_input.current_request.strip()
-        normalized = request.casefold()
+        normalized = normalize_request(request)
+        preference_text = re.split(r"\bzamiast\b.+?\b(?:chcę|chce|wolę|poproszę)\s+", normalized)[-1]
+        preference_text = re.split(r"\bzmień\s+.+?\s+na\s+", preference_text)[-1]
         previous = cls._continuation_profile(agent_input)
-        explicit_genres = cls._explicit_genres(normalized)
+        explicit_genres = cls._explicit_genres(preference_text)
         explicit_themes = cls._explicit_themes(normalized)
+        if not explicit_themes and not cls._looks_like_content_question(normalized):
+            about = re.search(r'\b(?:o|about)\s+([^,.!?;]+)', normalized)
+            if about and not cls._match_is_negated(normalized, about.start()):
+                subject = re.split(r'\b(?:bez|do|minut|z\s+oceną|najlepiej|ale)\b',about[1])[0].strip()
+                if subject and not re.search(r'^(?:czym|film|serial|długości|ocenie|czasie)\b',subject):
+                    explicit_themes = ('temat: '+subject[:120],)
         excluded_themes = cls._theme_matches(normalized, negated=True)
         current_excluded_themes = excluded_themes
         inherited_genres = (
@@ -468,10 +489,12 @@ class ProfilingAgent:
             media_types = ("tv",)
         elif previous:
             media_types = previous.media_types
+        if not media_types and explicit_genres:
+            media_types = ('movie',)
 
         explicit_avoid = tuple(
             value
-            for value in cls._explicit_avoid(normalized)
+            for value in cls._explicit_avoid(preference_text)
             if not cls._explicitly_overrides_avoid(normalized, value)
         )
         avoid = list(explicit_avoid)
@@ -508,7 +531,7 @@ class ProfilingAgent:
             original_languages = original_languages or previous.original_languages
             origin_countries = origin_countries or previous.origin_countries
             excluded_countries = excluded_countries or previous.excluded_origin_countries
-        has_recommendation_history = any(
+        has_recommendation_history = bool(previous) or any(
             message.get("role") == "user"
             and re.search(
                 r"\b(?:poleć|polec|rekomend|szukam|film|serial)\w*",
@@ -534,6 +557,8 @@ class ProfilingAgent:
                 normalized,
             )
         )
+        explicit_recommendation = explicit_recommendation or bool(re.search(
+            r"\b(?:co\s+obejrzeć|nie\s+wiem.*obejrzeć|coś\s+(?:krótkiego|dla\s+mnie)|na\s+co\s+mam\s+ochotę)\b", normalized))
         deterministic_question = cls._looks_like_content_question(normalized)
         content_scope = bool(
             mentions_movie
@@ -587,12 +612,15 @@ class ProfilingAgent:
         ))
         current_scope = bool(explicit_genres or mentions_movie or mentions_tv
                              or explicit_reference_titles or explicit_recommendation
-                             or (previous and (current_excluded_themes or explicit_avoid)))
+                             or (deterministic_question and re.search(r"kończy\s+się|happy\s+end", normalized))
+                             or (previous and not re.search(r"przepis|ugotuj|oblicz|równani|napisz\s+kod", normalized)))
         if denies_film_scope and not (explicit_genres or explicit_recommendation):
             intent = "other"
-        elif output.intent == "other" and not current_scope and not cls._looks_like_recall(normalized):
+        elif output.intent == "other" and not current_scope and not explicit_recommendation and not cls._looks_like_recall(normalized):
             intent = "other"
-        mood = output.mood
+        mood = cls._explicit_mood(normalized) or (
+            output.mood if output.mood and output.mood.casefold() in normalized else None
+        )
         if mood and mood.casefold() in {
             "brak danych",
             "nieznany",
@@ -603,15 +631,24 @@ class ProfilingAgent:
         }:
             mood = None
         conflicting_result_count = cls._conflicting_result_count(normalized)
+        invalid_question = cls._constraint_question(normalized, min_vote, max_runtime)
+        requested_genres = set(cls._explicit_genres(preference_text))
+        conflicting_genres = requested_genres.intersection(cls._explicit_avoid(preference_text))
+        if conflicting_genres:
+            invalid_question = f"Czy mam uwzględnić czy wykluczyć gatunek {', '.join(sorted(conflicting_genres))}?"
         needs_clarification = bool(
             intent == "recommendation"
             and (
                 conflicting_result_count is not None
+                or invalid_question is not None
                 or cls._is_underspecified(agent_input, intent)
+                or bool(re.search(r"\b(?:film\s+czy\s+serial|sam\s+nie\s+wiem|nie\s+wiem.*gatunek)\b", normalized))
             )
         )
         question = None
-        if conflicting_result_count is not None:
+        if invalid_question:
+            question = invalid_question
+        elif conflicting_result_count is not None:
             exact_count, maximum_count = conflicting_result_count
             question = (
                 "Ile tytułów mam polecić: "
@@ -644,8 +681,27 @@ class ProfilingAgent:
                 )
             )
         )
+        reference_ids = ()
+        excluded_ids = ()
+        history_titles = cls._history_reference_titles(normalized, agent_input.conversation_history)
+        if agent_input.previous_recommendations and (history_titles or re.search(
+            r"\b(?:z\s+tych|spośród\s+tych|tych\s+(?:film|serial|tytuł)|ten\s+film|drugi\s+film)\w*", normalized
+        )):
+            items = agent_input.previous_recommendations
+            ordinal = next((i for pattern, i in ((r"\bpierwsz\w*", 0), (r"\bdrug\w*", 1), (r"\btrzeci\w*", 2))
+                            if re.search(pattern, normalized)), None)
+            if ordinal is not None:
+                items = items[ordinal:ordinal + 1]
+            elif re.search(r"\b(?:ten|tego)\s+film", normalized):
+                items = items[:1]
+            reference_ids = tuple(item['content_id'] for item in items)
+            reference_titles = tuple(item['title'] for item in items)
+        if intent == "recommendation" and re.search(
+            r"\b(?:kolejn\w*|następn\w*|jeszcze|inne|inny|innych|bez\s+powtórek|nie\s+powtarz\w*|bez\s+powtarzania|other|another|more)\b", normalized
+        ):
+            excluded_ids = agent_input.seen_content_ids
         require_all_genres = len(genres) > 1
-        allow_genre_relaxation = not cls._requires_strict_genre_match(normalized)
+        allow_genre_relaxation = False
         exclude_reference_titles = bool(
             reference_titles
             and intent == "recommendation"
@@ -677,7 +733,34 @@ class ProfilingAgent:
             result_count=cls._requested_result_count(normalized) or (previous.result_count if previous else 3),
             excluded_origin_countries=excluded_countries,
             excluded_themes=excluded_themes,
+            reference_content_ids=reference_ids,
+            excluded_content_ids=excluded_ids,
+            positive_preferences=tuple(str(p.get('preference_value','')) for p in agent_input.stored_preferences if p.get('polarity',0)>0),
         )
+
+    @staticmethod
+    def _explicit_mood(text):
+        return next((label for pattern, label in (
+            (r"spokojn\w*|ciężkim dniu", "spokojny"), (r"optymistycz\w*", "optymistyczny"),
+            (r"wzruszając\w*", "wzruszający"), (r"refleksyjn\w*", "refleksyjny"),
+            (r"mroczn\w*", "mroczny"), (r"dynamiczn\w*", "dynamiczny"),
+            (r"lekk\w*|poprawę humoru", "lekki")) if re.search(pattern, text)), None)
+
+    @classmethod
+    def _constraint_question(cls, text, min_vote, runtime):
+        exact, maximum = cls._result_counts(text)
+        if any(not 1 <= count <= 3 for count in (*exact, *maximum)):
+            return "Mogę podać od jednego do trzech tytułów naraz. Ile propozycji wybierasz?"
+        if min_vote is not None and not 0 <= min_vote <= 10:
+            return "Oceny katalogowe są w skali od 0 do 10. Jaki minimalny próg wybierasz?"
+        if runtime is not None and runtime <= 0:
+            return "Jaki dodatni limit czasu trwania mam zastosować?"
+        start, end = cls._explicit_years(text)
+        if start is not None and end is not None:
+            years = [int(m[1]) for m in re.finditer(r"\b(?:z|w|from)\s+(\d{4})(?:\s+roku|\b)", text)]
+            if start > end or any(not start <= year <= end for year in years):
+                return "Podano sprzeczne lata wydania. Jaki jeden zakres lat mam zastosować?"
+        return None
 
     @classmethod
     def _is_underspecified(
@@ -687,8 +770,10 @@ class ProfilingAgent:
     ) -> bool:
         if intent != "recommendation":
             return False
+        if agent_input.previous_profile and cls._continuation_profile(agent_input):
+            return False
 
-        normalized = agent_input.current_request.casefold()
+        normalized = normalize_request(agent_input.current_request)
         year_from, year_to = cls._explicit_years(normalized)
 
         return not any(
@@ -710,7 +795,7 @@ class ProfilingAgent:
 
     @staticmethod
     def _looks_like_content_question(normalized: str) -> bool:
-        question_form = "?" in normalized or bool(
+        question_form = "?" in normalized or bool(re.search(r"\b(?:powiedz|czy)\b", normalized)) or bool(
             re.search(
                 r"^(?:kto|co|czy|kiedy|gdzie|dlaczego|jak|jaki|jaka|jakie|"
                 r"który|która|które|ile|o czym|od ilu lat|who|what|which|"
@@ -723,7 +808,8 @@ class ProfilingAgent:
         factual_subject = bool(
             re.search(
                 r"\b(?:fabuł\w*|reżyser\w*|aktor\w*|obsad\w*|rol\w*|"
-                r"sezon\w*|odcink\w*|premier\w*|zakończ\w*|trwa\w*|"
+                r"sezon\w*|odcink\w*|premier\w*|zakończ\w*|kończy\s+się|katalog\w*|trwa\w*|"
+                r"cen\w*|wypożyczen\w*|platform\w*|netflix\w*|dubbing\w*|"
                 r"ocen\w*|rating\w*|najwyższ\w*|najniższ\w*|highest|lowest|"
                 r"porówn\w*|compare\w*|ostatni\w*\s+trójk\w*|"
                 r"happy\s+end\w*|pierwsz\w*\s+(?:propozycj\w*|tytuł\w*)|"
@@ -755,6 +841,7 @@ class ProfilingAgent:
     @staticmethod
     def _explicit_reference_titles(request: str) -> tuple[str, ...]:
         patterns = (
+            r"\bczy\s+[„\"']?(.+?)\s+(?:jest|znajduje\s+się)\s+(?:w\s+)?(?:twoim\s+)?katalog",
             r"\bpodobn\w*(?:\s+\w+){0,2}\s+do\s+[„\"']?([^,.;!?\n]+)",
             r"\bw\s+stylu\s+[„\"']?([^,.;!?\n]+)",
             r"\bsimilar\s+to\s+[„\"']?([^,.;!?\n]+)",
@@ -774,12 +861,15 @@ class ProfilingAgent:
     @classmethod
     def _result_counts(cls, normalized: str) -> tuple[list[int], list[int]]:
         text = cls._normalize_numeric_words(normalized)
-        noun = r"(?:film\w*|serial\w*|tytuł\w*|propozycj\w*|movies?|series|recommendations?|titles?)"
+        noun = (r"(?:film\w*|serial\w*|tytuł\w*|propozycj\w*|movies?|series|recommendations?|titles?|"
+                r"(?:tv\s+)?shows?|komedi\w*|thriller\w*|dramat\w*|horror\w*|animac\w*|western\w*|krymina\w*)")
         exact = [int(m.group(1)) for m in re.finditer(
             r"\b(?:dokładnie|exactly)\s+(\d{1,2})\b(?!\s*(?:minut|min\b|minutes?))", text)]
-        # Bare requested quantities (e.g. 'poleć dwa filmy').
+        # A quantity belongs to a content noun, never to a year, score or runtime.
         exact += [int(m.group(1)) for m in re.finditer(
-            rf"\b(?:poleć|polec|podaj|recommend)\s+(\d{{1,2}})\s+(?:[a-ząćęłńóśźż]+\s+){{0,3}}{noun}", text)]
+            rf"\b(\d{{1,2}})\s+(?!(?:minut|min\b|minutes?|lat\b|roku\b))(?:[a-ząćęłńóśźż-]+\s+){{0,3}}{noun}", text)]
+        exact += [int(m.group(1)) for m in re.finditer(
+            r"\b(?:kolejne|kolejnych|następne|jeszcze|another|najlepiej|wybieram)\s+(\d{1,2})\b(?!\s*(?:minut|min\b|minutes?))", text)]
         maximum = [int(m.group(1)) for m in re.finditer(
             r"\b(?:maksymalnie|najwyżej|at\s+most|no\s+more\s+than)\s+"
             r"(\d{1,2})\b(?!\s*(?:minut|min\b|minutes?))", text)]
@@ -801,13 +891,26 @@ class ProfilingAgent:
 
     @classmethod
     def _continuation_profile(cls, agent_input: ProfilingAgentInput):
-        text = agent_input.current_request.casefold()
+        text = normalize_request(agent_input.current_request)
         if re.search(r"zupełnie\s+inn|zmieńmy\s+temat|now[ay]\s+(?:temat|prośba)", text):
             return None
-        if not re.search(r"\b(?:inne|inny|innych|kolejn\w*|jeszcze|a\s+teraz|tym\s+razem|"
+        if not re.search(r"\b(?:inne|inny|innych|kolejn\w*|następn\w*|jeszcze|teraz|nadal|zmień|zamiast|tym\s+samym|tych\s+samych|tym\s+razem|"
                          r"krótsz\w*|dłuższ\w*|nowsz\w*|starsz\w*|bez\s+powtarzania|"
                          r"other|more|another)\b", text):
             return None
+        if agent_input.previous_profile:
+            value = agent_input.previous_profile
+            allowed = {f.name for f in fields(ProfilingAgentOutput)}
+            args = {key: item for key, item in value.items() if key in allowed}
+            args['constraints'] = ProfilingConstraints(**{
+                f.name: value.get('constraints', {}).get(f.name) for f in fields(ProfilingConstraints)
+            })
+            for key in ('media_types', 'genres', 'themes', 'avoid', 'reference_titles', 'evidence',
+                        'origin_countries', 'original_languages', 'excluded_origin_countries',
+                        'excluded_themes', 'reference_content_ids', 'excluded_content_ids', 'positive_preferences'):
+                if key in args:
+                    args[key] = tuple(args[key])
+            return ProfilingAgentOutput(**args)
         for index in range(len(agent_input.conversation_history) - 1, -1, -1):
             message = agent_input.conversation_history[index]
             if message.get("role") != "user":
@@ -964,6 +1067,8 @@ class ProfilingAgent:
         prefix = normalized[clause_start + 1 : start]
         # Contrast starts a new preference; lists joined by ani/nor keep polarity.
         prefix = re.split(r"\b(?:ale|lecz|jednak|tylko|za\s+to|but|however|instead)\b", prefix)[-1]
+        # A new recommendation clause ends a rejection of previously shown titles.
+        prefix = re.split(r"\b(?:poleć|polec|poproszę|wybieram|recommend)\b", prefix)[-1]
         directives = list(
             re.finditer(
                 rf"\b(?:(?P<negative>{NEGATIVE_PREFERENCE_DIRECTIVE})|"
@@ -1005,6 +1110,8 @@ class ProfilingAgent:
                 if (
                     value
                     and not cls._is_technical_avoid_value(value)
+                    and (value in CANONICAL_GENRES or value == 'Gore'
+                         or re.search(r"przemoc|brutal|gore|straszn|tortur", value, re.I))
                     and value.casefold() not in {
                     existing.casefold() for existing in values
                     }
@@ -1094,45 +1201,45 @@ class ProfilingAgent:
             (r"\bkrótk\w*\s+odcink\w*", "krótkie odcinki"),
             (r"\b(?:siln\w*|mocn\w*)\s+(?:bohaterk\w*|kobiet\w*)", "silna bohaterka"),
         )
-        return tuple(label for pattern, label in patterns
+        return tuple(dict.fromkeys(label for pattern, label in (*patterns, *((pattern, label) for label, pattern in TOPIC_REQUESTS.items()))
                      if any(cls._match_is_negated(normalized, match.start()) == negated
-                            for match in re.finditer(pattern, normalized)))
+                            for match in re.finditer(pattern, normalized, re.I))))
 
     @classmethod
     def _explicit_years(cls, normalized: str) -> tuple[int | None, int | None]:
         normalized = cls._normalize_numeric_words(normalized)
         compact_range_match = re.search(
             r"(?:\bz\s+lat\s+|\bfrom\s+)?"
-            r"(18\d{2}|19\d{2}|20\d{2}|21\d{2})\s*[-–—]\s*"
-            r"(18\d{2}|19\d{2}|20\d{2}|21\d{2})",
+            r"(\d{4})\s*[-–—]\s*"
+            r"(\d{4})",
             normalized,
         )
         if compact_range_match:
             return int(compact_range_match.group(1)), int(compact_range_match.group(2))
         range_match = re.search(
             r"(?:między|od|z\s+lat|between|from)\s+"
-            r"(18\d{2}|19\d{2}|20\d{2}|21\d{2})\s+"
+            r"(\d{4})\s+"
             r"(?:a|i|do|and|to)\s+"
-            r"(18\d{2}|19\d{2}|20\d{2}|21\d{2})",
+            r"(\d{4})",
             normalized,
         )
         if range_match:
             return int(range_match.group(1)), int(range_match.group(2))
         exact_match = re.search(
-            r"(?:dokładnie\s+z|z|wydan\w*\s+w)\s+"
-            r"(18\d{2}|19\d{2}|20\d{2}|21\d{2})(?:\s+roku|\s+r\b|\b)",
+            r"(?:dokładnie\s+z|z(?:\s+roku)?|w\s+roku|wydan\w*\s+w)\s+"
+            r"(\d{4})(?:\s+roku|\s+r\b|\b)",
             normalized,
         )
         if exact_match:
             year = int(exact_match.group(1))
             return year, year
         after_match = re.search(
-            r"\b(?:po|after)\s+(18\d{2}|19\d{2}|20\d{2}|21\d{2})",
+            r"\b(?:po|after)\s+(\d{4})",
             normalized,
         )
         before_match = re.search(
             r"\b(?:sprzed|przed|before)\s+"
-            r"(18\d{2}|19\d{2}|20\d{2}|21\d{2})",
+            r"(\d{4})",
             normalized,
         )
         if after_match or before_match:
@@ -1141,11 +1248,11 @@ class ProfilingAgent:
                 int(before_match.group(1)) - 1 if before_match else None,
             )
         from_match = re.search(
-            r"\b(?:od|from)\s+(18\d{2}|19\d{2}|20\d{2}|21\d{2})",
+            r"\b(?:od|from)\s+(\d{4})",
             normalized,
         )
         to_match = re.search(
-            r"\b(?:do|to)\s+(18\d{2}|19\d{2}|20\d{2}|21\d{2})",
+            r"\b(?:do|to)\s+(\d{4})",
             normalized,
         )
         return (
@@ -1172,10 +1279,10 @@ class ProfilingAgent:
         normalized = cls._normalize_numeric_words(normalized)
         match = re.search(
             r"(?:ocen\w*(?:\s+widzów)?\s+(?:minimum|min\.?|co najmniej)\s*"
-            r"(\d(?:[.,]\d)?)|(?:minimum|min\.?|co najmniej)\s*"
-            r"(\d(?:[.,]\d)?)\s*/\s*10|"
+            r"(\d{1,3}(?:[.,]\d{1,2})?)(?!\d|[.,]\d)|(?:minimum|min\.?|co najmniej)\s*"
+            r"(\d{1,3}(?:[.,]\d{1,2})?)(?!\d|[.,]\d)\s*/\s*10|"
             r"(?:rating|rated)\s+(?:at\s+least|minimum|min\.?)\s*"
-            r"(\d(?:[.,]\d)?)(?:\s*/\s*10)?)",
+            r"(\d{1,3}(?:[.,]\d{1,2})?)(?!\d|[.,]\d)(?:\s*/\s*10)?)",
             normalized,
         )
         if not match:
@@ -1187,6 +1294,7 @@ class ProfilingAgent:
     @staticmethod
     def _normalize_numeric_words(value: str) -> str:
         replacements = {
+            "zero": "0", "dziesięć": "10", "jednego": "1", "einen": "1", "una": "1",
             "jeden": "1", "jedną": "1", "jedna": "1", "dwa": "2", "dwie": "2",
             "trzy": "3", "cztery": "4", "one": "1", "two": "2", "three": "3",
             "dwa tysiące dwudziestego czwartego": "2024",
@@ -1225,15 +1333,9 @@ class ProfilingAgent:
 
     @staticmethod
     def _explicit_original_languages(normalized: str) -> tuple[str, ...]:
-        patterns = (
-            (r"\b(?:oryginalnie|w\s+oryginale)\s+po\s+polsku\b", "pl"),
-            (r"\boriginally\s+in\s+polish\b", "pl"),
-            (r"\b(?:oryginalnie|w\s+oryginale)\s+po\s+koreańsku\b", "ko"),
-            (r"\boriginally\s+in\s+korean\b", "ko"),
-            (r"\b(?:oryginalnie|w\s+oryginale)\s+po\s+angielsku\b", "en"),
-            (r"\boriginally\s+in\s+english\b", "en"),
-        )
-        return tuple(code for pattern, code in patterns if re.search(pattern, normalized))
+        return tuple(code for language, code in LANGUAGES if re.search(
+            rf"(?:oryginalnie\s+po|w\s+oryginale\s+po|(?:oryginalnym\s+)?języku|originally\s+in|original\s+language)\s+(?:{language})\b",
+            normalized))
 
     @classmethod
     def _explicit_origin_countries(cls, normalized: str) -> tuple[str, ...]:
@@ -1241,17 +1343,13 @@ class ProfilingAgent:
 
     @classmethod
     def _country_mentions(cls, normalized: str, *, negated: bool) -> tuple[str, ...]:
-        patterns = (
-            (r"\b(?:polsk\w*|polish)\b", "PL"),
-            (r"\b(?:koreańsk\w*|korean)\b", "KR"),
-            (r"\b(?:amerykańsk\w*|american)\b", "US"),
-        )
         countries = []
-        for pattern, code in patterns:
+        for words, code in COUNTRIES:
+            pattern = rf"\b(?:{words})\b"
             for match in re.finditer(pattern, normalized):
                 prefix, suffix = normalized[:match.start()], normalized[match.end():]
                 # Language, dubbing and subtitles do not imply production country.
-                if re.search(r"(?:po|in)\s*$", prefix) or re.match(
+                if re.search(r"(?:po|in|języku|language)\s*$", prefix) or re.match(
                     r"\s+(?:dubbing|wersj|napis|subtitles|dub)", suffix
                 ):
                     continue
@@ -1260,6 +1358,8 @@ class ProfilingAgent:
                 )
                 if is_negative == negated and code not in countries:
                     countries.append(code)
+        if not negated and re.search(r"\beuropejsk\w*|\beuropean\b", normalized):
+            countries.extend(c for c in ('PL','FR','DE','GB','ES','IT','PT','NL','BE','AT','CH','SE','NO','DK','FI','IS','IE','CZ','SK','HU','RO','BG','GR','HR','SI','EE','LV','LT','UA') if c not in countries)
         return tuple(countries)
 
     @staticmethod

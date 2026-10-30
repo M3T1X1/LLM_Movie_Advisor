@@ -1,4 +1,5 @@
 from time import monotonic
+from dataclasses import replace
 from typing import Any, Callable, TypedDict
 from langgraph.graph import END, START, StateGraph
 from backend.api.models import BusinessUser
@@ -15,15 +16,19 @@ from backend.recommendation_agents.profiling import (
 )
 from backend.recommendation_agents.ranking import RankingAgent, RankingAgentRun
 from backend.recommendation_agents.retrieval import RetrievalAgent, RetrievalAgentRun
+from backend.recommendation_agents.catalog_context import resolve_catalog_references
 
 
-GRAPH_VERSION = "recommendation-agents-v8"
+GRAPH_VERSION = "recommendation-agents-v11"
 
 
 class RecommendationGraphState(TypedDict, total=False):
     user: BusinessUser
     current_request: str
     conversation_history: tuple[dict[str, str], ...]
+    previous_profile: dict
+    previous_recommendations: tuple[dict, ...]
+    seen_content_ids: tuple[int, ...]
     profiling_input: ProfilingAgentInput
     profiling: ProfilingAgentRun
     retrieval: RetrievalAgentRun
@@ -76,15 +81,20 @@ def build_recommendation_graph(
         return result
 
     def profiling_node(state: RecommendationGraphState):
+        context = {key:state[key] for key in ('previous_profile','previous_recommendations','seen_content_ids') if key in state}
         agent_input = build_profiling_input(
             state["user"],
             state["current_request"],
             conversation_history=state.get("conversation_history", ()),
+            **context,
         )
+        def profile_request():
+            result = profiling_agent.run(agent_input)
+            return replace(result, output=resolve_catalog_references(result.output))
         run = observed(
             "profiling",
             {"current_request": state["current_request"]},
-            lambda: profiling_agent.run(agent_input),
+            profile_request,
             lambda result: result.as_dict(),
         )
         return {
@@ -167,12 +177,15 @@ def build_recommendation_graph(
                     state["current_request"],
                     state["retrieval"].candidates,
                     state.get("conversation_history", ()),
+                    **({'previous_recommendations':state['previous_recommendations']} if 'previous_recommendations' in state else {}),
+                    **({'positive_preferences':profile.positive_preferences} if 'previous_profile' in state else {}),
                 ),
                 lambda result: result.as_dict(),
             )
             return {"explanation": run}
         if profile.intent != "recommendation":
             if profile.intent == "recall":
+                stored_items = state.get('previous_recommendations', ())
                 previous_answer = next(
                     (
                         item.get("content", "")
@@ -187,6 +200,9 @@ def build_recommendation_graph(
                     if previous_answer
                     else "W tej rozmowie nie ma jeszcze wcześniejszej rekomendacji."
                 )
+                if stored_items:
+                    message = 'Oto ostatnie polecane tytuły:\n' + '\n'.join(
+                        f"{index}. {item['title']}" for index,item in enumerate(stored_items,1))
                 reason = "recall"
             else:
                 message = "Mogę pomóc w wyborze filmu lub serialu."

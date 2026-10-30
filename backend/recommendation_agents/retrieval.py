@@ -10,6 +10,7 @@ from backend.content_titles import display_content_title
 from backend.embeddings import SemanticContentMatch, semantic_content_search
 from backend.ollama import OllamaClient, OllamaError
 from backend.recommendation_agents.profiling import ProfilingAgentOutput
+from backend.recommendation_agents.request_rules import topic_patterns
 
 
 logger = logging.getLogger(__name__)
@@ -164,7 +165,7 @@ class RetrievalAgent:
         if len(ordered_ids) < limit:
             terms = [
                 *profile.genres,
-                *profile.themes,
+                *(theme for theme in profile.themes if not topic_patterns(theme)),
                 *profile.reference_titles,
             ]
             if "Dla dzieci" in profile.genres:
@@ -232,7 +233,11 @@ class RetrievalAgent:
         )
         if profile.media_types:
             queryset = queryset.filter(media_type__in=profile.media_types)
-        if profile.intent == "content_question" and profile.reference_titles:
+        if profile.excluded_content_ids:
+            queryset = queryset.exclude(pk__in=profile.excluded_content_ids)
+        if profile.intent == "content_question" and profile.reference_content_ids:
+            queryset = queryset.filter(pk__in=profile.reference_content_ids)
+        elif profile.intent == "content_question" and profile.reference_titles:
             reference_filter = Q()
             for title in profile.reference_titles:
                 reference_filter |= (
@@ -259,7 +264,8 @@ class RetrievalAgent:
                 country_filter |= Q(metadata__originCountry__contains=[country])
             queryset = queryset.filter(country_filter)
         for country in profile.excluded_origin_countries:
-            queryset = queryset.exclude(metadata__originCountry__contains=[country])
+            queryset = queryset.filter(metadata__originCountry__isnull=False).exclude(
+                metadata__originCountry=[]).exclude(metadata__originCountry__contains=[country])
         if profile.genres:
             if require_all_genres:
                 for genre in profile.genres:
@@ -300,6 +306,20 @@ class RetrievalAgent:
             queryset = queryset.exclude(
                 overview__iregex=r"\m(?:kosmos|kosmiczn|galakty|astronaut|astronom|komet|orbit|wszechświat|planet|rakiet|nasa)\w*"
             )
+        for topic in profile.themes:
+            for pattern in topic_patterns(topic):
+                queryset = queryset.filter(overview__iregex=pattern.replace(r'\b', r'\y'))
+        for topic in profile.excluded_themes:
+            patterns = topic_patterns(topic)
+            if patterns:
+                condition = Q()
+                for pattern in patterns:
+                    condition &= Q(overview__iregex=pattern.replace(r'\b', r'\y'))
+                queryset = queryset.exclude(condition)
+        if profile.mood in ('lekki', 'spokojny', 'optymistyczny') or 'lekki klimat' in profile.themes:
+            queryset = queryset.exclude(genres__name__in=['Horror', 'Wojenny', 'Thriller'])
+            if profile.mood == 'spokojny':
+                queryset = queryset.exclude(genres__name='Akcja')
         if "krótkie odcinki" in profile.themes:
             queryset = queryset.filter(
                 metadata__episodeRuntimeMinutes__lte=35,

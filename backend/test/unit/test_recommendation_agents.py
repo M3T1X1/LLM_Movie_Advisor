@@ -566,7 +566,7 @@ class ExplanationAgentTests(SimpleTestCase):
         self.assertIn("8.0/10", run.explanations[0].explanation)
         self.assertEqual(run.model, "llama3.1:8b")
         self.assertEqual(run.source, "catalog")
-        self.client.chat.assert_not_called()
+        self.assertEqual(self.client.chat.call_count, 2)
 
     def test_catalog_description_is_short(self):
         long_candidate = RetrievalCandidate(
@@ -613,13 +613,13 @@ class ExplanationAgentTests(SimpleTestCase):
         self.assertIn("Film 1", run.message)
         self.assertEqual(run.explanations[0].content_id, 1)
 
-    def test_catalog_description_does_not_call_model(self):
+    def test_invalid_model_response_uses_catalog_fallback(self):
         run = self.agent.run("Thriller", profile(), self.selected)
 
         self.assertIn("Film 1", run.message)
         self.assertEqual(run.explanations[0].content_id, 1)
         self.assertEqual(run.source, "catalog")
-        self.client.chat.assert_not_called()
+        self.assertEqual(self.client.chat.call_count, 2)
 
     def test_falls_back_for_duplicate_candidate_explanation(self):
         self.client.chat.return_value = response(
@@ -678,6 +678,7 @@ class ExplanationAgentTests(SimpleTestCase):
 
         self.assertIn("Limit 100 minut", run.message)
         self.client.chat.assert_not_called()
+        self.assertEqual(run.explanations, ())
 
     def test_answers_content_question_from_catalog_context(self):
         run = self.agent.answer_content_question(

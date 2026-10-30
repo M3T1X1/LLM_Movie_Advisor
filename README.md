@@ -483,8 +483,28 @@ non-streaming chat calls. The application sends prompts to
 to ten sanitized conversation messages plus the user's profile, preferences,
 and interactions. The retrieval agent queries pgvector and applies catalog
 constraints, with relational keyword search as fallback. The ranking agent
-scores and rejects weak or conflicting candidates. The explanation agent
-returns a validated Polish response grounded in selected catalog metadata.
+scores and rejects weak or conflicting candidates. A shared final check verifies
+each selected candidate against the request's types, genres, numeric limits,
+known countries, original languages, excluded IDs and supported topic evidence.
+Explicit genre requirements are not silently relaxed. Unknown metadata cannot
+prove that a restriction has been met; shortages are explained in the response.
+The explanation agent asks Ollama to choose a literal excerpt from the selected
+title's own description (or a verified genre when the description is absent).
+The server renders the excerpt and catalog facts, and labels mood and taste
+connections as interpretations. A valid quote does not license additional model
+prose: arbitrary generated claims are never displayed alongside it. Each request
+supplies an exact count, allowed IDs and evidence options in its JSON schema.
+Invalid evidence gets one correction attempt; validation reasons and total token
+usage are persisted. Model failures use deterministic catalog descriptions.
+Age, violence, endings, dubbing, current streaming availability and rental prices
+are disclosed as unconfirmed when the catalog cannot establish them.
+Conversation constraints and previously selected IDs are loaded from persisted
+runs in that conversation. Follow-ups inherit the relevant constraints, replace
+explicitly changed genres/types and exclude prior IDs when asking for new titles.
+Inflected and alternative titles are resolved to catalog identity; ambiguous
+references prompt clarification. Comparisons and ordinal questions use the
+previous displayed list. These checks improve grounding but do not establish
+that TMDB metadata itself is complete or factually correct.
 Messages and the complete execution trace survive page reloads. The legacy
 `POST /api/chat/` endpoint remains available for isolated stateless diagnostics.
 

@@ -447,7 +447,7 @@ export function CatalogCard({
           <h2 className="font-display truncate text-base text-slate-100 transition group-hover:text-violet-200" title={content.title}>{content.title}</h2>
           <div className="mt-1.5 flex items-center gap-2 text-[10px] text-slate-600">
             {releaseYear && <span>{releaseYear}</span>}
-            {content.voteAverage !== null && (
+            {content.voteAverage !== null && content.voteAverage > 0 && (
               <span className="flex items-center gap-1 text-amber-300">
                 <Star className="h-2.5 w-2.5 fill-current" />
                 {content.voteAverage.toFixed(1)}

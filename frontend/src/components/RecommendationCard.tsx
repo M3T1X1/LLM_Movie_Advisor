@@ -86,12 +86,12 @@ export function RecommendationCard({
         </div>
 
         <div className="mt-3 flex flex-wrap items-center gap-1.5">
-          {content.voteAverage !== null && (
+          {content.voteAverage !== null && content.voteAverage > 0 ? (
             <span className="mr-1 flex items-center gap-1 text-[10px] font-medium text-amber-300">
               <Star className="h-3 w-3 fill-current" />
               {content.voteAverage.toFixed(1)}
             </span>
-          )}
+          ) : <span className="mr-1 text-[10px] text-slate-500">Brak ocen</span>}
           {content.genres.slice(0, 3).map((genre, genreIndex) => (
             <span key={genre.id} className="text-[10px] text-slate-500">
               {genre.name}

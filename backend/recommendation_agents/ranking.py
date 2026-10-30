@@ -10,6 +10,7 @@ from backend.ollama import OllamaClient, OllamaError
 from backend.prompt_security import contains_protected_model_output
 from backend.recommendation_agents.profiling import ProfilingAgentOutput
 from backend.recommendation_agents.retrieval import RetrievalCandidate
+from backend.recommendation_agents.request_rules import candidate_violations
 
 
 RANKING_SCHEMA = {
@@ -198,7 +199,8 @@ class RankingAgent:
         eligible = [
             item
             for item in ordered
-            if final_scores[item.content_id] >= 0.30
+            if not candidate_violations(item, profile)
+            and final_scores[item.content_id] >= 0.30
             and (bool(requested_weights) or scores[item.content_id][0] > 0)
             and (
                 minimum_quality is None

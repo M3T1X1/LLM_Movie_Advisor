@@ -44,7 +44,7 @@ export function ChatInterface({
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key === 'Enter' && !event.shiftKey) {
+    if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
       event.preventDefault();
       void sendMessage();
     }
@@ -62,6 +62,14 @@ export function ChatInterface({
             <p className="mt-2 max-w-xs text-xs leading-5 text-slate-500">
               Zacznij od nastroju, gatunku lub czasu, którym dysponujesz.
             </p>
+            <div className="mt-4 flex max-w-sm flex-wrap justify-center gap-2">
+              {['Jedna lekka komedia do 100 minut', 'Trzy filmy science fiction o kosmosie', 'Nie wiem, co obejrzeć'].map((prompt) => (
+                <button key={prompt} type="button" onClick={() => setInput(prompt)}
+                  className="rounded-md border border-white/10 px-3 py-2 text-xs text-slate-400 hover:border-violet-400 hover:text-slate-200">
+                  {prompt}
+                </button>
+              ))}
+            </div>
           </div>
         )}
         {messages.map((message) => (
@@ -90,7 +98,8 @@ export function ChatInterface({
         {isProcessing && (
           <div className="max-w-[82%]">
             <p className="mb-1.5 text-[10px] font-medium text-slate-500">Filmiq</p>
-            <div className="flex w-fit gap-1 rounded-lg border border-white/[0.06] bg-white/[0.025] px-3.5 py-3.5">
+            <div role="status" className="flex w-fit items-center gap-1 rounded-lg border border-white/[0.06] bg-white/[0.025] px-3.5 py-3.5">
+              <span className="mr-2 text-xs text-slate-400">Sprawdzam propozycje. To może potrwać kilkadziesiąt sekund.</span>
               {[0, 1, 2].map((dot) => (
                 <span
                   key={dot}
@@ -117,14 +126,16 @@ export function ChatInterface({
               disabled={isProcessing}
               rows={4}
               maxLength={800}
+              aria-label="Wiadomość do doradcy filmowego"
               placeholder="Opisz nastrój, tempo albo motyw..."
               className="w-full resize-none bg-transparent px-1.5 py-1 text-sm leading-6 text-white outline-none placeholder:text-slate-700 disabled:cursor-wait"
             />
             <div className="flex items-center justify-between px-1">
               <div className="flex items-center gap-1.5 text-[9px] text-slate-700">
                 <CornerDownLeft className="h-3 w-3" />
-                Enter, aby wysłać
+                Enter, aby wysłać · Shift+Enter: nowy wiersz
               </div>
+              <span className="text-[9px] text-slate-500">{input.length}/800</span>
               <button
                 type="submit"
                 disabled={!input.trim() || isProcessing}

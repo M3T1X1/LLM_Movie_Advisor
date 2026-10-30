@@ -143,7 +143,7 @@ export function MovieDetailModal({
 
           <aside>
             <div className="rounded-lg border border-white/[0.07] bg-white/[0.025] p-5">
-              {content.voteAverage !== null && (
+              {content.voteAverage !== null && content.voteAverage > 0 && (
                 <div className="flex items-center justify-between border-b border-white/[0.06] pb-4">
                   <span className="text-xs text-slate-500">Ocena widzów</span>
                   <span className="flex items-center gap-1.5 text-sm font-bold text-white">
