@@ -4,7 +4,6 @@ import type { Content, RunCandidate } from '../types';
 import {
   formatRuntime,
   getBackdropUrl,
-  getMatchPercent,
   getReleaseYear,
 } from '../utils/content';
 
@@ -49,7 +48,6 @@ export function MovieDetailModal({
   const backdropUrl = getBackdropUrl(content);
   const releaseYear = getReleaseYear(content);
   const runtime = formatRuntime(content.metadata.runtimeMinutes);
-  const matchPercent = recommendation ? getMatchPercent(recommendation) : null;
   const providers = content.metadata.providers ?? [];
 
   return (
@@ -79,11 +77,6 @@ export function MovieDetailModal({
           <div className="absolute inset-0 bg-ink-900/70" />
           <div className="absolute inset-x-0 bottom-0 p-5 sm:p-8 lg:p-10">
             <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-slate-300">
-              {matchPercent !== null && (
-                <span className="bg-emerald-400/15 px-2 py-1 font-semibold text-emerald-200">
-                  {matchPercent}% dopasowania
-                </span>
-              )}
               {releaseYear && <span>{releaseYear}</span>}
               {runtime && <span>•</span>}
               {runtime && <span>{runtime}</span>}

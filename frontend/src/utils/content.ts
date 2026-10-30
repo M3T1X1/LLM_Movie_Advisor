@@ -1,4 +1,4 @@
-import type { Content, RunCandidate } from '../types';
+import type { Content } from '../types';
 
 const TMDB_IMAGE_BASE_URL = 'https://image.tmdb.org/t/p';
 
@@ -20,8 +20,4 @@ export function formatRuntime(minutes?: number) {
   const hours = Math.floor(minutes / 60);
   const remainingMinutes = minutes % 60;
   return hours ? `${hours} godz. ${remainingMinutes} min` : `${remainingMinutes} min`;
-}
-
-export function getMatchPercent(candidate: RunCandidate) {
-  return candidate.finalScore === null ? null : Math.round(candidate.finalScore * 100);
 }

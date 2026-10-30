@@ -3,7 +3,6 @@ import { useState } from 'react';
 import type { RunCandidate } from '../types';
 import {
   formatRuntime,
-  getMatchPercent,
   getPosterUrl,
   getReleaseYear,
 } from '../utils/content';
@@ -32,7 +31,6 @@ export function RecommendationCard({
   const posterUrl = getPosterUrl(content);
   const releaseYear = getReleaseYear(content);
   const runtime = formatRuntime(content.metadata.runtimeMinutes);
-  const matchPercent = getMatchPercent(candidate);
 
   return (
     <article className="group grid grid-cols-[104px_minmax(0,1fr)] overflow-hidden border-b border-white/[0.1] bg-ink-900 transition-colors hover:border-violet-400/50 sm:grid-cols-[148px_minmax(0,1fr)]">
@@ -77,12 +75,6 @@ export function RecommendationCard({
               )}
             </div>
           </div>
-          {matchPercent !== null && (
-            <div className="shrink-0 text-right">
-              <p className="text-sm font-semibold text-emerald-400">{matchPercent}%</p>
-              <p className="text-[9px] text-slate-600">dopasowania</p>
-            </div>
-          )}
         </div>
 
         <div className="mt-3 flex flex-wrap items-center gap-1.5">

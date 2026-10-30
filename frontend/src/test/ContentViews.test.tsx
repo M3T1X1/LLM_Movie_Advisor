@@ -151,11 +151,11 @@ describe('content views', () => {
     expect(onOpen).toHaveBeenCalledWith(demoCatalogContent[0]);
   });
 
-  it('renders recommendation-specific score and explanation', async () => {
+  it('renders recommendation explanation without match percentage', async () => {
     const user = userEvent.setup();
     const onOpen = vi.fn();
     render(<RecommendationCard candidate={demoCandidates[0]} index={0} isWatchlisted={false} isWatched={false} onOpen={onOpen} onWatchlist={vi.fn()} onMarkWatched={vi.fn()} />);
-    expect(screen.getByText('96%')).toBeInTheDocument();
+    expect(screen.queryByText(/\d+%/)).not.toBeInTheDocument();
     expect(screen.getByText(/Trafia w Twoją potrzebę/)).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Szczegóły' }));
     expect(onOpen).toHaveBeenCalledWith(demoCandidates[0]);
@@ -189,7 +189,7 @@ describe('content views', () => {
     expect(screen.queryByText('Dlaczego ten tytuł?')).not.toBeInTheDocument();
     rerender(<MovieDetailModal content={demoCandidates[0].content} recommendation={demoCandidates[0]} {...props} />);
     expect(screen.getByText('Dlaczego ten tytuł?')).toBeInTheDocument();
-    expect(within(screen.getByRole('dialog')).getByText('96% dopasowania')).toBeInTheDocument();
+    expect(within(screen.getByRole('dialog')).queryByText(/\d+%/)).not.toBeInTheDocument();
   });
 
   it('supports modal actions, Escape, backdrop closing and body scroll lock', async () => {
