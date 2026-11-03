@@ -114,7 +114,7 @@ open it at full resolution.
 - an AMD ROCm-backed Ollama service with persistent model storage;
 - idempotent one-shot services that download the configured chat and embedding
   models;
-- eight Docker Compose services, including chat-model, embedding-model, and
+- nine Docker Compose services, including a semantic-profile worker, chat-model, embedding-model, and
   demo-data initializers;
 - a multi-stage application image;
 - Gunicorn and WhiteNoise;
@@ -167,6 +167,7 @@ Docker Compose runs these services:
 |---|---|---|
 | `app` | Django, Gunicorn, API, and the built React frontend | `127.0.0.1:8000` by default |
 | `catalog-sync` | initial catalog population and periodic TMDB synchronization | no public port |
+| `semantic-profile-worker` | debounced semantic taste updates from preferences and interactions | no public port |
 | `postgres` | persistent application data and pgvector | Compose network only |
 | `redis` | ready-to-display catalog page cache, TMDB response cache, synchronization locks, and fast session reads | Compose network only |
 | `ollama` | local LLM runtime accelerated through AMD ROCm | Compose network only |
@@ -1222,7 +1223,7 @@ evaluation.
 ## Known limitations
 
 - semantic retrieval has not yet been evaluated against a labeled relevance set;
-- no automatic semantic-profile updates;
+- semantic profiles infer genre taste only from repeated explicit evaluations; viewing alone is not a positive preference;
 - recommendation trends depend on stored records, which can be demo data;
 - the graph is synchronous and does not yet provide streaming or job retries;
 - upcoming releases cover movies, not future TV seasons;
@@ -1320,3 +1321,37 @@ it.
 ## License
 
 This project is available under the MIT License. See [`LICENSE`](LICENSE).
+
+
+## Automatic semantic taste profiles
+
+`semantic-profile-worker` runs `python manage.py refresh_semantic_profiles` independently
+of HTTP workers. It scans active users every 10 seconds, compares hashes of their
+preferences and up to 500 latest meaningful interactions, and waits at least 15 seconds
+after observing a change before rebuilding. Further changes restart that debounce.
+PostgreSQL stores the pending/applied hashes and retry deadline; restarts preserve work.
+A PostgreSQL session advisory lock prevents concurrent worker replicas from rebuilding
+the same scan. No additional broker or Python dependencies are needed.
+
+Explicit preferences are always included first. Repeated likes/high ratings (7–10) or
+dislikes/low ratings (0–3) across at least two distinct titles supply genre evidence.
+The latest evaluation per title wins; repeated clicks do not amplify it. Explicit genre
+preferences override conflicting inferred evidence. A watched title, watchlist entry,
+or opened detail never implies enjoyment. Conversations and transient mood requests are
+not used. When repeated evidence exists, Ollama selects at most eight supported signals
+using a JSON schema (at least one selection when supported signals exist); Python validates indices and assembles the summary exclusively from
+known facts. With only explicit preferences, no model call is necessary.
+
+The worker updates `semantic_summary`, `version`, and `last_rebuilt_at`; the existing
+profiling agent already reads that summary on subsequent requests. Invalid/model-failed
+results leave the previous profile intact and retry after 300 seconds. Source data is
+rechecked before publication so changes during inference invalidate the generated result.
+Preference reset deliberately clears the existing summary immediately, as before, and
+invalidates the source hashes. Remaining interaction evidence may rebuild it later.
+
+Configure `SEMANTIC_PROFILE_DEBOUNCE_SECONDS` (default 15) and
+`SEMANTIC_PROFILE_RETRY_SECONDS` (default 300). For development outside Compose, run
+`python manage.py refresh_semantic_profiles` beside the web server. `--once` performs a
+single scan (a newly detected change becomes pending; a later scan after the debounce
+performs the rebuild). `--interval` sets the polling period. Apply migrations before
+starting the worker. The worker scans existing accounts as well as new activity.

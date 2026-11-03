@@ -5,7 +5,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    environment:
+    environment: &app-environment
       DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?Set DJANGO_SECRET_KEY in .env}
       DJANGO_DEBUG: ${DJANGO_DEBUG:-False}
       DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1,[::1]}
@@ -57,6 +57,8 @@ services:
       LLM_EMBEDDING_SYNC_LOCK_TIMEOUT: ${LLM_EMBEDDING_SYNC_LOCK_TIMEOUT:-3600}
       LLM_SEMANTIC_SEARCH_ENABLED: ${LLM_SEMANTIC_SEARCH_ENABLED:-True}
       LLM_SEMANTIC_MIN_SIMILARITY: ${LLM_SEMANTIC_MIN_SIMILARITY:-0.2}
+      SEMANTIC_PROFILE_DEBOUNCE_SECONDS: ${SEMANTIC_PROFILE_DEBOUNCE_SECONDS:-15}
+      SEMANTIC_PROFILE_RETRY_SECONDS: ${SEMANTIC_PROFILE_RETRY_SECONDS:-300}
       SEED_USER_PASSWORD: ${SEED_USER_PASSWORD:-}
     command:
       - /bin/sh
@@ -183,6 +185,19 @@ services:
       app:
         condition: service_healthy
       ollama-embed-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  semantic-profile-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment: *app-environment
+    command: [python, manage.py, refresh_semantic_profiles]
+    depends_on:
+      app:
+        condition: service_healthy
+      ollama-init:
         condition: service_completed_successfully
     restart: unless-stopped
 

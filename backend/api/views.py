@@ -1318,12 +1318,18 @@ def profile_preferences(request: HttpRequest) -> JsonResponse:
                     for preference_type, preference_value, polarity in cleaned_preferences
                 ]
             )
+            profile_item.semantic_source_hash = ""
+            profile_item.semantic_pending_hash = ""
+            profile_item.semantic_rebuild_after = None
             profile_item.semantic_summary = None
             profile_item.version += 1
             profile_item.last_rebuilt_at = None
             profile_item.updated_at = now
             profile_item.save(
                 update_fields=[
+                    "semantic_source_hash",
+                    "semantic_pending_hash",
+                    "semantic_rebuild_after",
                     "semantic_summary",
                     "version",
                     "last_rebuilt_at",
@@ -1361,12 +1367,18 @@ def profile_preferences(request: HttpRequest) -> JsonResponse:
                 updated_at=now,
             )
         else:
+            profile_item.semantic_source_hash = ""
+            profile_item.semantic_pending_hash = ""
+            profile_item.semantic_rebuild_after = None
             profile_item.semantic_summary = None
             profile_item.version += 1
             profile_item.last_rebuilt_at = None
             profile_item.updated_at = now
             profile_item.save(
                 update_fields=[
+                    "semantic_source_hash",
+                    "semantic_pending_hash",
+                    "semantic_rebuild_after",
                     "semantic_summary",
                     "version",
                     "last_rebuilt_at",

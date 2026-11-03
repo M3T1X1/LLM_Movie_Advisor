@@ -354,3 +354,8 @@ LOGGING = {
         },
     },
 }
+
+
+# Background semantic taste worker (seconds).
+SEMANTIC_PROFILE_DEBOUNCE_SECONDS = int(os.environ.get('SEMANTIC_PROFILE_DEBOUNCE_SECONDS', '15'))
+SEMANTIC_PROFILE_RETRY_SECONDS = int(os.environ.get('SEMANTIC_PROFILE_RETRY_SECONDS', '300'))

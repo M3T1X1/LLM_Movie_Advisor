@@ -68,6 +68,9 @@ class UserProfile(models.Model):
         related_name="profile",
     )
     semantic_summary = models.TextField(null=True, blank=True)
+    semantic_source_hash = models.CharField(max_length=64, default="", blank=True)
+    semantic_pending_hash = models.CharField(max_length=64, default="", blank=True)
+    semantic_rebuild_after = models.DateTimeField(null=True, blank=True)
     version = models.PositiveIntegerField(default=1)
     last_rebuilt_at = models.DateTimeField(null=True, blank=True)
     updated_at = models.DateTimeField(default=timezone.now)

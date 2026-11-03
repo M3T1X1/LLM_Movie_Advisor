@@ -55,6 +55,9 @@ CREATE TABLE app_user (
 );
 
 CREATE TABLE user_profile (
+    semantic_source_hash VARCHAR(64) NOT NULL DEFAULT '',
+    semantic_pending_hash VARCHAR(64) NOT NULL DEFAULT '',
+    semantic_rebuild_after TIMESTAMPTZ,
     user_id          BIGINT PRIMARY KEY,
     semantic_summary TEXT,
     version           INTEGER NOT NULL DEFAULT 1 CHECK (version > 0),
